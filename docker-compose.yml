@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../docker/backend.Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=sqlite:///./app.db
+    command: uv run uvicorn backend_api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/frontend.Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    command: npm run dev -- --host 0.0.0.0
+    depends_on:
+      - backend
+
+  titiler:
+    image: ghcr.io/developmentseed/titiler:latest
+    platform: linux/amd64
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      - TITILER_CACHE_DISABLE=true
+      - TITILER_CACHE_TYPE=null
+    command: uvicorn titiler.application.main:app --host 0.0.0.0 --port 8080
