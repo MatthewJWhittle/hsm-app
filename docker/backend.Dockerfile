@@ -1,12 +1,9 @@
-FROM python:3.11-slim
+FROM python:3.13-slim
 
 
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y
 
 # Copy the UV binary from the official UV image.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/

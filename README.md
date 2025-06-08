@@ -48,8 +48,10 @@ hsm-app/
 
 2. Start the development environment:
    ```bash
-   docker-compose up
+   docker-compose up --build -V
    ```
+`-V` : Recreate anonymous volumes instead of retrieving data from the previous containers.
+This make Vite work - don't remove it.
 
 3. Access the applications:
    - Frontend: http://localhost:3000
