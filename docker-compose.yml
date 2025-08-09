@@ -35,8 +35,11 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./data:/data
+      - ./data:/data:ro
     environment:
       - TITILER_CACHE_DISABLE=true
       - TITILER_CACHE_TYPE=null
+      - GDAL_DISABLE_READDIR_ON_OPEN=FALSE
+
+
     command: uvicorn titiler.application.main:app --host 0.0.0.0 --port 8080
