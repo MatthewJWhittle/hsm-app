@@ -1,24 +1,50 @@
-# Habitat Suitability Model Visualiser
+# Bat Habitat Suitability Conservation Tool
 
-An interactive web application for visualizing habitat suitability model outputs and vector overlays for different species.
+An interactive web application for visualizing habitat suitability model outputs and vector overlays, built to support conservation practitioners, ecologists and bat groups.
+
+## Purpose
+
+The project aims to provide stronger tools for:
+
+- understanding habitat suitability across the landscape
+- targeting survey effort more effectively
+- interpreting sites in their wider ecological context
+- prioritising conservation attention
+
+The application is intended as a **decision-support tool**, not a decision automation tool.
+
+### Product documentation
+
+Product and solution design docs live in [`docs/`](docs/). See [docs/README.md](docs/README.md) for overview and reading order.
+
+1. [Problem statement](docs/problem-statement.md) — the conservation and decision-support problem
+2. [Outcomes and product goal](docs/outcomes-and-product-goal.md) — intended outcomes and product goal
+3. [Users and use cases](docs/users-and-use-cases.md) — main users, needs and priority use cases
+4. [Product principles](docs/product-principles.md) — principles for scope, design and decision-making
+5. [MVP scope](docs/mvp-scope.md) — smallest useful version of the product
+6. [Solution architecture](docs/solution-architecture.md) — high-level architecture linking product goals to technical design  
+7. [Data models](docs/data-models.md) — data models (Model, catalog, PointInspection, DriverVariable)  
+8. [Infrastructure and deployment](docs/infrastructure-and-deployment.md) — how to run and deploy the app (GCP stack, cost guardrails, what to avoid)
 
 ## Features
 
-- Interactive map visualization of habitat suitability rasters
-- Vector overlay support (protected areas, sighting points)
-- Species and activity type selection
-- Raster statistics and metadata display
-- Point and area query tools
-- Export and sharing capabilities
+- Interactive map visualization of habitat suitability rasters (COGs added via admin upload)
+- Species and model selection (stable id per model; catalog in Firestore)
+- Point inspection and simple driver explanation
+- Interpretation guidance and caveats
+- Admin: add species and upload/register models (COGs) via UI or API
+- Vector overlay support (planned); export and sharing (planned)
 
 ## Tech Stack
 
-- **Backend**: FastAPI (Python)
-- **Frontend**: React + TypeScript
+- **Frontend**: React + TypeScript, deployed on Firebase Hosting (production: `/api` rewrites to backend)
+- **Backend**: FastAPI (Python) on Cloud Run
+- **Tiles**: TiTiler as a separate Cloud Run service (own container)
+- **Database**: Firestore (catalog, artifact paths)
+- **Storage**: Cloud Storage (COGs and uploads)
 - **Mapping**: MapLibre GL
-- **Raster Serving**: Cloud-Optimized GeoTIFFs (COGs) via TiTiler
 - **Styling**: Tailwind CSS
-- **State Management**: React Query
+- **State management**: React Query
 - **Authentication**: Firebase Auth
 
 ## Project Structure
@@ -63,18 +89,18 @@ This make Vite work - don't remove it.
 ### Backend
 
 The backend is built with FastAPI and provides:
-- REST API endpoints for species data
-- Raster tile serving via TiTiler
-- Vector data endpoints
-- Authentication services
+- `GET /models`, `GET /models/{id}` — catalog (models with artifact paths)
+- `GET /models/{id}/point` — point value and driver explanation
+- Admin: `POST /models`, `PUT /models/{id}` (auth-gated)
+- Authentication (Firebase Auth). Tiles are served by a separate TiTiler service; frontend builds tile URLs from model’s COG path.
 
 ### Frontend
 
 The frontend is a React TypeScript application featuring:
-- Interactive map interface
-- Species selection
-- Layer controls
-- Analysis tools
+- Model/species selector (from `GET /models`)
+- Interactive map (MapLibre; tiles via TiTiler)
+- Point inspection and interpretation guidance
+- Admin route for adding/editing models
 
 ## License
 
