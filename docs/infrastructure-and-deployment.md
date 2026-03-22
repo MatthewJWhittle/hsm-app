@@ -37,6 +37,22 @@ This document describes how to run and deploy the application: target architectu
 
 **Caveat:** Firebase does not mean “free forever”; cost safety comes from using the right products and setting limits (budgets, max-instances) as above.
 
+### TiTiler: CORS and GCS
+
+Map tiles are loaded from the **TiTiler Cloud Run URL**, not the Hosting `/api` origin, so the browser needs **CORS** on TiTiler: allowlist your Firebase Hosting origins for tile `GET`s (and any preflight TiTiler requires). Keep tile access read-only; auth stays on FastAPI.
+
+COGs stay in a **private** GCS bucket. The TiTiler Cloud Run service runs as a **service account** with **`storage.objectViewer`** (or tighter) on that bucket; raster paths are **`gs://…`** and TiTiler reads them via [ADC](https://cloud.google.com/docs/authentication/application-default-credentials) on Cloud Run. Signed URLs or public buckets are optional shortcuts, not the default.
+
+### Cold starts (scale-to-zero) and UX
+
+With **`min-instances=0`**, FastAPI and TiTiler can both **cold start** after idle—acceptable for cost; raise `min-instances` only if traffic justifies it.
+
+On load, **start both services together**: e.g. `GET /api/models` (or `/api/health`) **and** a small TiTiler request (health/metadata/`HEAD`—whatever your image exposes) so the tile service begins warming while the catalog loads. Show a **loading** state on the map until catalog (and ideally first tiles) are underway; progressive tile paint is normal.
+
+### Rate limiting and abuse
+
+Use **budgets**, **`max-instances`**, and **429**-style limits on the **FastAPI** routes that matter for cost or abuse (e.g. point query, admin writes)—not the same limits as **tiles** (the map issues many parallel tile requests by design). Cache **`GET /models`** on the client; avoid polling the catalog. Optional later: [App Check](https://firebase.google.com/docs/app-check), Cloud Armor, or CDN in front of TiTiler if needed.
+
 ---
 
 ## What to avoid (quiet cost drivers on GCP)

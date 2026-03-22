@@ -87,6 +87,7 @@ flowchart TB
 - **Responsibilities**: Serve web-ready tiles from COGs; support regional-to-local zoom; optional caching (CDN or response headers).
 - **Components**: COGs in GCS; **TiTiler as a separate Cloud Run service** (its own container). Frontend builds TiTiler tile URL from the model's suitability COG path.
 - **MVP**: Single suitability layer per model; no multi-species aggregation in tiles.
+- **Tiles vs API origin, cold starts:** TiTiler is a separate host from `/api`; see [Infrastructure — TiTiler (CORS, GCS, warm-up, limits)](infrastructure-and-deployment.md#titiler-cors-and-gcs).
 
 ### 3.3 Point and site inspection
 
@@ -117,7 +118,7 @@ flowchart TB
 
 ## 4. Data flow (MVP-focused)
 
-1. **App load**: Frontend calls `GET /models` once; list of models (id, species, activity, suitability_cog_path, ...). User sees model (or species/activity) selector and map. No second "get URL" request.
+1. **App load**: Frontend calls `GET /models` once; warm TiTiler in parallel on load ([Infrastructure](infrastructure-and-deployment.md#cold-starts-scale-to-zero-and-ux)). List of models (id, species, activity, suitability_cog_path, …). User sees selector and map. No second “get URL” request.
 2. **Model selected**: Frontend has full model from list; sets raster tile source from model.suitability_cog_path (build TiTiler URL). Map requests tiles on viewport/zoom.
 3. **User pans/zooms**: MapLibre requests tiles; TiTiler serves from COGs. Regional-to-local use case supported by zoom level and extent.
 4. **User clicks map**: Frontend calls `GET /models/{id}/point?lng=&lat=`. Response: PointInspection (value, drivers). Frontend shows value and “what’s driving suitability here” in plain language.

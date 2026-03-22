@@ -81,6 +81,10 @@ Uploaded suitability rasters (and driver rasters referenced from `driver_config`
 - **Compression** — Sensible compression (e.g. DEFLATE/LZW) and predictors where appropriate; avoids huge uncompressed objects in GCS.
 - **Band count** — Suitability layer: usually **one** interpretable band for the main map; multi-band files need a defined **which band** is suitability (record in metadata or `driver_config`).
 
+#### Expected artifact size (MVP)
+
+Target **under ~100 MB** per suitability COG so direct upload + validation on Cloud Run stays simple; switch to signed/resumable GCS upload if files grow larger.
+
 #### API behaviour
 
 - **`POST /models` / file upload:** Run validation **after** upload to a temporary object or **before** promoting to `models/{model_id}/suitability_cog.tif`. On failure, return **4xx** with a **clear message** (e.g. “not a valid COG”, “CRS must be EPSG:3857, got EPSG:27700”). Do not register the `Model` until validation succeeds.
