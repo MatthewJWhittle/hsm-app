@@ -25,6 +25,8 @@ interface MapControlPanelProps {
   onSpeciesChange: (species: string) => void
   onActivityChange: (activity: string) => void
   onOpacityChange: (opacity: number) => void
+  speciesOptions: string[]
+  activityOptions: string[]
 }
 
 export function MapControlPanel({
@@ -34,6 +36,8 @@ export function MapControlPanel({
   onSpeciesChange,
   onActivityChange,
   onOpacityChange,
+  speciesOptions,
+  activityOptions,
 }: MapControlPanelProps) {
   return (
     <FloatingPanel>
@@ -42,15 +46,9 @@ export function MapControlPanel({
       </Typography>
       
       <Box sx={{ mb: 2 }}>
-        <SpeciesSelector
-          value={selectedSpecies}
-          onChange={onSpeciesChange}
-        />
+        <SpeciesSelector value={selectedSpecies} options={speciesOptions} onChange={onSpeciesChange} />
 
-        <ActivitySelector
-          value={selectedActivity}
-          onChange={onActivityChange}
-        />
+        <ActivitySelector value={selectedActivity} options={activityOptions} onChange={onActivityChange} />
 
         <OpacityControl
           value={opacity}

@@ -5,6 +5,7 @@ description = "Habitat Suitability Model Visualiser Backend"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.115.12",
+    "pydantic-settings>=2.6.1",
     "firebase-admin>=6.9.0",
     "passlib[bcrypt]>=1.7.4",
     "pydantic>=2.11.5",

@@ -1,12 +1,13 @@
 import Map, { Layer, Source } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useEffect, useRef } from 'react';
+import { useRef } from 'react';
 
 interface MapComponentProps {
   opacity?: number;
+  cogPath?: string;
 }
 
-function MapComponent({ opacity = 0.5 }: MapComponentProps) {
+function MapComponent({ opacity = 0.5, cogPath = '' }: MapComponentProps) {
   const mapRef = useRef(null);
 
   // Define the raster layer style
@@ -19,17 +20,15 @@ function MapComponent({ opacity = 0.5 }: MapComponentProps) {
     }
   };
 
-  // construct the tile url
-  const rasterFile = "data/Myotis daubentonii_In flight_cog.tif";
-  const rasterFileEncoded = encodeURIComponent(rasterFile);
-  const params = {
-    url: `file:///${rasterFileEncoded}`,
-    colormap_name: "viridis",
-    rescale: "0,1"
-  }
-  const queryString = Object.entries(params)  
-  .map(([key, value]) => `${key}=${value}`)
-  .join('&');
+  // construct the tile url dynamically from cogPath
+  const absCogPath = cogPath.startsWith('/') ? cogPath : `/data/${cogPath}`;
+  const urlParam = `file:///${absCogPath.replace(/^\/+/, '')}`; // ensure file:///data/...
+  const searchParams = new URLSearchParams({
+    url: urlParam,
+    colormap_name: 'viridis',
+    rescale: '0,1',
+  });
+  const queryString = searchParams.toString();
   const tile_url = `http://localhost:8080/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?${queryString}`;
 
   return (
@@ -43,6 +42,7 @@ function MapComponent({ opacity = 0.5 }: MapComponentProps) {
       style={{width: "100%", height: "100%"}}
       mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
     >
+      {cogPath && (
       <Source
         id="hsm-source"
         type="raster"
@@ -55,6 +55,7 @@ function MapComponent({ opacity = 0.5 }: MapComponentProps) {
       >
         <Layer {...rasterLayer} />
       </Source>
+      )}
     </Map>
   );
 }

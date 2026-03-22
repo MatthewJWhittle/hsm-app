@@ -3,10 +3,11 @@ import type { SelectChangeEvent } from '@mui/material'
 
 interface SpeciesSelectorProps {
   value: string
+  options: string[]
   onChange: (species: string) => void
 }
 
-export function SpeciesSelector({ value, onChange }: SpeciesSelectorProps) {
+export function SpeciesSelector({ value, options, onChange }: SpeciesSelectorProps) {
   const handleChange = (event: SelectChangeEvent) => {
     onChange(event.target.value)
   }
@@ -19,10 +20,10 @@ export function SpeciesSelector({ value, onChange }: SpeciesSelectorProps) {
         label="Species"
         onChange={handleChange}
       >
-        <MenuItem value="bat">Bat</MenuItem>
-        <MenuItem value="bird">Bird</MenuItem>
-        <MenuItem value="mammal">Mammal</MenuItem>
+        {options.map((opt) => (
+          <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+        ))}
       </Select>
     </FormControl>
   )
-} 
+}

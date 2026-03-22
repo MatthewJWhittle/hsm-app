@@ -3,10 +3,11 @@ import type { SelectChangeEvent } from '@mui/material'
 
 interface ActivitySelectorProps {
   value: string
+  options: string[]
   onChange: (activity: string) => void
 }
 
-export function ActivitySelector({ value, onChange }: ActivitySelectorProps) {
+export function ActivitySelector({ value, options, onChange }: ActivitySelectorProps) {
   const handleChange = (event: SelectChangeEvent) => {
     onChange(event.target.value)
   }
@@ -19,10 +20,10 @@ export function ActivitySelector({ value, onChange }: ActivitySelectorProps) {
         label="Activity"
         onChange={handleChange}
       >
-        <MenuItem value="foraging">Foraging</MenuItem>
-        <MenuItem value="roosting">Roosting</MenuItem>
-        <MenuItem value="commuting">Commuting</MenuItem>
+        {options.map((opt) => (
+          <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+        ))}
       </Select>
     </FormControl>
   )
-} 
+}
