@@ -10,7 +10,7 @@ This folder holds product, architecture, and operational documentation. The set 
 4. [Product principles](product-principles.md) — principles for scope and design  
 5. [MVP scope](mvp-scope.md) — smallest useful version and must-haves  
 6. [Solution architecture](solution-architecture.md) — high-level architecture and subsystems  
-7. [Data models](data-models.md) — models (Model, catalog, PointInspection, DriverVariable), GCS upload layout and raster naming  
+7. [Data models](data-models.md) — models (Model, catalog, PointInspection, DriverVariable), GCS upload layout, naming, and COG/CRS validation  
 8. [Infrastructure and deployment](infrastructure-and-deployment.md) — GCP stack, cost control, what to avoid  
 
 Implementation detail (endpoints, components, phases): see [Application spec](../application-spec.md) in the repo root.

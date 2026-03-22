@@ -64,6 +64,29 @@ Rules for structured slugs:
 
 The repo may use a **flat** folder of COGs and a generated JSON index for local Docker (see `scripts/generate_hsm_index.py`). That flow is a **dev shortcut**, not the target upload contract. **New data** and **admin uploads** should follow the **folder-per-model + `suitability_cog.tif`** pattern above; migrate or re-index local samples when moving off the flat layout.
 
+### Upload validation (COG format and CRS)
+
+Uploaded suitability rasters (and driver rasters referenced from `driver_config`) should be **validated before** the backend writes the final object and commits the `Model` to the catalog. Otherwise the map tiles, legend, and point inspection can fail in opaque ways.
+
+#### Must pass (reject or quarantine if not met)
+
+1. **Cloud Optimized GeoTIFF (COG)** — Not merely GeoTIFF with a `.tif` name: the file should conform to COG expectations (internal tiling, layout suitable for range reads and overviews) so TiTiler and object storage behave well. Prefer creating with `gdal_translate -of COG` (as in [`scripts/convert_to_cog.sh`](../scripts/convert_to_cog.sh)) or equivalent ([`rio cogeo`](https://cogeotiff.github.io/rio-cogeo/) and similar). Validation can use GDAL/rasterio checks for COG structure or delegate to a short-lived job that opens the file and asserts COG/geo metadata.
+2. **Coordinate reference system** — **EPSG:3857 (WGS 84 / Pseudo-Mercator)** is the **contract** for suitability COGs served as web map tiles with MapLibre and TiTiler’s Web Mercator tile matrix. Reject files whose georeferencing is missing or whose CRS is not **3857** (unless you explicitly add a server-side reprojection step and document a different rule).  
+   - *Rationale:* One expected CRS keeps tile URLs, bounds, and point-inspection alignment predictable. Local prep in this repo reprojects to 3857 before COG creation (see `convert_to_cog.sh`).  
+   - If a source model is in another CRS (e.g. **EPSG:27700** for UK grids), **reproject to 3857 offline** (or in a dedicated ingest job) *before* validation passes — do not rely on the viewer to guess.
+
+#### Should pass (warn or block depending on policy)
+
+- **Overviews** — Present for COGs used at multiple zoom levels (typical COG creation includes overviews).
+- **Compression** — Sensible compression (e.g. DEFLATE/LZW) and predictors where appropriate; avoids huge uncompressed objects in GCS.
+- **Band count** — Suitability layer: usually **one** interpretable band for the main map; multi-band files need a defined **which band** is suitability (record in metadata or `driver_config`).
+
+#### API behaviour
+
+- **`POST /models` / file upload:** Run validation **after** upload to a temporary object or **before** promoting to `models/{model_id}/suitability_cog.tif`. On failure, return **4xx** with a **clear message** (e.g. “not a valid COG”, “CRS must be EPSG:3857, got EPSG:27700”). Do not register the `Model` until validation succeeds.
+- **`PUT /models/{id}`** replacing the COG: same checks.
+- Optionally store validation timestamp or checksum on the model document for audit.
+
 ### Driver and feature linkage
 
 Drivers must be available to the API for point inspection. Each model is tied to a **specific set of features** (the environment variables / inputs that model was built with). Design options to capture in the data model:
@@ -92,7 +115,7 @@ Used for legend (min/max, units), extent, and “what is this layer”. Can be f
 |-------|------|-------------|
 | `band_min` | number? | Min value in band (e.g. suitability 0–1). |
 | `band_max` | number? | Max value in band. |
-| `crs` | string? | CRS identifier (e.g. "EPSG:4326"). |
+| `crs` | string? | CRS identifier from the raster (for web tiles, suitability COGs are expected in **EPSG:3857**; see [upload validation](#upload-validation-cog-format-and-crs)). |
 | `bounds` | [number, number, number, number]? | [minX, minY, maxX, maxY]. |
 | `resolution` | number? | Pixel size (optional). |
 
