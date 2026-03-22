@@ -25,6 +25,45 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 
 **API:** `GET /models` returns a list of Model. `GET /models/{id}` returns one Model. Admin: `POST /models` (body: species, activity, COG upload or path, optional metadata; backend assigns id, writes artifacts to a named folder structure, stores `artifact_root` and paths in DB), `PUT /models/{id}`.
 
+### Raster files, folders, and naming (uploads and storage)
+
+Human-readable **species** and **activity** belong in the **catalog** (Firestore `Model` fields), not in a fragile filename convention. Object storage should use a layout that **scales** as you add models, retrain, and attach driver rasters: no global uniqueness in a single long filename, no parsing display names out of paths.
+
+#### Recommended pattern (production and admin upload)
+
+1. **One prefix per model** — Set `artifact_root` to a dedicated prefix for that model only, e.g. `gs://{bucket}/models/{model_id}/` (trailing slash implied in conventions below).
+2. **Fixed blob names inside that prefix** — Use the **same basename** for the main suitability COG in every model folder, e.g. **`suitability_cog.tif`**. Uniqueness comes from **`model_id` in the path**, not from encoding the species in the filename. Store `suitability_cog_path` as the full object path or as relative to `artifact_root` (e.g. `suitability_cog.tif`), consistently.
+3. **Optional sidecar files in the same prefix** — e.g. `drivers_cog.tif`, `metadata.json`, or other artifacts; reference them from `driver_config` or optional fields so names stay stable and discoverable.
+
+This supports many models, retrains (new `model_id` or new version segment), and tooling that always looks for `…/suitability_cog.tif` under a known root.
+
+#### `model_id` (stable identifier)
+
+Assign **`id` once on create**; treat it as immutable for that logical model. It must be **unique**, **stable**, and **safe in URLs and object keys** (no spaces, minimal punctuation).
+
+| Strategy | When to use | Shape (examples) |
+|----------|-------------|------------------|
+| **Opaque id** | Maximum robustness; no parsing | `mdl_01ARZ3NDEKTSV4RRFFQ69G5FAV` (ULID), or UUID with a short prefix |
+| **Structured slug** | Human-readable buckets and logs | Lowercase **ASCII slug** segments separated by **`--` (double hyphen)** between major parts so single hyphens inside a segment stay unambiguous: e.g. `myotis-daubentonii--in-flight` |
+
+Rules for structured slugs:
+
+- Normalise unicode (e.g. NFC), map to lowercase ASCII where possible; replace spaces with single hyphens; strip or replace characters that are not `[a-z0-9-]`.
+- Use **`--` only** between **taxon/concept** and **activity** (and optionally before a version segment), e.g. `myotis-daubentonii--in-flight--v2025-03` for a retrains or dated run.
+- Cap length (e.g. ≤ 128 characters) so keys stay comfortable in Firestore and logs.
+
+**Retrains / new versions:** Prefer a **new `model_id`** (or a new version segment in the slug) rather than overwriting objects in place, so historic links and audits stay meaningful unless you explicitly support replace-in-place.
+
+#### What to avoid
+
+- **Single flat directory** where the only differentiator is a long filename built from display strings (spaces, mixed case, arbitrary punctuation) — does not scale and is hard to make URL-safe.
+- **Inferring species or activity by splitting on `_`** from filenames — breaks when taxon names contain underscores or variants; the catalog must hold display names.
+- **Relying on filename alone** for identity — the database (`id` + paths) is the source of truth after upload.
+
+#### Local development (transitional)
+
+The repo may use a **flat** folder of COGs and a generated JSON index for local Docker (see `scripts/generate_hsm_index.py`). That flow is a **dev shortcut**, not the target upload contract. **New data** and **admin uploads** should follow the **folder-per-model + `suitability_cog.tif`** pattern above; migrate or re-index local samples when moving off the flat layout.
+
 ### Driver and feature linkage
 
 Drivers must be available to the API for point inspection. Each model is tied to a **specific set of features** (the environment variables / inputs that model was built with). Design options to capture in the data model:

@@ -67,7 +67,7 @@ Recommended for solo-dev cost control: **Firebase Hosting + Cloud Run + Firestor
   * Tiles: frontend builds TiTiler URL from `model.suitability_cog_path` (TiTiler is a separate Cloud Run service).
   * `GET /vectors/{layer}.geojson` → static vector data
   * `POST /auth/token` → OAuth2 token
-  * **Admin:** `POST /models` → create model (body: species, activity, COG upload or path, optional metadata/driver config; backend assigns id, writes artifacts to storage with sensible folder structure, stores artifact_root and paths in DB); `PUT /models/{id}` → update model
+  * **Admin:** `POST /models` → create model (body: species, activity, COG upload or path, optional metadata/driver config; backend assigns id, writes artifacts to storage with sensible folder structure, stores artifact_root and paths in DB); `PUT /models/{id}` → update model. **Object naming:** follow [Data models — raster naming](docs/data-models.md#raster-files-folders-and-naming-uploads-and-storage) (folder per `model_id`, fixed `suitability_cog.tif`, catalog holds display names).
 * **Frontend Components**
 
   * `App`: root, routes
