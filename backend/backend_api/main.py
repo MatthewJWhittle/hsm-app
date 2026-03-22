@@ -1,33 +1,30 @@
-import json
-import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+
+from backend_api.catalog import catalog_to_models, load_index
+from backend_api.schemas import Model
 from pydantic_settings import BaseSettings
 
+
 class Settings(BaseSettings):
-    hsm_index_path: str = "/data/hsm_index.json"
+    """Path to local JSON catalog (Firestore snapshot shape; see docs/data-models.md)."""
+
+    catalog_path: str = "/data/catalog/firestore_models.json"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Load configuration and index at startup
-    settings = Settings()  # loads from env if present
-    index_path = settings.hsm_index_path
+    settings = Settings()
     app.state.settings = settings
-    app.state.hsm_index_path = index_path
-    try:
-        if os.path.exists(index_path):
-            with open(index_path, 'r', encoding='utf-8') as f:
-                app.state.hsm_index = json.load(f)
-        else:
-            app.state.hsm_index = None
-    except Exception:
-        app.state.hsm_index = None
+    app.state.catalog_path = settings.catalog_path
+    raw = load_index(settings.catalog_path)
+    app.state.catalog_raw = raw
+    models_list = catalog_to_models(raw)
+    app.state.models = models_list
+    app.state.models_by_id = {m.id: m for m in models_list}
     yield
-    # No shutdown actions required
 
 
 app = FastAPI(
@@ -37,64 +34,47 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to HSM Visualiser API"}
 
+
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"} 
+    return {"status": "healthy"}
 
 
-def _parse_filename(filename: str):
-    # expects ..._cog.tif
-    lower = filename.lower()
-    if not lower.endswith("_cog.tif"):
-        return None, None
-    stem = filename[:-8]  # remove _cog.tif
-    if "_" not in stem:
-        return None, None
-    species, activity = stem.rsplit("_", 1)
-    return species, activity
+def _models(request: Request) -> list[Model]:
+    return getattr(request.app.state, "models", []) or []
 
 
-@app.get("/hsm/options")
-async def list_options(request: Request):
-    data = getattr(request.app.state, 'hsm_index', None)
-    if not data:
-        return JSONResponse(status_code=404, content={"error": "index not found"})
-    # Return species, activities, and the list of (species, activity, cog_path)
-    items = data.get("items", [])
-    return JSONResponse(content={
-        "species": data.get("species", []),
-        "activities": data.get("activities", []),
-        "items": items,
-    })
-
-
-@app.get("/hsm/url")
-async def get_cog_url(request: Request, species: str = Query(...), activity: str = Query(...)):
-    data = getattr(request.app.state, 'hsm_index', None)
-    if not data:
-        return JSONResponse(status_code=404, content={"error": "index not found"})
-    by_species = data.get("by_species", {})
-    cog_path = by_species.get(species, {}).get(activity)
-    if not cog_path:
-        return JSONResponse(
+@app.get("/models", response_model=list[Model])
+async def list_models(request: Request):
+    """List all suitability models (catalog). Aligns with docs/data-models.md."""
+    if not _models(request) and not getattr(request.app.state, "catalog_raw", None):
+        raise HTTPException(
             status_code=404,
-            content={
-                "error": "not found",
-                "species": species,
-                "activity": activity,
-            },
+            detail="Catalog not found; set CATALOG_PATH or add data/catalog/firestore_models.json",
         )
-    return JSONResponse(content={"cog_path": cog_path})
+    return _models(request)
+
+
+@app.get("/models/{model_id}", response_model=Model)
+async def get_model(model_id: str, request: Request):
+    m = getattr(request.app.state, "models_by_id", {}).get(model_id)
+    if m is not None:
+        return m
+    raise HTTPException(status_code=404, detail="model not found")

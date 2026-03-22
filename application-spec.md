@@ -150,11 +150,11 @@ Design choices that make later scope easier (see [Solution architecture §7](doc
 3. **Local Data & Mock Services**
 
    * Store sample COGs and GeoJSON in `data/` and mount into TiTiler container.
-   * Use Firebase Emulator Suite (Auth & Firestore) for auth and optional catalog; or JSON index file (e.g. `hsm_index.json`) for catalog to match production Firestore shape when migrating.
+   * Use Firebase Emulator Suite (Auth & Firestore) for auth and optional catalog; or local Firestore snapshot JSON (e.g. `data/catalog/firestore_models.json`) for catalog to match production Firestore shape when migrating.
 4. **FastAPI Development**
 
-   * Develop core endpoints (`/species`, `/tiles`, `/vectors`, `/auth`) with Pydantic models.
-   * Implement anonymisation logic locally reading from `data/`.
+   * Develop core endpoints aligned with [solution architecture](docs/solution-architecture.md): `GET /models`, `GET /models/{id}`; later `GET /models/{id}/point`, `/vectors`, `/auth` as scope grows. Use Pydantic models.
+   * Serve the local catalog from JSON under `data/` (see `data/catalog/firestore_models.json`).
 5. **Frontend Development**
 
    * Build map components and selectors using MapLibre and Tailwind.

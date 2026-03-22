@@ -6,12 +6,17 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]>=0.115.12",
     "pydantic-settings>=2.6.1",
-    "firebase-admin>=6.9.0",
-    "passlib[bcrypt]>=1.7.4",
     "pydantic>=2.11.5",
-    "python-jose[cryptography]>=3.5.0",
     "python-multipart>=0.0.20",
     "uvicorn>=0.34.3",
+]
+
+[project.optional-dependencies]
+# Heavy stack (Google API clients, etc.); install when wiring Firebase Auth / admin APIs.
+auth = [
+    "firebase-admin>=6.9.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-jose[cryptography]>=3.5.0",
 ]
 
 [build-system]
@@ -32,3 +37,8 @@ ignore = []
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"] 
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

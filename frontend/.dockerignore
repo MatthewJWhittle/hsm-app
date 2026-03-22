@@ -1,0 +1,20 @@
+# Installed in image via npm ci / npm install
+node_modules/
+
+# Build output (large)
+dist/
+build/
+
+# Dev / tooling
+.vscode/
+.idea/
+*.log
+npm-debug.log*
+
+# Tests (not needed for dev server image)
+coverage/
+**/*.test.*
+**/*.spec.*
+
+Dockerfile
+.dockerignore

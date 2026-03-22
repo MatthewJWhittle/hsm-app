@@ -62,7 +62,7 @@ Rules for structured slugs:
 
 #### Local development (transitional)
 
-The repo may use a **flat** folder of COGs and a generated JSON index for local Docker (see `scripts/generate_hsm_index.py`). That flow is a **dev shortcut**, not the target upload contract. **New data** and **admin uploads** should follow the **folder-per-model + `suitability_cog.tif`** pattern above; migrate or re-index local samples when moving off the flat layout.
+The repo may use a **flat** folder of COGs and a generated Firestore snapshot JSON for local Docker (`data/catalog/firestore_models.json`; see `scripts/generate_hsm_index.py`). That flow is a **dev shortcut**, not the target upload contract. **New data** and **admin uploads** should follow the **folder-per-model + `suitability_cog.tif`** pattern above; migrate or re-index local samples when moving off the flat layout.
 
 ### Upload validation (COG format and CRS)
 

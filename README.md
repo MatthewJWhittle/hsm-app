@@ -53,8 +53,8 @@ Product and solution design docs live in [`docs/`](docs/). See [docs/README.md](
 hsm-app/
 ├── backend/           # FastAPI application
 ├── frontend/         # React TypeScript application
-├── data/            # Sample data for development
-└── docker/          # Docker configuration files
+├── data/             # Sample data for development (gitignored)
+└── docker-compose.yml
 ```
 
 ## Prerequisites
@@ -79,6 +79,12 @@ hsm-app/
 `-V` : Recreate anonymous volumes instead of retrieving data from the previous containers.
 This make Vite work - don't remove it.
 
+The backend service mounts an **anonymous volume** on `/app/.venv` (same idea as the frontend’s anonymous `/app/node_modules`), so the bind-mounted repo does not overlay the container venv with your Mac `.venv`. The startup command runs `uv sync --no-dev` into that empty mount (runtime deps only; no pytest). The image **COPY** is scoped to `pyproject.toml`, `uv.lock`, and `backend_api/` only — not tests or the whole repo root.
+
+Optional Firebase/JOSE dependencies live under `[project.optional-dependencies] auth` in `backend/pyproject.toml`; install with `uv sync --extra auth` when you add those imports.
+
+**If Docker reports `no space left on device`:** see [Root cause: Docker “no space left on device”](#root-cause-docker-no-space-left-on-device) below.
+
 3. Access the applications:
    - Frontend: http://localhost:5173
    - Backend API: http://localhost:8000
@@ -89,21 +95,39 @@ This make Vite work - don't remove it.
 
 ### Local prototype (this repo today)
 
-For local development, the catalog is a JSON index on disk (see `data/hsm_index.json`), built from COGs under `data/hsm-predictions/cog/` via [`scripts/generate_hsm_index.py`](scripts/generate_hsm_index.py) (also invoked at the end of [`scripts/convert_to_cog.sh`](scripts/convert_to_cog.sh)). The backend loads that file at startup (`HSM_INDEX_PATH`, default `/data/hsm_index.json` in Docker).
+For local development, the catalog is a **Firestore-shaped JSON snapshot** at [`data/catalog/firestore_models.json`](data/catalog/firestore_models.json): collection id `models`, with one object per document (document id = `Model.id`). Regenerate it from COGs under `data/hsm-predictions/cog/` with [`scripts/generate_hsm_index.py`](scripts/generate_hsm_index.py) (also invoked at the end of [`scripts/convert_to_cog.sh`](scripts/convert_to_cog.sh)). The backend loads that file at startup (`CATALOG_PATH`, default `/data/catalog/firestore_models.json` in Docker). The catalog is read **once at process start**; editing the JSON under `/data` does not hot-reload — **restart the backend** to pick up catalog changes. Legacy `items[]`-only indexes are still supported if you omit `documents` and use the old shape.
 
 **Backend (FastAPI)**
 
-- `GET /hsm/options` — species, activities, and items (`species`, `activity`, `cog_path`)
-- `GET /hsm/url?species=&activity=` — resolves `cog_path` for the TiTiler layer
+- `GET /models` — list catalog entries ([`Model`](docs/data-models.md)); `404` if the catalog file is missing
+- `GET /models/{id}` — single model
 
 **Frontend**
 
-- Species and activity dropdowns from `/hsm/options`; raster path from `/hsm/url`
-- MapLibre + TiTiler at `http://localhost:8080` using paths that match the mounted `./data` volume
+- Model dropdown from `GET /models` via the Vite dev proxy (`/api` → backend). Locally, set `VITE_API_BASE=/api` (default). For production builds served without the proxy, set `VITE_API_BASE` to the full API origin if needed.
+- Raster tiles: MapLibre requests TiTiler at `VITE_TITILER_URL` (default `http://localhost:8080`) using `file:///…` paths that match the `./data` mount in Docker and Compose.
 
-### Target production API
+**Docker Compose (frontend dev server)**
 
-The product docs and [`application-spec.md`](application-spec.md) describe the API to implement next: Firestore-backed catalog, Firebase Auth, and resource-oriented routes such as `GET /models`, `GET /models/{id}`, `GET /models/{id}/point`, plus admin `POST/PUT /models`. The frontend will use relative `/api/...` URLs behind Firebase Hosting rewrites to Cloud Run.
+- The Vite proxy target must reach the API from the frontend container: `API_PROXY_TARGET=http://backend:8000` is set in Compose. Local `npm run dev` without Docker uses `http://127.0.0.1:8000` by default.
+
+**Backend tests**
+
+```bash
+cd backend && uv run pytest
+```
+
+### Next steps
+
+Firestore-backed catalog, Firebase Auth, `GET /models/{id}/point`, and admin `POST/PUT /models` are described in [`application-spec.md`](application-spec.md). The frontend will keep using relative `/api/...` URLs behind Firebase Hosting rewrites to Cloud Run.
+
+### Root cause: Docker “no space left on device”
+
+That message means the **storage backing Docker’s writes** refused the operation because **there was not enough free space left** (or the filesystem hit a quota). On Docker Desktop for Mac, writes usually go to Docker’s **Linux VM disk image**; it has a **fixed maximum size** in Settings → Resources, and it can fill up from images, build cache, containers, and volumes.
+
+The path shown in the error (for example under `/var/lib/docker/volumes/...` or a file inside `node_modules` or a Python package) is **where the write failed**, not proof that *that file* is misconfigured. Large dependencies only explain **why the next write needed many megabytes**; they are not the root cause. The root cause is **insufficient free space** in Docker’s disk image and/or on the host drive.
+
+**What to do:** check free space on the Mac; open Docker Desktop → **Settings → Resources** and review **disk image size** and usage; run `docker system df` and reclaim space with `docker system prune` (and remove unused volumes only if you accept losing that data). Increasing the disk image limit or freeing host disk fixes the issue; trimming `COPY` in Dockerfiles does not fix a full disk.
 
 ## License
 

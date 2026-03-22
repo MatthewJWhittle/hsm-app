@@ -1,0 +1,126 @@
+{
+  "collection_id": "models",
+  "description": "Local snapshot of the Firestore `models` collection (see docs/data-models.md). Each entry is one document; `id` is the Firestore document id.",
+  "generated_at": "2026-03-22T20:59:01.377086+00:00",
+  "documents": [
+    {
+      "id": "myotis-brandtii--roost",
+      "species": "Myotis brandtii",
+      "activity": "Roost",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "myotis_brandtii_roost_cog.tif"
+    },
+    {
+      "id": "myotis-daubentonii--in-flight",
+      "species": "Myotis daubentonii",
+      "activity": "In flight",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "myotis_daubentonii_in_flight_cog.tif"
+    },
+    {
+      "id": "myotis-daubentonii--roost",
+      "species": "Myotis daubentonii",
+      "activity": "Roost",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "myotis_daubentonii_roost_cog.tif"
+    },
+    {
+      "id": "myotis-mystacinus--in-flight",
+      "species": "Myotis mystacinus",
+      "activity": "In flight",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "myotis_mystacinus_in_flight_cog.tif"
+    },
+    {
+      "id": "myotis-mystacinus--roost",
+      "species": "Myotis mystacinus",
+      "activity": "Roost",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "myotis_mystacinus_roost_cog.tif"
+    },
+    {
+      "id": "myotis-nattereri--in-flight",
+      "species": "Myotis nattereri",
+      "activity": "In flight",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "myotis_nattereri_in_flight_cog.tif"
+    },
+    {
+      "id": "myotis-nattereri--roost",
+      "species": "Myotis nattereri",
+      "activity": "Roost",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "myotis_nattereri_roost_cog.tif"
+    },
+    {
+      "id": "nyctalus-leisleri--in-flight",
+      "species": "Nyctalus leisleri",
+      "activity": "In flight",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "nyctalus_leisleri_in_flight_cog.tif"
+    },
+    {
+      "id": "nyctalus-leisleri--roost",
+      "species": "Nyctalus leisleri",
+      "activity": "Roost",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "nyctalus_leisleri_roost_cog.tif"
+    },
+    {
+      "id": "nyctalus-noctula--in-flight",
+      "species": "Nyctalus noctula",
+      "activity": "In flight",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "nyctalus_noctula_in_flight_cog.tif"
+    },
+    {
+      "id": "nyctalus-noctula--roost",
+      "species": "Nyctalus noctula",
+      "activity": "Roost",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "nyctalus_noctula_roost_cog.tif"
+    },
+    {
+      "id": "pipistrellus-pipistrellus--in-flight",
+      "species": "Pipistrellus pipistrellus",
+      "activity": "In flight",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "pipistrellus_pipistrellus_in_flight_cog.tif"
+    },
+    {
+      "id": "pipistrellus-pipistrellus--roost",
+      "species": "Pipistrellus pipistrellus",
+      "activity": "Roost",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "pipistrellus_pipistrellus_roost_cog.tif"
+    },
+    {
+      "id": "pipistrellus-pygmaeus--in-flight",
+      "species": "Pipistrellus pygmaeus",
+      "activity": "In flight",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "pipistrellus_pygmaeus_in_flight_cog.tif"
+    },
+    {
+      "id": "pipistrellus-pygmaeus--roost",
+      "species": "Pipistrellus pygmaeus",
+      "activity": "Roost",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "pipistrellus_pygmaeus_roost_cog.tif"
+    },
+    {
+      "id": "plecotus-auritus--in-flight",
+      "species": "Plecotus auritus",
+      "activity": "In flight",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "plecotus_auritus_in_flight_cog.tif"
+    },
+    {
+      "id": "plecotus-auritus--roost",
+      "species": "Plecotus auritus",
+      "activity": "Roost",
+      "artifact_root": "/data/hsm-predictions/cog",
+      "suitability_cog_path": "plecotus_auritus_roost_cog.tif"
+    }
+  ]
+}
