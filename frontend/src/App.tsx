@@ -3,7 +3,7 @@ import MapComponent from './components/Map'
 import { useEffect, useMemo, useState } from 'react'
 import { MapControlPanel } from './components/map/MapControlPanel'
 import type { Model } from './types/model'
-import { apiBase } from './lib/apiBase'
+import { apiBase } from './utils/apiBase'
 
 function App() {
   const [models, setModels] = useState<Model[]>([])

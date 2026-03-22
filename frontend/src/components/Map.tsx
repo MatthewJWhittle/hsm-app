@@ -2,8 +2,8 @@ import Map, { Layer, Source } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useMemo, useRef } from 'react'
 import type { Model } from '../types/model'
-import { resolveSuitabilityPath } from '../lib/cogPath'
-import { titilerBase } from '../lib/apiBase'
+import { resolveSuitabilityPath } from '../utils/cogPath'
+import { titilerBase } from '../utils/apiBase'
 
 interface MapComponentProps {
   model: Model | null

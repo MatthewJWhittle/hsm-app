@@ -51,10 +51,11 @@ Product and solution design docs live in [`docs/`](docs/). See [docs/README.md](
 
 ```
 hsm-app/
-├── backend/           # FastAPI application
-├── frontend/         # React TypeScript application
-├── data/             # Sample data for development (gitignored)
-└── docker-compose.yml
+├── backend/           # FastAPI application (.gitignore for Python/uv)
+├── frontend/          # React + TypeScript (.gitignore for Node/Vite)
+├── data/              # Sample data (see data/.gitignore)
+├── docker-compose.yml
+└── .gitignore         # Repo-wide only; backend/ and frontend/ add their own
 ```
 
 ## Prerequisites
