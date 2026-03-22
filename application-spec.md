@@ -71,7 +71,7 @@ Recommended for solo-dev cost control: **Firebase Hosting + Cloud Run + Firestor
 * **Frontend Components**
 
   * `App`: root, routes
-  * `MapView`: initialises Mapbox, loads layers
+  * `MapView`: initialises MapLibre GL, loads layers
   * Model/species selector: fetches `GET /models`, builds dropdowns from list; selection uses model.id and model.suitability_cog_path for tiles (no second “get URL” request)
   * `LayerControlPanel`: toggles layers, opacity
   * `Legend`: dynamic colour ramp

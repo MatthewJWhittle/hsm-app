@@ -80,27 +80,30 @@ hsm-app/
 This make Vite work - don't remove it.
 
 3. Access the applications:
-   - Frontend: http://localhost:3000
+   - Frontend: http://localhost:5173
    - Backend API: http://localhost:8000
-   - API Documentation: http://localhost:8000/docs
+   - API docs: http://localhost:8000/docs
+   - TiTiler (local tiles): http://localhost:8080
 
 ## Development
 
-### Backend
+### Local prototype (this repo today)
 
-The backend is built with FastAPI and provides:
-- `GET /models`, `GET /models/{id}` — catalog (models with artifact paths)
-- `GET /models/{id}/point` — point value and driver explanation
-- Admin: `POST /models`, `PUT /models/{id}` (auth-gated)
-- Authentication (Firebase Auth). Tiles are served by a separate TiTiler service; frontend builds tile URLs from model’s COG path.
+For local development, the catalog is a JSON index on disk (see `data/hsm_index.json`), built from COGs under `data/hsm-predictions/cog/` via [`scripts/generate_hsm_index.py`](scripts/generate_hsm_index.py) (also invoked at the end of [`scripts/convert_to_cog.sh`](scripts/convert_to_cog.sh)). The backend loads that file at startup (`HSM_INDEX_PATH`, default `/data/hsm_index.json` in Docker).
 
-### Frontend
+**Backend (FastAPI)**
 
-The frontend is a React TypeScript application featuring:
-- Model/species selector (from `GET /models`)
-- Interactive map (MapLibre; tiles via TiTiler)
-- Point inspection and interpretation guidance
-- Admin route for adding/editing models
+- `GET /hsm/options` — species, activities, and items (`species`, `activity`, `cog_path`)
+- `GET /hsm/url?species=&activity=` — resolves `cog_path` for the TiTiler layer
+
+**Frontend**
+
+- Species and activity dropdowns from `/hsm/options`; raster path from `/hsm/url`
+- MapLibre + TiTiler at `http://localhost:8080` using paths that match the mounted `./data` volume
+
+### Target production API
+
+The product docs and [`application-spec.md`](application-spec.md) describe the API to implement next: Firestore-backed catalog, Firebase Auth, and resource-oriented routes such as `GET /models`, `GET /models/{id}`, `GET /models/{id}/point`, plus admin `POST/PUT /models`. The frontend will use relative `/api/...` URLs behind Firebase Hosting rewrites to Cloud Run.
 
 ## License
 
