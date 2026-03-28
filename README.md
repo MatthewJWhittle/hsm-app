@@ -113,9 +113,7 @@ Ports avoid clashing with TiTiler on **8080**. If the Firestore page at `/firest
 
 **Optional file catalog (no Firestore for models):** set **`CATALOG_BACKEND=file`**, **`CATALOG_PATH=/data/catalog/firestore_models.json`**, and remove **`FIRESTORE_EMULATOR_HOST`** / **`CATALOG_BACKEND=firestore`** from the backend service so the map works from the JSON snapshot without seeding the emulator.
 
-With **`FIRESTORE_DEV_SEED_JSON`** (set in **`docker-compose.yml`** for the backend), an **empty** Firestore `models` collection is filled once at API startup from **`data/catalog/firestore_models.json`**. Remove or unset that variable if you want an empty catalog until you add documents manually.
-
-You can still **seed** the `models` collection (see below), use **export/import**, or rely on **`GET /models`** — it returns **`[]`** only when Firestore has no valid model documents.
+**`GET /models`** returns **`[]`** until the Firestore **`models`** collection has data. Populate it by **seeding** from JSON (below), **export/import**, or the Emulator UI. Dev seeding lives under **`backend/scripts/`** (`seed_firestore_emulator.py`, `firestore_seed_catalog.py`), not in the API package.
 
 **Seed Firestore from the JSON catalog (repeatable):** with emulators up, from the repo root:
 

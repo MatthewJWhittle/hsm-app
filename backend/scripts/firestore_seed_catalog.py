@@ -1,4 +1,7 @@
-"""Write Firestore-shaped JSON (``documents[]``) into a Firestore ``models`` collection."""
+"""Dev-only: write Firestore-shaped JSON (``documents[]``) into Firestore.
+
+Used by ``seed_firestore_emulator.py``; not part of the API package.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +21,7 @@ def seed_models_from_catalog_json(
     """
     Read ``documents[]`` from ``catalog_path`` and ``set`` each document (id from ``id`` field).
 
-    Requires ``FIRESTORE_EMULATOR_HOST`` (or credentials) to be configured before creating the client.
+    Requires ``FIRESTORE_EMULATOR_HOST`` (or credentials) before creating the client.
     Returns the number of documents written.
     """
     raw = json.loads(catalog_path.read_text(encoding="utf-8"))

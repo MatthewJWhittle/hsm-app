@@ -2,6 +2,7 @@
 """Seed the Firestore emulator `models` collection from the local JSON snapshot.
 
 Reads the same shape as ``data/catalog/firestore_models.json`` (``documents[]``).
+Implementation: ``firestore_seed_catalog.py`` (dev tooling, not part of ``backend_api``).
 Requires ``google-cloud-firestore`` (included in backend deps).
 
 Usage (emulators running, default ports):
@@ -27,6 +28,12 @@ import argparse
 import os
 import sys
 from pathlib import Path
+
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
+from firestore_seed_catalog import seed_models_from_catalog_json
 
 
 def main() -> int:
@@ -61,8 +68,6 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-
-    from backend_api.firestore_seed import seed_models_from_catalog_json
 
     try:
         count = seed_models_from_catalog_json(
