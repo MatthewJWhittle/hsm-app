@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
 from typing import Any, Protocol
+
+# Firestore emulator often accepts connections a few seconds after the process starts.
+_FIRESTORE_EMULATOR_READ_RETRIES = 15
+_FIRESTORE_EMULATOR_READ_DELAY_SEC = 0.5
 
 from google.cloud import firestore
 from google.cloud.firestore_v1 import DocumentSnapshot
@@ -128,26 +134,41 @@ class FirestoreCatalogService:
 
         coll = client.collection(self._settings.firestore_models_collection)
         models: list[Model] = []
-        try:
-            for doc in coll.stream():
-                try:
-                    payload = _snapshot_to_model_dict(doc)
-                    models.append(Model.model_validate(payload))
-                except ValidationError:
-                    logger.exception(
-                        "Firestore document %s is not a valid Model; fix catalog data",
-                        doc.id,
+        use_emulator = bool(os.environ.get("FIRESTORE_EMULATOR_HOST"))
+        max_attempts = (
+            _FIRESTORE_EMULATOR_READ_RETRIES if use_emulator else 1
+        )
+        for attempt in range(max_attempts):
+            try:
+                models = []
+                for doc in coll.stream():
+                    try:
+                        payload = _snapshot_to_model_dict(doc)
+                        models.append(Model.model_validate(payload))
+                    except ValidationError:
+                        logger.exception(
+                            "Firestore document %s is not a valid Model; fix catalog data",
+                            doc.id,
+                        )
+                        self.validation_error = CATALOG_VALIDATION_DETAIL
+                        self.models = []
+                        self._models_by_id = {}
+                        return
+                break
+            except Exception as e:
+                if attempt == max_attempts - 1:
+                    logger.exception("Failed to read Firestore catalog")
+                    self.load_error = (
+                        "Could not read catalog from Firestore; see server logs for details."
                     )
-                    self.validation_error = CATALOG_VALIDATION_DETAIL
-                    self.models = []
-                    self._models_by_id = {}
                     return
-        except Exception:
-            logger.exception("Failed to read Firestore catalog")
-            self.load_error = (
-                "Could not read catalog from Firestore; see server logs for details."
-            )
-            return
+                logger.warning(
+                    "Firestore catalog read failed (attempt %s/%s), retrying: %s",
+                    attempt + 1,
+                    max_attempts,
+                    e,
+                )
+                time.sleep(_FIRESTORE_EMULATOR_READ_DELAY_SEC)
 
         models.sort(key=lambda m: m.id)
         self.models = models

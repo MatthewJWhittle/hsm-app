@@ -1,6 +1,5 @@
 # Dev stack: backend, frontend, TiTiler, Firebase emulators (Firestore + Auth).
-# Default catalog remains file-backed JSON; point the backend at the Firestore emulator when ready
-# (see backend.environment and README).
+# Backend catalog uses the Firestore emulator (`models` collection); seed via README or export/import.
 
 services:
   firebase-emulators:
@@ -52,13 +51,15 @@ services:
     environment:
       - ENVIRONMENT=development
       - DATABASE_URL=sqlite:///./app.db
-      - CATALOG_BACKEND=file
-      - CATALOG_PATH=/data/catalog/firestore_models.json
-      # Use Firestore emulator (compose service `firebase-emulators`) instead of JSON catalog:
-      # - CATALOG_BACKEND=firestore
-      # - GOOGLE_CLOUD_PROJECT=hsm-dashboard
-      # - FIRESTORE_EMULATOR_HOST=firebase-emulators:8085
-      # (Seed the `models` collection first, or GET /models will be empty.)
+      - CATALOG_BACKEND=firestore
+      - GOOGLE_CLOUD_PROJECT=hsm-dashboard
+      - FIRESTORE_EMULATOR_HOST=firebase-emulators:8085
+      # Optional: JSON snapshot instead of Firestore (no emulator needed for catalog):
+      # - CATALOG_BACKEND=file
+      # - CATALOG_PATH=/data/catalog/firestore_models.json
+    depends_on:
+      firebase-emulators:
+        condition: service_started
     command: >
       sh -c "uv sync --no-dev && uv run uvicorn backend_api.main:app --host 0.0.0.0 --port 8000 --reload"
     healthcheck:

@@ -109,15 +109,11 @@ Optional Firebase/JOSE dependencies live under `[project.optional-dependencies] 
 
 Ports avoid clashing with TiTiler on **8080**. If the Firestore page at `/firestore/...` is **blank**, ensure **4400**, **4500**, **8085**, and **9150** are published (`docker-compose.yml`). **`firebase.json`** must bind each emulator to **`0.0.0.0`** (see `emulators.hub`, `emulators.firestore`, etc.); a root-only `host` is not enough—otherwise processes may listen on **127.0.0.1** inside the container and the browser cannot reach mapped ports. If it still fails, check the browser **Network** tab for **`ERR_CONNECTION_REFUSED`** to **8085** or **9150**, or the **Console** for `Failed to fetch`.
 
-**Default:** the backend still uses **`CATALOG_BACKEND=file`** and `data/catalog/firestore_models.json` (map works without seeding Firestore).
+**Default (Docker Compose):** the backend uses **`CATALOG_BACKEND=firestore`** with **`FIRESTORE_EMULATOR_HOST=firebase-emulators:8085`** and **`GOOGLE_CLOUD_PROJECT=hsm-dashboard`** (see **`docker-compose.yml`**). The app loads the catalog from the Firestore **`models`** collection via **`GET /models`** (same as before; the frontend still talks only to the API).
 
-**To use the Firestore emulator for `GET /models`:** in `docker-compose.yml` under **`backend.environment`**, comment out the file catalog lines and set:
+**Optional file catalog (no Firestore for models):** set **`CATALOG_BACKEND=file`**, **`CATALOG_PATH=/data/catalog/firestore_models.json`**, and remove **`FIRESTORE_EMULATOR_HOST`** / **`CATALOG_BACKEND=firestore`** from the backend service so the map works from the JSON snapshot without seeding the emulator.
 
-- `CATALOG_BACKEND=firestore`
-- `GOOGLE_CLOUD_PROJECT=hsm-dashboard` (match **`.firebaserc`**)
-- `FIRESTORE_EMULATOR_HOST=firebase-emulators:8085`
-
-Then **seed** the `models` collection (see below), or **`GET /models`** will return `[]`.
+Seed the **`models`** collection (see below), use **export/import**, or **`GET /models`** will return **`[]`** until data exists in Firestore.
 
 **Seed Firestore from the JSON catalog (repeatable):** with emulators up, from the repo root:
 
