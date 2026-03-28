@@ -54,6 +54,8 @@ services:
       - CATALOG_BACKEND=firestore
       - GOOGLE_CLOUD_PROJECT=hsm-dashboard
       - FIRESTORE_EMULATOR_HOST=firebase-emulators:8085
+      # When the emulator `models` collection is empty, seed once from this file (see README).
+      - FIRESTORE_DEV_SEED_JSON=/data/catalog/firestore_models.json
       # Optional: JSON snapshot instead of Firestore (no emulator needed for catalog):
       # - CATALOG_BACKEND=file
       # - CATALOG_PATH=/data/catalog/firestore_models.json

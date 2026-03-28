@@ -1,17 +1,54 @@
+import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 
 from backend_api.catalog_service import CatalogService, build_catalog_service
+from backend_api.firestore_seed import seed_models_from_catalog_json
 from backend_api.point_sampling import PointSamplingError, inspect_point
 from backend_api.schemas import Model, PointInspection
 from backend_api.settings import Settings
 
+logger = logging.getLogger(__name__)
+
 
 def get_catalog_service(request: Request) -> CatalogService:
     return request.app.state.catalog_service
+
+
+async def _maybe_dev_seed_firestore(settings: Settings, app: FastAPI) -> None:
+    """If Firestore catalog is empty, optionally load JSON snapshot (Docker dev)."""
+    path_str = os.environ.get("FIRESTORE_DEV_SEED_JSON")
+    if not path_str or not os.environ.get("FIRESTORE_EMULATOR_HOST"):
+        return
+    if settings.catalog_backend != "firestore":
+        return
+    catalog = app.state.catalog_service
+    if catalog.load_error or catalog.validation_error or catalog.models:
+        return
+    path = Path(path_str)
+    if not path.is_file():
+        logger.warning("FIRESTORE_DEV_SEED_JSON points at missing file: %s", path)
+        return
+
+    def _seed() -> int:
+        return seed_models_from_catalog_json(
+            catalog_path=path,
+            project=settings.google_cloud_project,
+            collection=settings.firestore_models_collection,
+        )
+
+    try:
+        count = await run_in_threadpool(_seed)
+    except Exception:
+        logger.exception("Dev Firestore seed failed from %s", path)
+        return
+    logger.info("Dev-seeded %s model document(s) from %s", count, path)
+    app.state.catalog_service = build_catalog_service(settings)
 
 
 @asynccontextmanager
@@ -19,6 +56,7 @@ async def lifespan(app: FastAPI):
     settings = Settings()
     app.state.settings = settings
     app.state.catalog_service = build_catalog_service(settings)
+    await _maybe_dev_seed_firestore(settings, app)
     yield
 
 
