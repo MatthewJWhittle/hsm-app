@@ -24,8 +24,6 @@ services:
       - ./data/firestore-emulator-seed:/workspace/firestore-seed
       # Speed up restarts: emulator JARs live in ~/.cache/firebase (see Firebase CI docs).
       - firebase_emulator_cache:/root/.cache/firebase
-    environment:
-      - GCLOUD_PROJECT=hsm-dashboard
     command:
       - sh
       - -c
@@ -49,12 +47,10 @@ services:
       - /app/.venv
       - ./data:/data:ro
     environment:
-      - ENVIRONMENT=development
-      - DATABASE_URL=sqlite:///./app.db
-      - CATALOG_BACKEND=firestore
-      - GOOGLE_CLOUD_PROJECT=hsm-dashboard
+      # Only env required for Firestore: point the client at the emulator (see Settings defaults for project/catalog).
       - FIRESTORE_EMULATOR_HOST=firebase-emulators:8085
-      # Optional: JSON snapshot instead of Firestore (no emulator needed for catalog):
+      # Optional overrides (defaults in backend_api/settings.py match hsm-dashboard + firestore):
+      # - GOOGLE_CLOUD_PROJECT=hsm-dashboard
       # - CATALOG_BACKEND=file
       # - CATALOG_PATH=/data/catalog/firestore_models.json
     depends_on:
