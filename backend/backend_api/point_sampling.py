@@ -60,6 +60,10 @@ def sample_suitability(cog_path: str, lng: float, lat: float) -> float:
             raise PointSamplingError("could not project coordinates to raster CRS")
 
         row_i, col_i = rowcol(src.transform, x, y)
+        # Affine rowcol yields integer indices; other transform paths may return floats.
+        # Window(col_off, row_off, ...) requires integer pixel offsets.
+        row_i = int(row_i)
+        col_i = int(col_i)
         if row_i < 0 or row_i >= src.height or col_i < 0 or col_i >= src.width:
             raise PointSamplingError("point is outside the raster extent")
 
