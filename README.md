@@ -52,8 +52,10 @@ Product and solution design docs live in [`docs/`](docs/). See [docs/README.md](
 ```
 hsm-app/
 ├── backend/           # FastAPI application (.gitignore for Python/uv)
-├── frontend/          # React + TypeScript (.gitignore for Node/Vite)
+├── frontend/          # React + TypeScript (.gitignore for Node/Vite); `npm run build` → dist/
 ├── data/              # Sample data (see data/.gitignore)
+├── firebase.json      # Firebase Hosting (serves frontend/dist), emulators, Firestore rules path
+├── firestore.rules
 ├── docker-compose.yml
 └── .gitignore         # Repo-wide only; backend/ and frontend/ add their own
 ```
@@ -91,6 +93,13 @@ Optional Firebase/JOSE dependencies live under `[project.optional-dependencies] 
    - Backend API: http://localhost:8000
    - API docs: http://localhost:8000/docs
    - TiTiler (local tiles): http://localhost:8080
+
+**Firebase Emulator Suite** (optional; see `firebase.json`): run `firebase emulators:start` from the repo root. Default ports are set so they do **not** clash with TiTiler on **8080**:
+   - Firestore emulator: **8085** (set `FIRESTORE_EMULATOR_HOST=127.0.0.1:8085` for the backend when wired)
+   - Auth emulator: **9099**
+   - Emulator UI: **http://127.0.0.1:4000**
+
+**Firebase Hosting deploys** the Vite production build at **`frontend/dist`** (build with `cd frontend && npm run build`). GitHub Actions run the same build before `firebase deploy`.
 
 ## Development
 
