@@ -9,12 +9,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """App configuration.
 
-    **Firestore catalog:** set ``GOOGLE_CLOUD_PROJECT`` (or ``GCLOUD_PROJECT``) to your Firebase/GCP
-    project id. For the **Firestore emulator**, set ``FIRESTORE_EMULATOR_HOST`` (e.g.
-    ``127.0.0.1:8085``); the client uses it automatically. From Docker Desktop, use
-    ``host.docker.internal:8085`` when emulators run on the host.
+    **Firestore:** set ``GOOGLE_CLOUD_PROJECT`` (or ``GCLOUD_PROJECT``).
+    For the emulator, set ``FIRESTORE_EMULATOR_HOST`` (e.g. ``127.0.0.1:8085``).
+    From Docker Desktop, use ``host.docker.internal:8085`` when emulators run on the
+    host.
 
-    Catalog documents live in the ``models`` collection (see ``MODELS_COLLECTION_ID`` in
+    Catalog documents use collection id ``models`` (``MODELS_COLLECTION_ID`` in
     ``catalog_service``).
     """
 
