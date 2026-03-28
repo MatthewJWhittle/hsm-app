@@ -21,12 +21,21 @@ services:
       - ./.firebaserc:/workspace/.firebaserc:ro
       - ./firestore.rules:/workspace/firestore.rules:ro
       - ./firestore.indexes.json:/workspace/firestore.indexes.json:ro
+      # Emulator snapshot from `firebase emulators:export` (see README). Writable so export can write here.
+      - ./data/firestore-emulator-seed:/workspace/firestore-seed
       # Speed up restarts: emulator JARs live in ~/.cache/firebase (see Firebase CI docs).
       - firebase_emulator_cache:/root/.cache/firebase
     environment:
       - GCLOUD_PROJECT=hsm-dashboard
-    command: >
-      firebase emulators:start --only firestore,auth --project hsm-dashboard
+    command:
+      - sh
+      - -c
+      - |
+        if [ -f /workspace/firestore-seed/firebase-export-metadata.json ]; then
+          firebase emulators:start --only firestore,auth --project hsm-dashboard --import=/workspace/firestore-seed
+        else
+          firebase emulators:start --only firestore,auth --project hsm-dashboard
+        fi
 
   backend:
     build:

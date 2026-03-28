@@ -136,6 +136,17 @@ docker compose exec backend sh -c \
 
 Restart the backend after seeding if it already started with an empty catalog.
 
+**Save emulator data to disk (export) and reload it on the next start:** Compose mounts **`data/firestore-emulator-seed`** at `/workspace/firestore-seed`. While the emulators are running, write a snapshot there (overwrites if present):
+
+```bash
+docker compose exec firebase-emulators \
+  firebase emulators:export /workspace/firestore-seed --force
+```
+
+That directory gets **`firebase-export-metadata.json`** plus **`firestore_export/`** (and auth data if you use Auth). On the **next** `docker compose up`, the **`firebase-emulators`** service starts with **`--import=/workspace/firestore-seed`** automatically when that metadata file exists; if the folder is still empty, emulators start without import.
+
+You can commit the export under **`data/firestore-emulator-seed/`** so teammates get the same seed, or keep it local-only.
+
 **Auth (test users):** the Auth emulator starts with **no users**. You can add them in the **Emulator UI** (http://localhost:4000 → Authentication) or via your app once the frontend uses `connectAuthEmulator`. You do **not** need real Google accounts or Firebase Console for the emulators. For **admin routes** (future), you will use test users + custom claims or an allowlist—Console setup applies to **production** only.
 
 **Without Docker:** you can still run **`firebase emulators:start`** on the host; point the backend at **`FIRESTORE_EMULATOR_HOST=127.0.0.1:8085`** (host) or **`host.docker.internal:8085`** (backend in Docker, emulators on host).
