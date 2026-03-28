@@ -94,12 +94,27 @@ Optional Firebase/JOSE dependencies live under `[project.optional-dependencies] 
    - API docs: http://localhost:8000/docs
    - TiTiler (local tiles): http://localhost:8080
 
-**Firebase Emulator Suite** (optional; see `firebase.json`): run `firebase emulators:start` from the repo root. Default ports are set so they do **not** clash with TiTiler on **8080**:
-   - Firestore emulator: **8085** (set `FIRESTORE_EMULATOR_HOST=127.0.0.1:8085` for the backend when wired)
-   - Auth emulator: **9099**
-   - Emulator UI: **http://127.0.0.1:4000**
+**Firebase Emulator Suite (Docker Compose)** — the **`firebase-emulators`** service starts with the rest of the stack (image: `docker/firebase-emulators/Dockerfile`: Java 21 + Node 20 + `firebase-tools`). **First boot** can take a minute while emulator JARs download; later boots reuse the **`firebase_emulator_cache`** volume.
 
-To load the catalog from the **Firestore emulator** instead of the JSON file, set **`CATALOG_BACKEND=firestore`**, **`GOOGLE_CLOUD_PROJECT`** (or **`GCLOUD_PROJECT`**) to the same project id as **`.firebaserc`** (e.g. `hsm-dashboard`), and **`FIRESTORE_EMULATOR_HOST`** to the emulator address. If the backend runs **inside Docker** and emulators run **on the host**, use **`FIRESTORE_EMULATOR_HOST=host.docker.internal:8085`**. Seed the emulator’s `models` collection (or import data) before expecting entries in `GET /models`.
+| URL / port | Service |
+|------------|---------|
+| http://localhost:4000 | Emulator Suite UI |
+| **8085** | Firestore emulator |
+| **9099** | Auth emulator |
+
+Ports avoid clashing with TiTiler on **8080**.
+
+**Default:** the backend still uses **`CATALOG_BACKEND=file`** and `data/catalog/firestore_models.json` (map works without seeding Firestore).
+
+**To use the Firestore emulator for `GET /models`:** in `docker-compose.yml` under **`backend.environment`**, comment out the file catalog lines and set:
+
+- `CATALOG_BACKEND=firestore`
+- `GOOGLE_CLOUD_PROJECT=hsm-dashboard` (match **`.firebaserc`**)
+- `FIRESTORE_EMULATOR_HOST=firebase-emulators:8085`
+
+Then **seed** the `models` collection (Firestore UI or a script), or **`GET /models`** will return `[]`.
+
+**Without Docker:** you can still run **`firebase emulators:start`** on the host; point the backend at **`FIRESTORE_EMULATOR_HOST=127.0.0.1:8085`** (host) or **`host.docker.internal:8085`** (backend in Docker, emulators on host).
 
 **Firebase Hosting deploys** the Vite production build at **`frontend/dist`** (build with `cd frontend && npm run build`). GitHub Actions run the same build before `firebase deploy`.
 

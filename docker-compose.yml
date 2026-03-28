@@ -1,6 +1,28 @@
-
+# Dev stack: backend, frontend, TiTiler, Firebase emulators (Firestore + Auth).
+# Default catalog remains file-backed JSON; point the backend at the Firestore emulator when ready
+# (see backend.environment and README).
 
 services:
+  firebase-emulators:
+    build:
+      context: ./docker/firebase-emulators
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+      - "8085:8085"
+      - "9099:9099"
+    volumes:
+      - ./firebase.json:/workspace/firebase.json:ro
+      - ./.firebaserc:/workspace/.firebaserc:ro
+      - ./firestore.rules:/workspace/firestore.rules:ro
+      - ./firestore.indexes.json:/workspace/firestore.indexes.json:ro
+      # Speed up restarts: emulator JARs live in ~/.cache/firebase (see Firebase CI docs).
+      - firebase_emulator_cache:/root/.cache/firebase
+    environment:
+      - GCLOUD_PROJECT=hsm-dashboard
+    command: >
+      firebase emulators:start --only firestore,auth --project hsm-dashboard
+
   backend:
     build:
       context: ./backend
@@ -18,10 +40,11 @@ services:
       - DATABASE_URL=sqlite:///./app.db
       - CATALOG_BACKEND=file
       - CATALOG_PATH=/data/catalog/firestore_models.json
-      # Firestore emulator on host (after `firebase emulators:start`): uncomment and restart backend
+      # Use Firestore emulator (compose service `firebase-emulators`) instead of JSON catalog:
       # - CATALOG_BACKEND=firestore
       # - GOOGLE_CLOUD_PROJECT=hsm-dashboard
-      # - FIRESTORE_EMULATOR_HOST=host.docker.internal:8085
+      # - FIRESTORE_EMULATOR_HOST=firebase-emulators:8085
+      # (Seed the `models` collection first, or GET /models will be empty.)
     command: >
       sh -c "uv sync --no-dev && uv run uvicorn backend_api.main:app --host 0.0.0.0 --port 8000 --reload"
 
@@ -56,3 +79,6 @@ services:
 
 
     command: uvicorn titiler.application.main:app --host 0.0.0.0 --port 8080
+
+volumes:
+  firebase_emulator_cache:
