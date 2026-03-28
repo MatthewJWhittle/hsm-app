@@ -8,9 +8,14 @@ services:
       context: ./docker/firebase-emulators
       dockerfile: Dockerfile
     ports:
+      # UI shell loads from 4000, but the SPA also needs Hub + Firestore websocket on the host.
+      # Without 4400 / 9150 / 4500 the Firestore tab stays blank (browser talks to localhost, not only 4000).
       - "4000:4000"
+      - "4400:4400"
+      - "4500:4500"
       - "8085:8085"
       - "9099:9099"
+      - "9150:9150"
     volumes:
       - ./firebase.json:/workspace/firebase.json:ro
       - ./.firebaserc:/workspace/.firebaserc:ro

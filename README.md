@@ -99,10 +99,13 @@ Optional Firebase/JOSE dependencies live under `[project.optional-dependencies] 
 | URL / port | Service |
 |------------|---------|
 | http://localhost:4000 | Emulator Suite UI |
-| **8085** | Firestore emulator |
+| **4400** | Emulator Hub (required for UI; SPA calls this from the browser) |
+| **4500** | Emulator logging |
+| **8085** | Firestore emulator API |
+| **9150** | Firestore Emulator UI websocket |
 | **9099** | Auth emulator |
 
-Ports avoid clashing with TiTiler on **8080**.
+Ports avoid clashing with TiTiler on **8080**. If the Firestore page at `/firestore/...` is **blank**, ensure **4400**, **4500**, and **9150** are published (see `docker-compose.yml`)—the UI is not only served from **4000**.
 
 **Default:** the backend still uses **`CATALOG_BACKEND=file`** and `data/catalog/firestore_models.json` (map works without seeding Firestore).
 
@@ -112,7 +115,26 @@ Ports avoid clashing with TiTiler on **8080**.
 - `GOOGLE_CLOUD_PROJECT=hsm-dashboard` (match **`.firebaserc`**)
 - `FIRESTORE_EMULATOR_HOST=firebase-emulators:8085`
 
-Then **seed** the `models` collection (Firestore UI or a script), or **`GET /models`** will return `[]`.
+Then **seed** the `models` collection (see below), or **`GET /models`** will return `[]`.
+
+**Seed Firestore from the JSON catalog (repeatable):** with emulators up, from the repo root:
+
+```bash
+cd backend && uv run python scripts/seed_firestore_emulator.py \
+  --catalog ../data/catalog/firestore_models.json
+```
+
+Set **`FIRESTORE_EMULATOR_HOST=127.0.0.1:8085`** when the emulator is bound on the host (e.g. Docker Compose port mapping). From inside the backend container:
+
+```bash
+docker compose exec backend sh -c \
+  'export FIRESTORE_EMULATOR_HOST=firebase-emulators:8085 GOOGLE_CLOUD_PROJECT=hsm-dashboard \
+   && uv run python scripts/seed_firestore_emulator.py --catalog /data/catalog/firestore_models.json'
+```
+
+Restart the backend after seeding if it already started with an empty catalog.
+
+**Auth (test users):** the Auth emulator starts with **no users**. You can add them in the **Emulator UI** (http://localhost:4000 → Authentication) or via your app once the frontend uses `connectAuthEmulator`. You do **not** need real Google accounts or Firebase Console for the emulators. For **admin routes** (future), you will use test users + custom claims or an allowlist—Console setup applies to **production** only.
 
 **Without Docker:** you can still run **`firebase emulators:start`** on the host; point the backend at **`FIRESTORE_EMULATOR_HOST=127.0.0.1:8085`** (host) or **`host.docker.internal:8085`** (backend in Docker, emulators on host).
 
