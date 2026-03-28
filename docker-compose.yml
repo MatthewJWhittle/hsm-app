@@ -47,7 +47,7 @@ services:
       - /app/.venv
       - ./data:/data:ro
     environment:
-      # Firestore client → emulator; project/catalog defaults: backend_api/settings.py
+      # Firestore client → emulator; GOOGLE_CLOUD_PROJECT default: backend_api/settings.py
       - FIRESTORE_EMULATOR_HOST=firebase-emulators:8085
     depends_on:
       firebase-emulators:

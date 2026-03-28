@@ -9,6 +9,8 @@ import json
 import logging
 from pathlib import Path
 
+from backend_api.catalog_service import MODELS_COLLECTION_ID
+
 logger = logging.getLogger(__name__)
 
 
@@ -16,7 +18,7 @@ def seed_models_from_catalog_json(
     *,
     catalog_path: Path,
     project: str,
-    collection: str = "models",
+    collection: str = MODELS_COLLECTION_ID,
 ) -> int:
     """
     Read ``documents[]`` from ``catalog_path`` and ``set`` each document (id from ``id`` field).

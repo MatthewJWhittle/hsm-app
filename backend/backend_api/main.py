@@ -63,11 +63,6 @@ def _raise_catalog_http_errors(catalog: CatalogService) -> None:
 async def list_models(catalog: CatalogService = Depends(get_catalog_service)):
     """List all suitability models (catalog). Aligns with docs/data-models.md."""
     _raise_catalog_http_errors(catalog)
-    if not catalog.models and catalog.is_missing_catalog_file():
-        raise HTTPException(
-            status_code=404,
-            detail="Catalog not found; set CATALOG_PATH or add data/catalog/firestore_models.json",
-        )
     return catalog.models
 
 

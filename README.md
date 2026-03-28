@@ -109,11 +109,9 @@ Optional Firebase/JOSE dependencies live under `[project.optional-dependencies] 
 
 Ports avoid clashing with TiTiler on **8080**. If the Firestore page at `/firestore/...` is **blank**, ensure **4400**, **4500**, **8085**, and **9150** are published (`docker-compose.yml`). **`firebase.json`** must bind each emulator to **`0.0.0.0`** (see `emulators.hub`, `emulators.firestore`, etc.); a root-only `host` is not enough—otherwise processes may listen on **127.0.0.1** inside the container and the browser cannot reach mapped ports. If it still fails, check the browser **Network** tab for **`ERR_CONNECTION_REFUSED`** to **8085** or **9150**, or the **Console** for `Failed to fetch`.
 
-**Default (Docker Compose):** the backend only sets **`FIRESTORE_EMULATOR_HOST=firebase-emulators:8085`** so the Firestore client talks to the emulator. **`CATALOG_BACKEND`**, **`GOOGLE_CLOUD_PROJECT`**, and **`CATALOG_PATH`** use **`backend_api/settings.py`** defaults (`firestore`, **`hsm-dashboard`**, `/data/catalog/firestore_models.json`). The app loads the catalog from the Firestore **`models`** collection via **`GET /models`** (the frontend still calls only the API).
+**Default (Docker Compose):** the backend sets **`FIRESTORE_EMULATOR_HOST=firebase-emulators:8085`** so the Firestore client uses the emulator. **`GOOGLE_CLOUD_PROJECT`** defaults to **`hsm-dashboard`** in **`backend_api/settings.py`** (match **`.firebaserc`**). The catalog lives in the Firestore **`models`** collection (constant **`MODELS_COLLECTION_ID`** in **`catalog_service`**). **`GET /models`** reads from Firestore (the frontend still calls only the API).
 
-**Optional file catalog (no Firestore for models):** in **`docker-compose.yml`** set **`CATALOG_BACKEND=file`**, **`CATALOG_PATH=/data/catalog/firestore_models.json`**, and **remove `FIRESTORE_EMULATOR_HOST`** so the map uses the JSON snapshot without the emulator.
-
-**`GET /models`** returns **`[]`** until the Firestore **`models`** collection has data. Populate it by **seeding** from JSON (below), **export/import**, or the Emulator UI. Dev seeding lives under **`backend/scripts/`** (`seed_firestore_emulator.py`, `firestore_seed_catalog.py`), not in the API package.
+**`GET /models`** returns **`[]`** until the **`models`** collection has documents. Populate it by **seeding** from JSON (below), **export/import**, or the Emulator UI. Dev seeding lives under **`backend/scripts/`** (`seed_firestore_emulator.py`, `firestore_seed_catalog.py`), not in the API package.
 
 **Seed Firestore from the JSON catalog (repeatable):** with emulators up, from the repo root:
 
@@ -153,16 +151,14 @@ You can commit the export under **`data/firestore-emulator-seed/`** so teammates
 
 ### Local prototype (this repo today)
 
-For local development, the catalog is a **Firestore-shaped JSON snapshot** at [`data/catalog/firestore_models.json`](data/catalog/firestore_models.json): collection id `models`, with one object per document (document id = `Model.id`). Regenerate it from COGs under `data/hsm-predictions/cog/` with [`scripts/generate_hsm_index.py`](scripts/generate_hsm_index.py) (also invoked at the end of [`scripts/convert_to_cog.sh`](scripts/convert_to_cog.sh)) — a **temporary** dev helper until COGs are uploaded via the admin API and stored in Firestore. The backend loads that file at startup (`CATALOG_PATH`, default `/data/catalog/firestore_models.json` in Docker). The catalog is read **once at process start**; editing the JSON under `/data` does not hot-reload — **restart the backend** to pick up catalog changes. The file must be Firestore-shaped with a **`documents`** array (see [`docs/data-models.md`](docs/data-models.md)).
-
-Loading uses `backend_api.catalog.try_load_catalog_json`: a **missing** file is treated as “no catalog” (log at **INFO**); a file that **exists** but cannot be read or is not valid JSON produces a **WARNING** in server logs and catalog routes return **`503`** with a short detail. **Duplicate `id` values** in `documents[]`: `GET /models/{id}` resolves to the **last** document with that id; `GET /models` may still list more than one row with the same `id` until ingestion enforces uniqueness. If JSON parses but **does not validate** against the [`Model`](docs/data-models.md) schema, routes return **`503`** until the JSON is fixed.
+For local development, [`data/catalog/firestore_models.json`](data/catalog/firestore_models.json) is a **Firestore-shaped JSON snapshot** (one object per document in **`documents[]`**, document id = `Model.id`) used to **seed** the emulator via **`backend/scripts/seed_firestore_emulator.py`**, not loaded by the API. Regenerate it from COGs under `data/hsm-predictions/cog/` with [`scripts/generate_hsm_index.py`](scripts/generate_hsm_index.py) (also invoked at the end of [`scripts/convert_to_cog.sh`](scripts/convert_to_cog.sh)) — a **temporary** helper until COGs are managed via an admin API. Offline validation of that JSON shape uses **`backend_api.catalog.catalog_to_models`** (see [`docs/data-models.md`](docs/data-models.md)).
 
 **Backend (FastAPI)**
 
-- `GET /models` — list catalog entries ([`Model`](docs/data-models.md)); `404` if the catalog file is missing; `503` if the file is unreadable, not valid JSON, or invalid for the schema
-- `GET /models/{id}` — single model (`404` if unknown; `503` when the catalog file could not be loaded or failed validation)
+- `GET /models` — list catalog entries from Firestore ([`Model`](docs/data-models.md)); **`503`** if Firestore could not be read or a document fails schema validation; **`200`** with **`[]`** if the collection is empty
+- `GET /models/{id}` — single model (**`404`** if unknown; **`503`** when the catalog could not be loaded or failed validation)
 
-Catalog backends implement the **`CatalogService`** protocol in `backend_api.catalog_service` (injected via FastAPI `Depends`). **`CATALOG_BACKEND`** is read from the environment (see `backend_api/settings.py`). **Omit it in production** to default to **`firestore`** (`FirestoreCatalogService`). For local JSON, set **`CATALOG_BACKEND=file`** in Compose or `.env` (the default Compose stack uses Firestore + emulator instead). `build_catalog_service` chooses the implementation from `Settings`.
+The **`FirestoreCatalogService`** in `backend_api.catalog_service` implements the **`CatalogService`** protocol (injected via FastAPI `Depends`). **`GOOGLE_CLOUD_PROJECT`** (default **`hsm-dashboard`**) and **`FIRESTORE_EMULATOR_HOST`** (dev only) are read from the environment.
 
 **Frontend**
 
@@ -179,7 +175,7 @@ Catalog backends implement the **`CatalogService`** protocol in `backend_api.cat
 cd backend && uv run pytest
 ```
 
-If you run **`uvicorn` outside Docker** and want the file catalog, set **`CATALOG_BACKEND=file`** (and **`CATALOG_PATH`** if needed). With no `CATALOG_BACKEND` set, the default is **`firestore`** (matches production).
+If you run **`uvicorn` outside Docker** with the emulator on the host, set **`FIRESTORE_EMULATOR_HOST=127.0.0.1:8085`**. Omit **`FIRESTORE_EMULATOR_HOST`** in production so the client uses real Firestore.
 
 ### Next steps
 

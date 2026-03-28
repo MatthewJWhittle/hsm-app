@@ -33,6 +33,7 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
+from backend_api.catalog_service import MODELS_COLLECTION_ID
 from firestore_seed_catalog import seed_models_from_catalog_json
 
 
@@ -41,9 +42,7 @@ def main() -> int:
     parser.add_argument(
         "--catalog",
         type=Path,
-        default=Path(
-            os.environ.get("CATALOG_PATH", "data/catalog/firestore_models.json")
-        ),
+        default=Path("data/catalog/firestore_models.json"),
         help="Path to Firestore-shaped JSON with a documents[] array.",
     )
     parser.add_argument(
@@ -52,11 +51,6 @@ def main() -> int:
         or os.environ.get("GCLOUD_PROJECT")
         or "hsm-dashboard",
         help="Firebase/GCP project id (default: env or hsm-dashboard).",
-    )
-    parser.add_argument(
-        "--collection",
-        default=os.environ.get("FIRESTORE_MODELS_COLLECTION", "models"),
-        help="Firestore collection id (default: models).",
     )
     args = parser.parse_args()
 
@@ -73,13 +67,14 @@ def main() -> int:
         count = seed_models_from_catalog_json(
             catalog_path=args.catalog,
             project=args.project,
-            collection=args.collection,
         )
     except ValueError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
 
-    print(f"Seeded {count} document(s) into {args.collection!r} (project={args.project}).")
+    print(
+        f"Seeded {count} document(s) into {MODELS_COLLECTION_ID!r} (project={args.project})."
+    )
     return 0
 
 
