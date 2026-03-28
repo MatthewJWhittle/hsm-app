@@ -107,7 +107,7 @@ Optional Firebase/JOSE dependencies live under `[project.optional-dependencies] 
 | **9150** | Firestore Emulator UI websocket |
 | **9099** | Auth emulator |
 
-Ports avoid clashing with TiTiler on **8080**. If the Firestore page at `/firestore/...` is **blank**, ensure **4400**, **4500**, and **9150** are published (see `docker-compose.yml`)—the UI is not only served from **4000**.
+Ports avoid clashing with TiTiler on **8080**. If the Firestore page at `/firestore/...` is **blank**, ensure **4400**, **4500**, **8085**, and **9150** are published (`docker-compose.yml`). **`firebase.json`** must bind each emulator to **`0.0.0.0`** (see `emulators.hub`, `emulators.firestore`, etc.); a root-only `host` is not enough—otherwise processes may listen on **127.0.0.1** inside the container and the browser cannot reach mapped ports. If it still fails, check the browser **Network** tab for **`ERR_CONNECTION_REFUSED`** to **8085** or **9150**, or the **Console** for `Failed to fetch`.
 
 **Default:** the backend still uses **`CATALOG_BACKEND=file`** and `data/catalog/firestore_models.json` (map works without seeding Firestore).
 

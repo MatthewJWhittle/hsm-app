@@ -20,12 +20,22 @@
     ]
   },
   "emulators": {
-    "host": "0.0.0.0",
-    "auth": {
-      "port": 9099
+    "hub": {
+      "host": "0.0.0.0",
+      "port": 4400
+    },
+    "logging": {
+      "host": "0.0.0.0",
+      "port": 4500
     },
     "firestore": {
-      "port": 8085
+      "host": "0.0.0.0",
+      "port": 8085,
+      "websocketPort": 9150
+    },
+    "auth": {
+      "host": "0.0.0.0",
+      "port": 9099
     },
     "ui": {
       "enabled": true,
