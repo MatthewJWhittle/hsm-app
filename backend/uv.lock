@@ -656,6 +656,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
+    { name = "google-cloud-firestore" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
@@ -679,6 +680,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.12" },
     { name = "firebase-admin", marker = "extra == 'auth'", specifier = ">=6.9.0" },
+    { name = "google-cloud-firestore", specifier = ">=2.19.0" },
     { name = "passlib", extras = ["bcrypt"], marker = "extra == 'auth'", specifier = ">=1.7.4" },
     { name = "pydantic", specifier = ">=2.11.5" },
     { name = "pydantic-settings", specifier = ">=2.6.1" },

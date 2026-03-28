@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
-from typing import Protocol
+from typing import Any, Protocol
 
+from google.cloud import firestore
+from google.cloud.firestore_v1 import DocumentSnapshot
 from pydantic import ValidationError
 
 from backend_api.catalog import catalog_to_models, try_load_catalog_json
@@ -76,24 +78,89 @@ class FileCatalogService:
         return self.raw is None and self.load_error is None
 
 
+def _snapshot_to_model_dict(doc: DocumentSnapshot) -> dict[str, Any]:
+    """Merge Firestore document data with document id (Model.id)."""
+    data = doc.to_dict()
+    if not data:
+        payload: dict[str, Any] = {"id": doc.id}
+    else:
+        payload = {k: _sanitize_firestore_value(v) for k, v in data.items()}
+        payload["id"] = doc.id
+    return payload
+
+
+def _sanitize_firestore_value(value: Any) -> Any:
+    """Avoid passing Firestore-only types into Pydantic where possible."""
+    if hasattr(value, "isoformat") and callable(value.isoformat):
+        try:
+            return value.isoformat()
+        except (TypeError, ValueError):
+            return str(value)
+    if isinstance(value, dict):
+        return {k: _sanitize_firestore_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_firestore_value(v) for v in value]
+    return value
+
+
 class FirestoreCatalogService:
-    """Firestore-backed catalog (production). Stub until Firestore is wired."""
+    """Load catalog from Firestore (production or emulator via FIRESTORE_EMULATOR_HOST)."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self.raw: dict | None = None
         self.validation_error: str | None = None
-        self.load_error: str | None = (
-            "Firestore catalog backend is not implemented yet; "
-            "use CATALOG_BACKEND=file for local dev."
-        )
+        self.load_error: str | None = None
         self.models: list[Model] = []
-        logger.warning(
-            "CATALOG_BACKEND=firestore is selected but FirestoreCatalogService is still a stub"
-        )
+        self._models_by_id: dict[str, Model] = {}
+        self._load()
+
+    def _load(self) -> None:
+        try:
+            client = firestore.Client(project=self._settings.google_cloud_project)
+        except Exception:
+            logger.exception("Failed to create Firestore client")
+            self.load_error = (
+                "Could not connect to Firestore; check GOOGLE_CLOUD_PROJECT / GCLOUD_PROJECT "
+                "and credentials (or FIRESTORE_EMULATOR_HOST for local emulator)."
+            )
+            return
+
+        coll = client.collection(self._settings.firestore_models_collection)
+        models: list[Model] = []
+        try:
+            for doc in coll.stream():
+                try:
+                    payload = _snapshot_to_model_dict(doc)
+                    models.append(Model.model_validate(payload))
+                except ValidationError:
+                    logger.exception(
+                        "Firestore document %s is not a valid Model; fix catalog data",
+                        doc.id,
+                    )
+                    self.validation_error = CATALOG_VALIDATION_DETAIL
+                    self.models = []
+                    self._models_by_id = {}
+                    return
+        except Exception:
+            logger.exception("Failed to read Firestore catalog")
+            self.load_error = (
+                "Could not read catalog from Firestore; see server logs for details."
+            )
+            return
+
+        models.sort(key=lambda m: m.id)
+        self.models = models
+        self._models_by_id = {m.id: m for m in models}
+        if self.load_error is None:
+            logger.info(
+                "Loaded %s model(s) from Firestore collection %r",
+                len(self.models),
+                self._settings.firestore_models_collection,
+            )
 
     def get_model(self, model_id: str) -> Model | None:
-        return None
+        return self._models_by_id.get(model_id)
 
     def is_missing_catalog_file(self) -> bool:
         return False

@@ -99,6 +99,8 @@ Optional Firebase/JOSE dependencies live under `[project.optional-dependencies] 
    - Auth emulator: **9099**
    - Emulator UI: **http://127.0.0.1:4000**
 
+To load the catalog from the **Firestore emulator** instead of the JSON file, set **`CATALOG_BACKEND=firestore`**, **`GOOGLE_CLOUD_PROJECT`** (or **`GCLOUD_PROJECT`**) to the same project id as **`.firebaserc`** (e.g. `hsm-dashboard`), and **`FIRESTORE_EMULATOR_HOST`** to the emulator address. If the backend runs **inside Docker** and emulators run **on the host**, use **`FIRESTORE_EMULATOR_HOST=host.docker.internal:8085`**. Seed the emulator’s `models` collection (or import data) before expecting entries in `GET /models`.
+
 **Firebase Hosting deploys** the Vite production build at **`frontend/dist`** (build with `cd frontend && npm run build`). GitHub Actions run the same build before `firebase deploy`.
 
 ## Development

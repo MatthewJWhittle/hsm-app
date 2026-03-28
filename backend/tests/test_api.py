@@ -2,6 +2,7 @@
 
 import importlib
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -56,17 +57,58 @@ def test_get_model_unknown_404(client):
     assert r.status_code == 404
 
 
-def test_firestore_backend_stub_returns_503(tmp_path, monkeypatch):
-    """CATALOG_BACKEND=firestore uses the stub until Firestore is implemented."""
+@patch("backend_api.catalog_service.firestore.Client")
+def test_firestore_backend_returns_empty_list_when_no_documents(
+    mock_client_cls, tmp_path, monkeypatch
+):
+    """CATALOG_BACKEND=firestore reads from Firestore (mocked; no network)."""
     monkeypatch.setenv("CATALOG_BACKEND", "firestore")
     monkeypatch.setenv("CATALOG_PATH", str(tmp_path / "ignored.json"))
+    mock_coll = MagicMock()
+    mock_coll.stream.return_value = iter([])
+    mock_client = MagicMock()
+    mock_client.collection.return_value = mock_coll
+    mock_client_cls.return_value = mock_client
+
     import backend_api.main as main
 
     importlib.reload(main)
     with TestClient(main.app) as c:
         r = c.get("/models")
-    assert r.status_code == 503
-    assert "not implemented" in r.json()["detail"].lower()
+    assert r.status_code == 200
+    assert r.json() == []
+    mock_client.collection.assert_called_once_with("models")
+
+
+@patch("backend_api.catalog_service.firestore.Client")
+def test_firestore_backend_returns_models(mock_client_cls, tmp_path, monkeypatch):
+    monkeypatch.setenv("CATALOG_BACKEND", "firestore")
+    monkeypatch.setenv("CATALOG_PATH", str(tmp_path / "ignored.json"))
+
+    doc = MagicMock()
+    doc.id = "a-model"
+    doc.to_dict.return_value = {
+        "species": "S",
+        "activity": "A",
+        "artifact_root": "/r",
+        "suitability_cog_path": "x.tif",
+    }
+    mock_coll = MagicMock()
+    mock_coll.stream.return_value = iter([doc])
+    mock_client = MagicMock()
+    mock_client.collection.return_value = mock_coll
+    mock_client_cls.return_value = mock_client
+
+    import backend_api.main as main
+
+    importlib.reload(main)
+    with TestClient(main.app) as c:
+        r = c.get("/models")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["id"] == "a-model"
+    assert data[0]["species"] == "S"
 
 
 @pytest.fixture

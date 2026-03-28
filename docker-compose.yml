@@ -18,6 +18,10 @@ services:
       - DATABASE_URL=sqlite:///./app.db
       - CATALOG_BACKEND=file
       - CATALOG_PATH=/data/catalog/firestore_models.json
+      # Firestore emulator on host (after `firebase emulators:start`): uncomment and restart backend
+      # - CATALOG_BACKEND=firestore
+      # - GOOGLE_CLOUD_PROJECT=hsm-dashboard
+      # - FIRESTORE_EMULATOR_HOST=host.docker.internal:8085
     command: >
       sh -c "uv sync --no-dev && uv run uvicorn backend_api.main:app --host 0.0.0.0 --port 8000 --reload"
 
