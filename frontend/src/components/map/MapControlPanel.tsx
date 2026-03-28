@@ -1,10 +1,9 @@
 import { Paper, Typography, Box } from '@mui/material'
 import { styled } from '@mui/material/styles'
 import type { Theme } from '@mui/material'
-import { SpeciesSelector } from './SpeciesSelector'
-import { ActivitySelector } from './ActivitySelector'
+import { ModelSelector } from './ModelSelector'
 import { OpacityControl } from './OpacityControl'
-
+import type { Model } from '../../types/model'
 
 const FloatingPanel = styled(Paper)(({ theme }: { theme: Theme }) => ({
   position: 'absolute',
@@ -19,43 +18,35 @@ const FloatingPanel = styled(Paper)(({ theme }: { theme: Theme }) => ({
 }))
 
 interface MapControlPanelProps {
-  selectedSpecies: string
-  selectedActivity: string
+  models: Model[]
+  selectedModelId: string
   opacity: number
-  onSpeciesChange: (species: string) => void
-  onActivityChange: (activity: string) => void
+  onModelChange: (modelId: string) => void
   onOpacityChange: (opacity: number) => void
-  speciesOptions: string[]
-  activityOptions: string[]
 }
 
 export function MapControlPanel({
-  selectedSpecies,
-  selectedActivity,
+  models,
+  selectedModelId,
   opacity,
-  onSpeciesChange,
-  onActivityChange,
+  onModelChange,
   onOpacityChange,
-  speciesOptions,
-  activityOptions,
 }: MapControlPanelProps) {
   return (
     <FloatingPanel>
       <Typography variant="h6" gutterBottom>
-        Map Controls
+        Map controls
       </Typography>
-      
+
       <Box sx={{ mb: 2 }}>
-        <SpeciesSelector value={selectedSpecies} options={speciesOptions} onChange={onSpeciesChange} />
-
-        <ActivitySelector value={selectedActivity} options={activityOptions} onChange={onActivityChange} />
-
-        <OpacityControl
-          value={opacity}
-          onChange={onOpacityChange}
+        <ModelSelector
+          value={selectedModelId}
+          models={models}
+          onChange={onModelChange}
         />
-      </Box>
 
+        <OpacityControl value={opacity} onChange={onOpacityChange} />
+      </Box>
     </FloatingPanel>
   )
-} 
+}

@@ -1,0 +1,84 @@
+# Python — backend package and tooling
+
+.Python
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Packaging / build outputs
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# UV (lockfile is committed; local config optional)
+# uv.lock is tracked
+
+# Test & quality
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+nosetests.xml
+.hypothesis/
+cover/
+
+# Type checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+.pyre/
+
+# Ruff
+.ruff_cache/
+
+# C extensions / wheels
+*.so
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Django / Flask (if added later)
+local_settings.py
+db.sqlite3
+instance/
+.webassets-cache
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# pyenv (optional)
+# .python-version
+
+# Spyder / Rope
+.spyderproject
+.spyproject
+.ropeproject
+
+# Cython
+cython_debug/
+
+# Jupyter inside backend (unlikely)
+.ipynb_checkpoints

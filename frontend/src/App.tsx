@@ -2,78 +2,71 @@ import './App.css'
 import MapComponent from './components/Map'
 import { useEffect, useMemo, useState } from 'react'
 import { MapControlPanel } from './components/map/MapControlPanel'
+import type { Model } from './types/model'
+import { apiBase } from './utils/apiBase'
 
 function App() {
-  const [selectedSpecies, setSelectedSpecies] = useState('')
-  const [selectedActivity, setSelectedActivity] = useState('')
+  const [models, setModels] = useState<Model[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [selectedModelId, setSelectedModelId] = useState('')
   const [opacity, setOpacity] = useState(70)
-  const [speciesOptions, setSpeciesOptions] = useState<string[]>([])
-  const [activityOptionsAll, setActivityOptionsAll] = useState<string[]>([])
-  const [items, setItems] = useState<Array<{ species: string; activity: string; cog_path: string }>>([])
-  const [cogPath, setCogPath] = useState('')
 
-  // Fetch available options (species, activities)
   useEffect(() => {
-    fetch('http://localhost:8000/hsm/options')
-      .then((r) => r.json())
-      .then((data) => {
-        setSpeciesOptions(data.species ?? [])
-        setActivityOptionsAll(data.activities ?? [])
-        setItems(data.items ?? [])
+    const base = apiBase()
+    fetch(`${base}/models`)
+      .then((r) => {
+        if (!r.ok) throw new Error(r.statusText || String(r.status))
+        return r.json() as Promise<Model[]>
+      })
+      .then((list) => {
+        setModels(list)
+        setLoadError(null)
       })
       .catch(() => {
-        setSpeciesOptions([])
-        setActivityOptionsAll([])
-        setItems([])
+        setModels([])
+        setLoadError('Could not load model catalog. Is the API running?')
       })
   }, [])
 
   useEffect(() => {
-    if (!selectedSpecies && speciesOptions.length > 0) {
-      setSelectedSpecies(speciesOptions[0])
+    if (!selectedModelId && models.length > 0) {
+      setSelectedModelId(models[0].id)
     }
-  }, [speciesOptions, selectedSpecies])
+  }, [models, selectedModelId])
 
-  // Compute per-species activity options from items
-  const activityOptions = useMemo(() => {
-    if (!selectedSpecies) return []
-    const set = new Set<string>()
-    for (const it of items) if (it.species === selectedSpecies) set.add(it.activity)
-    const arr = Array.from(set)
-    return arr.length > 0 ? arr : activityOptionsAll
-  }, [items, activityOptionsAll, selectedSpecies])
-
-  useEffect(() => {
-    if ((!selectedActivity || !activityOptions.includes(selectedActivity)) && activityOptions.length > 0) {
-      setSelectedActivity(activityOptions[0])
-    }
-  }, [activityOptions, selectedActivity])
-
-  // Fetch the cog url for the selected species/activity
-  useEffect(() => {
-    if (!selectedSpecies || !selectedActivity) return
-    const url = new URL('http://localhost:8000/hsm/url')
-    url.searchParams.set('species', selectedSpecies)
-    url.searchParams.set('activity', selectedActivity)
-    fetch(url.toString())
-      .then((r) => r.ok ? r.json() : Promise.reject())
-      .then((data) => setCogPath(data.cog_path ?? ''))
-      .catch(() => setCogPath(''))
-  }, [selectedSpecies, selectedActivity])
+  const selectedModel = useMemo(
+    () => models.find((m) => m.id === selectedModelId) ?? null,
+    [models, selectedModelId],
+  )
 
   return (
     <div className="app-container">
       <MapControlPanel
-        selectedSpecies={selectedSpecies}
-        selectedActivity={selectedActivity}
+        models={models}
+        selectedModelId={selectedModelId}
         opacity={opacity}
-        onSpeciesChange={setSelectedSpecies}
-        onActivityChange={setSelectedActivity}
+        onModelChange={setSelectedModelId}
         onOpacityChange={setOpacity}
-        speciesOptions={speciesOptions}
-        activityOptions={activityOptions}
       />
-      <MapComponent opacity={opacity / 100} cogPath={cogPath} />
+      {loadError && (
+        <div
+          role="alert"
+          style={{
+            position: 'absolute',
+            top: 20,
+            right: 20,
+            zIndex: 1001,
+            background: 'rgba(255, 230, 230, 0.95)',
+            padding: '12px 16px',
+            borderRadius: 8,
+            maxWidth: 360,
+            fontSize: 14,
+          }}
+        >
+          {loadError}
+        </div>
+      )}
+      <MapComponent opacity={opacity / 100} model={selectedModel} />
     </div>
   )
 }

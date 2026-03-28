@@ -62,7 +62,7 @@ Rules for structured slugs:
 
 #### Local development (transitional)
 
-The repo may use a **flat** folder of COGs and a generated JSON index for local Docker (see `scripts/generate_hsm_index.py`). That flow is a **dev shortcut**, not the target upload contract. **New data** and **admin uploads** should follow the **folder-per-model + `suitability_cog.tif`** pattern above; migrate or re-index local samples when moving off the flat layout.
+The repo may use a **flat** folder of COGs and a generated Firestore snapshot JSON for local Docker (`data/catalog/firestore_models.json`; see `scripts/generate_hsm_index.py`). That flow is a **dev shortcut**, not the target upload contract. **New data** and **admin uploads** should follow the **folder-per-model + `suitability_cog.tif`** pattern above; migrate or re-index local samples when moving off the flat layout.
 
 ### Upload validation (COG format and CRS)
 
@@ -103,9 +103,7 @@ The data model should record enough for the API to resolve “this model → the
 ### Catalog storage (target shape)
 
 - **Firestore:** Collection `models`; each document = one Model (id as document id or field). No separate species/activities arrays; frontend derives dropdowns from the model list.
-- **JSON index (e.g. for local or transition):** `{ "generated_at": string, "models": Model[] }`. Optional: `species[]`, `activities[]` derived when writing the file for backward compatibility or quick filters. Normalise so each (species, activity) appears once; id is unique and stable.
-
-When using a JSON index, use `models[]` with each entry including a stable id; optional `species[]`/`activities[]` can be derived for convenience.
+- **JSON snapshot (local Docker):** Firestore-shaped object with a **`documents`** array (one object per Model, `id` as document id). Optional metadata such as `generated_at`. The repo uses [`data/catalog/firestore_models.json`](../data/catalog/firestore_models.json); regenerate via `scripts/generate_hsm_index.py`.
 
 ---
 
@@ -165,7 +163,7 @@ Returned by `GET /models/{id}/point?lng=&lat=` when the user clicks the map or r
 | Model | Where used | MVP priority |
 |-------|------------|--------------|
 | **Model** | Catalog; `GET /models`, `GET /models/{id}`; admin POST/PUT | Required: `id`, species, activity, `artifact_root`, `suitability_cog_path`; optional model_name, model_version, driver_config. |
-| **Catalog** | Firestore `models` collection or JSON `models[]` | Stored list of Model; id required. |
+| **Catalog** | Firestore `models` collection or local JSON `documents[]` snapshot | Stored list of Model; id required. |
 | **RasterMetadata** | `GET /models/{id}/raster/metadata` when needed | Optional in MVP. |
 | **PointInspection** | Response of `GET /models/{id}/point` | Required for MVP. |
 | **DriverVariable** | Inside PointInspection.drivers | Required for MVP (simple explanation). |

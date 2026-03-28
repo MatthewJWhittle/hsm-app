@@ -1,2 +1,4 @@
 *
 !.gitignore
+!catalog/
+!catalog/firestore_models.json

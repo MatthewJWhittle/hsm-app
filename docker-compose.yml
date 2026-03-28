@@ -8,13 +8,18 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      # Bind-mount source for live reload. Anonymous volume on `.venv` (like `/app/node_modules`
+      # on the frontend) hides the host’s `.venv` so macOS shebangs are never used in Linux.
       - ./backend:/app
+      - /app/.venv
       - ./data:/data:ro
     environment:
       - ENVIRONMENT=development
       - DATABASE_URL=sqlite:///./app.db
-      - HSM_INDEX_PATH=/data/hsm_index.json
-    command: uv run uvicorn backend_api.main:app --host 0.0.0.0 --port 8000 --reload
+      - CATALOG_BACKEND=file
+      - CATALOG_PATH=/data/catalog/firestore_models.json
+    command: >
+      sh -c "uv sync --no-dev && uv run uvicorn backend_api.main:app --host 0.0.0.0 --port 8000 --reload"
 
   frontend:
     build:
@@ -24,12 +29,14 @@ services:
       - "5173:5173"
     volumes:
       - ./frontend:/app
-      # This 
       - /app/node_modules
-      #- ./frontend/node_modules:/app/node_modules
+    environment:
+      # Vite proxy runs inside this container; use service DNS, not localhost.
+      - API_PROXY_TARGET=http://backend:8000
     command: npm run dev -- --host 0.0.0.0
     depends_on:
       - backend
+      - titiler
 
   titiler:
     image: ghcr.io/developmentseed/titiler:latest

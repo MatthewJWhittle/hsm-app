@@ -1,0 +1,17 @@
+# Virtualenvs (host)
+.venv/
+venv/
+ENV/
+env/
+
+# Tests and tooling — not needed to run the API
+tests/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+
+# Docs / repo noise
+*.md
+Dockerfile
+.dockerignore
