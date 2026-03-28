@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 
 from backend_api.catalog_service import CatalogService, build_catalog_service
-from backend_api.schemas import Model
+from backend_api.point_sampling import PointSamplingError, inspect_point
+from backend_api.schemas import Model, PointInspection
 from backend_api.settings import Settings
 
 
@@ -79,3 +81,34 @@ async def get_model(
     if m is not None:
         return m
     raise HTTPException(status_code=404, detail="model not found")
+
+
+@app.get("/models/{model_id}/point", response_model=PointInspection)
+async def get_model_point(
+    model_id: str,
+    lng: float = Query(..., ge=-180.0, le=180.0, description="Longitude (WGS84)"),
+    lat: float = Query(..., ge=-90.0, le=90.0, description="Latitude (WGS84)"),
+    catalog: CatalogService = Depends(get_catalog_service),
+):
+    """
+    Suitability value at a WGS84 point (band 1 of the model COG).
+
+    Returns 422 if the point is outside the raster, nodata, or the file CRS is not EPSG:3857.
+    """
+    _raise_catalog_http_errors(catalog)
+    m = catalog.get_model(model_id)
+    if m is None:
+        raise HTTPException(status_code=404, detail="model not found")
+
+    def _run() -> PointInspection:
+        return inspect_point(m, lng, lat)
+
+    try:
+        return await run_in_threadpool(_run)
+    except PointSamplingError as e:
+        raise HTTPException(status_code=422, detail=e.detail) from e
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="suitability raster not found on server",
+        ) from e

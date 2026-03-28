@@ -8,9 +8,15 @@ import { titilerBase } from '../utils/apiBase'
 interface MapComponentProps {
   model: Model | null
   opacity?: number
+  /** When set, map clicks sample suitability at the clicked (lng, lat). */
+  onInspect?: (lng: number, lat: number) => void
 }
 
-function MapComponent({ opacity = 0.5, model = null }: MapComponentProps) {
+function MapComponent({
+  opacity = 0.5,
+  model = null,
+  onInspect,
+}: MapComponentProps) {
   const mapRef = useRef(null)
 
   const tileUrl = useMemo(() => {
@@ -46,6 +52,10 @@ function MapComponent({ opacity = 0.5, model = null }: MapComponentProps) {
       }}
       style={{ width: '100%', height: '100%' }}
       mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+      onClick={(e) => {
+        const { lng, lat } = e.lngLat
+        onInspect?.(lng, lat)
+      }}
     >
       {model && tileUrl && (
         <Source
