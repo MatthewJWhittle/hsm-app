@@ -1,6 +1,6 @@
 """Unit tests for catalog derivation from JSON index."""
 
-from backend_api.catalog import catalog_to_models, load_index, stable_model_id
+from backend_api.catalog import catalog_to_models, stable_model_id, try_load_catalog_json
 
 
 def test_stable_model_id_double_hyphen_between_parts():
@@ -82,5 +82,21 @@ def test_catalog_to_models_explicit_models_array_legacy():
     assert models[0].id == "custom-id"
 
 
-def test_load_index_missing_returns_none(tmp_path):
-    assert load_index(str(tmp_path / "nope.json")) is None
+def test_try_load_catalog_json_missing_returns_none_none(tmp_path):
+    assert try_load_catalog_json(str(tmp_path / "nope.json")) == (None, None)
+
+
+def test_try_load_catalog_json_invalid_json_returns_error(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text("{ not json", encoding="utf-8")
+    data, err = try_load_catalog_json(str(bad))
+    assert data is None
+    assert err == "Catalog file is not valid JSON."
+
+
+def test_try_load_catalog_json_non_object_returns_error(tmp_path):
+    f = tmp_path / "arr.json"
+    f.write_text("[1,2]", encoding="utf-8")
+    data, err = try_load_catalog_json(str(f))
+    assert data is None
+    assert err == "Catalog file must be a JSON object."

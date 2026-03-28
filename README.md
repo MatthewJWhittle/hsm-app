@@ -96,12 +96,16 @@ Optional Firebase/JOSE dependencies live under `[project.optional-dependencies] 
 
 ### Local prototype (this repo today)
 
-For local development, the catalog is a **Firestore-shaped JSON snapshot** at [`data/catalog/firestore_models.json`](data/catalog/firestore_models.json): collection id `models`, with one object per document (document id = `Model.id`). Regenerate it from COGs under `data/hsm-predictions/cog/` with [`scripts/generate_hsm_index.py`](scripts/generate_hsm_index.py) (also invoked at the end of [`scripts/convert_to_cog.sh`](scripts/convert_to_cog.sh)). The backend loads that file at startup (`CATALOG_PATH`, default `/data/catalog/firestore_models.json` in Docker). The catalog is read **once at process start**; editing the JSON under `/data` does not hot-reload — **restart the backend** to pick up catalog changes. Legacy `items[]`-only indexes are still supported if you omit `documents` and use the old shape.
+For local development, the catalog is a **Firestore-shaped JSON snapshot** at [`data/catalog/firestore_models.json`](data/catalog/firestore_models.json): collection id `models`, with one object per document (document id = `Model.id`). Regenerate it from COGs under `data/hsm-predictions/cog/` with [`scripts/generate_hsm_index.py`](scripts/generate_hsm_index.py) (also invoked at the end of [`scripts/convert_to_cog.sh`](scripts/convert_to_cog.sh)) — a **temporary** dev helper until COGs are uploaded via the admin API and stored in Firestore. The backend loads that file at startup (`CATALOG_PATH`, default `/data/catalog/firestore_models.json` in Docker). The catalog is read **once at process start**; editing the JSON under `/data` does not hot-reload — **restart the backend** to pick up catalog changes. Legacy `items[]`-only indexes are still supported if you omit `documents` and use the old shape.
+
+Loading uses `backend_api.catalog.try_load_catalog_json`: a **missing** file is treated as “no catalog” (log at **INFO**); a file that **exists** but cannot be read or is not valid JSON produces a **WARNING** in server logs and catalog routes return **`503`** with a short detail. **Duplicate `id` values** in `documents[]`: `GET /models/{id}` resolves to the **last** document with that id; `GET /models` may still list more than one row with the same `id` until ingestion enforces uniqueness. If JSON parses but **does not validate** against the [`Model`](docs/data-models.md) schema, routes return **`503`** until the JSON is fixed.
 
 **Backend (FastAPI)**
 
-- `GET /models` — list catalog entries ([`Model`](docs/data-models.md)); `404` if the catalog file is missing
-- `GET /models/{id}` — single model
+- `GET /models` — list catalog entries ([`Model`](docs/data-models.md)); `404` if the catalog file is missing; `503` if the file is unreadable, not valid JSON, or invalid for the schema
+- `GET /models/{id}` — single model (`404` if unknown; `503` when the catalog file could not be loaded or failed validation)
+
+Catalog backends implement the **`CatalogService`** protocol in `backend_api.catalog_service` (injected via FastAPI `Depends`). **`CATALOG_BACKEND`** is read from the environment (see `backend_api/settings.py`). **Omit it in production** to default to **`firestore`** (`FirestoreCatalogService`). For local JSON, set **`CATALOG_BACKEND=file`** (Docker Compose sets this for the backend service). `build_catalog_service` chooses the implementation from `Settings`.
 
 **Frontend**
 
@@ -117,6 +121,8 @@ For local development, the catalog is a **Firestore-shaped JSON snapshot** at [`
 ```bash
 cd backend && uv run pytest
 ```
+
+If you run **`uvicorn` outside Docker** and want the file catalog, set **`CATALOG_BACKEND=file`** (and **`CATALOG_PATH`** if needed). With no `CATALOG_BACKEND` set, the default is **`firestore`** (matches production).
 
 ### Next steps
 
