@@ -101,6 +101,19 @@ def test_catalog_validation_error_returns_503(invalid_catalog_client):
     assert "schema" in r.json()["detail"].lower()
 
 
+def test_documents_not_array_returns_503(tmp_path, monkeypatch):
+    catalog = tmp_path / "shape.json"
+    catalog.write_text(json.dumps({"documents": "not-a-list"}), encoding="utf-8")
+    monkeypatch.setenv("CATALOG_PATH", str(catalog))
+    import backend_api.main as main
+
+    importlib.reload(main)
+    with TestClient(main.app) as c:
+        r = c.get("/models")
+    assert r.status_code == 503
+    assert "documents array" in r.json()["detail"].lower()
+
+
 @pytest.fixture
 def malformed_json_catalog_client(tmp_path, monkeypatch):
     catalog = tmp_path / "not.json"

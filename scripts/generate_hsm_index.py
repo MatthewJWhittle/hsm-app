@@ -25,7 +25,7 @@ def slug_segment(name: str) -> str:
 
 
 def stable_model_id(species: str, activity: str) -> str:
-    """Match backend_api.catalog.stable_model_id (document id base)."""
+    """Document id base for the Firestore snapshot (slug: taxon--activity)."""
     return f'{slug_segment(species)}--{slug_segment(activity)}'
 
 

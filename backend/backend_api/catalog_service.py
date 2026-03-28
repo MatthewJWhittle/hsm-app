@@ -60,6 +60,11 @@ class FileCatalogService:
             self.validation_error = CATALOG_VALIDATION_DETAIL
             self.models = []
             return
+        except ValueError as e:
+            logger.exception("Catalog JSON has invalid shape for %s", self.path)
+            self.validation_error = str(e)
+            self.models = []
+            return
         # If multiple rows share the same `id`, the last one wins for lookup only; the
         # list from GET /models may still contain duplicates until ingestion enforces uniqueness.
         self._models_by_id = {m.id: m for m in self.models}
