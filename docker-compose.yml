@@ -52,6 +52,19 @@ services:
       # (Seed the `models` collection first, or GET /models will be empty.)
     command: >
       sh -c "uv sync --no-dev && uv run uvicorn backend_api.main:app --host 0.0.0.0 --port 8000 --reload"
+    healthcheck:
+      # Avoid frontend Vite proxying /api before uvicorn is listening (ECONNREFUSED on first paint).
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
 
   frontend:
     build:
@@ -67,8 +80,10 @@ services:
       - API_PROXY_TARGET=http://backend:8000
     command: npm run dev -- --host 0.0.0.0
     depends_on:
-      - backend
-      - titiler
+      backend:
+        condition: service_healthy
+      titiler:
+        condition: service_started
 
   titiler:
     image: ghcr.io/developmentseed/titiler:latest
