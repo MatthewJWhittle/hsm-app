@@ -1,26 +1,33 @@
 import './App.css'
 import MapComponent from './components/Map'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { MapControlPanel } from './components/map/MapControlPanel'
+import { InspectionHud } from './components/InspectionHud'
 import type { Model } from './types/model'
-import { apiBase } from './utils/apiBase'
+import type { PointInspection } from './types/pointInspection'
+import { fetchModelCatalog } from './api/catalog'
+import { fetchPointInspection } from './api/inspectPoint'
 
 function App() {
   const [models, setModels] = useState<Model[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedModelId, setSelectedModelId] = useState('')
   const [opacity, setOpacity] = useState(70)
+  const [inspectCoords, setInspectCoords] = useState<{ lng: number; lat: number } | null>(
+    null,
+  )
+  const [inspection, setInspection] = useState<PointInspection | null>(null)
+  const [inspectLoading, setInspectLoading] = useState(false)
+  const [inspectError, setInspectError] = useState<string | null>(null)
+  const [hudOpen, setHudOpen] = useState(false)
+  const inspectAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
-    const base = apiBase()
-    fetch(`${base}/models`)
-      .then((r) => {
-        if (!r.ok) throw new Error(r.statusText || String(r.status))
-        return r.json() as Promise<Model[]>
-      })
+    fetchModelCatalog()
       .then((list) => {
         setModels(list)
         setLoadError(null)
+        setSelectedModelId((prev) => prev || list[0]?.id || '')
       })
       .catch(() => {
         setModels([])
@@ -28,15 +35,60 @@ function App() {
       })
   }, [])
 
-  useEffect(() => {
-    if (!selectedModelId && models.length > 0) {
-      setSelectedModelId(models[0].id)
-    }
-  }, [models, selectedModelId])
+  const clearInspection = useCallback(() => {
+    inspectAbortRef.current?.abort()
+    inspectAbortRef.current = null
+    setInspection(null)
+    setInspectError(null)
+    setInspectCoords(null)
+    setInspectLoading(false)
+    setHudOpen(false)
+  }, [])
+
+  const onModelChange = useCallback(
+    (modelId: string) => {
+      clearInspection()
+      setSelectedModelId(modelId)
+    },
+    [clearInspection],
+  )
+
+  const closeHud = useCallback(() => {
+    clearInspection()
+  }, [clearInspection])
 
   const selectedModel = useMemo(
     () => models.find((m) => m.id === selectedModelId) ?? null,
     [models, selectedModelId],
+  )
+
+  const handleInspect = useCallback(
+    (lng: number, lat: number) => {
+      if (!selectedModel) return
+      inspectAbortRef.current?.abort()
+      const ac = new AbortController()
+      inspectAbortRef.current = ac
+
+      setHudOpen(true)
+      setInspectCoords({ lng, lat })
+      setInspectLoading(true)
+      setInspectError(null)
+
+      fetchPointInspection(selectedModel.id, lng, lat, ac.signal)
+        .then(setInspection)
+        .catch((e: unknown) => {
+          if (e instanceof Error && e.name === 'AbortError') return
+          const message = e instanceof Error ? e.message : 'Request failed'
+          setInspection(null)
+          setInspectError(message)
+        })
+        .finally(() => {
+          if (!ac.signal.aborted) {
+            setInspectLoading(false)
+          }
+        })
+    },
+    [selectedModel],
   )
 
   return (
@@ -45,7 +97,7 @@ function App() {
         models={models}
         selectedModelId={selectedModelId}
         opacity={opacity}
-        onModelChange={setSelectedModelId}
+        onModelChange={onModelChange}
         onOpacityChange={setOpacity}
       />
       {loadError && (
@@ -66,7 +118,22 @@ function App() {
           {loadError}
         </div>
       )}
-      <MapComponent opacity={opacity / 100} model={selectedModel} />
+      {hudOpen && selectedModel && !loadError && (
+        <InspectionHud
+          onClose={closeHud}
+          modelLabel={`${selectedModel.species} — ${selectedModel.activity}`}
+          lng={inspectCoords?.lng ?? null}
+          lat={inspectCoords?.lat ?? null}
+          inspection={inspection}
+          loading={inspectLoading}
+          error={inspectError}
+        />
+      )}
+      <MapComponent
+        opacity={opacity / 100}
+        model={selectedModel}
+        onInspect={selectedModel && !loadError ? handleInspect : undefined}
+      />
     </div>
   )
 }

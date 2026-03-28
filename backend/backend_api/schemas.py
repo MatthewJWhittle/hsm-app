@@ -1,6 +1,6 @@
 """Pydantic models aligned with docs/data-models.md."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -24,3 +24,20 @@ class Model(BaseModel):
     driver_config: dict[str, Any] | None = None
 
     model_config = {"extra": "allow"}
+
+
+class DriverVariable(BaseModel):
+    """One factor in a point-level suitability explanation."""
+
+    name: str
+    direction: Literal["increase", "decrease", "neutral"]
+    label: str | None = None
+    magnitude: float | None = None
+
+
+class PointInspection(BaseModel):
+    """Suitability value and optional driver explanation at a location."""
+
+    value: float
+    unit: str | None = None
+    drivers: list[DriverVariable] | None = None
