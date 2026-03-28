@@ -47,12 +47,8 @@ services:
       - /app/.venv
       - ./data:/data:ro
     environment:
-      # Only env required for Firestore: point the client at the emulator (see Settings defaults for project/catalog).
+      # Firestore client → emulator; project/catalog defaults: backend_api/settings.py
       - FIRESTORE_EMULATOR_HOST=firebase-emulators:8085
-      # Optional overrides (defaults in backend_api/settings.py match hsm-dashboard + firestore):
-      # - GOOGLE_CLOUD_PROJECT=hsm-dashboard
-      # - CATALOG_BACKEND=file
-      # - CATALOG_PATH=/data/catalog/firestore_models.json
     depends_on:
       firebase-emulators:
         condition: service_started
