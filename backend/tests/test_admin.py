@@ -38,10 +38,10 @@ def _admin_client(documents: list[dict], mock_storage: MagicMock, admin: bool = 
             return_value=claims,
         ),
         patch(
-            "backend_api.cog_validation.validate_suitability_cog_bytes",
+            "backend_api.routers.models.validate_suitability_cog_bytes",
             return_value=None,
         ),
-        patch("backend_api.main.upsert_model"),
+        patch("backend_api.routers.models.upsert_model"),
         patch(
             "backend_api.storage.build_object_storage",
             return_value=mock_storage,

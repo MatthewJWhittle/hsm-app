@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     **Storage (admin uploads):** ``STORAGE_BACKEND`` is ``local`` (default) or ``gcs``.
     Local writes use ``LOCAL_STORAGE_ROOT``. GCS uses ``GCS_BUCKET`` and optional
     ``GCS_OBJECT_PREFIX``.
+
+    **OpenAPI / docs:** set ``OPENAPI_ENABLED=false`` in production to disable ``/docs``,
+    ``/redoc``, and ``/openapi.json``.
+
+    **Uploads:** ``MAX_UPLOAD_BYTES`` caps admin COG uploads (default ~100 MB). Enforce
+    in-process; also configure a reverse proxy or Cloud Run request size limits in production.
     """
 
     model_config = SettingsConfigDict(extra="ignore")
@@ -74,5 +80,19 @@ class Settings(BaseSettings):
         default="",
         description="Optional prefix inside the bucket (e.g. 'hsm/'); trailing slash optional.",
         validation_alias=AliasChoices("GCS_OBJECT_PREFIX"),
+    )
+
+    openapi_enabled: bool = Field(
+        default=True,
+        description="If false, disable OpenAPI schema and Swagger/ReDoc UIs.",
+        # Include field name so Settings(openapi_enabled=False) and tests work; env OPENAPI_ENABLED still matches.
+        validation_alias=AliasChoices("openapi_enabled", "OPENAPI_ENABLED"),
+    )
+
+    max_upload_bytes: int = Field(
+        default=100 * 1024 * 1024,
+        description="Maximum admin suitability COG upload size in bytes.",
+        validation_alias=AliasChoices("MAX_UPLOAD_BYTES"),
+        ge=1024,
     )
 

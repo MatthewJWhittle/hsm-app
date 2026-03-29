@@ -61,7 +61,7 @@ def test_auth_me_invalid_token_401():
     from tests.helpers import mock_firestore_client_for_documents
 
     mock_client = mock_firestore_client_for_documents(documents)
-    mock_verify = MagicMock(side_effect=Exception("bad token"))
+    mock_verify = MagicMock(side_effect=ValueError("bad token"))
     with (
         patch("backend_api.catalog_service.firestore.Client", return_value=mock_client),
         patch("backend_api.auth_deps.auth.verify_id_token", mock_verify),
