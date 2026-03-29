@@ -130,16 +130,20 @@ docker compose exec backend sh -c \
 
 Restart the backend after seeding if it already started with an empty catalog.
 
-**Save emulator data to disk (export) and reload it on the next start:** Compose mounts **`data/firestore-emulator-seed`** at `/workspace/firestore-seed`. While the emulators are running, write a snapshot there (overwrites if present):
+**Save emulator data to disk (export) and reload it on the next start:** Compose mounts **`./data`** at **`/workspace/host-data`**. The import/export directory must be a **subfolder** inside that mount (e.g. **`firestore-seed/`**). **Do not** bind-mount only `data/firestore-seed` as the container path for export (e.g. mapping it alone to `/workspace/host-data/firestore-seed`) — that makes the export path the **mount root** again and **`firebase emulators:export`** fails with **`EBUSY: resource busy or locked, rmdir`** (not a Unix permission bit issue). While the emulators are running, write a snapshot under **`/workspace/host-data/firestore-seed`**. Use the **same** Firebase CLI as the container (`firebase-tools@15.12.0` in `docker/firebase-emulators/Dockerfile`) and the **same project** as `emulators:start` (`.firebaserc` default: **`hsm-dashboard`**):
 
 ```bash
-docker compose exec firebase-emulators \
-  firebase emulators:export /workspace/firestore-seed --force
+mkdir -p data/firestore-seed
+
+docker compose exec -w /workspace firebase-emulators \
+  firebase -P hsm-dashboard emulators:export /workspace/host-data/firestore-seed --force
 ```
 
-That directory gets **`firebase-export-metadata.json`** plus **`firestore_export/`** (and auth data if you use Auth). On the **next** `docker compose up`, the **`firebase-emulators`** service starts with **`--import=/workspace/firestore-seed`** automatically when that metadata file exists; if the folder is still empty, emulators start without import.
+That directory gets **`firebase-export-metadata.json`** plus **`firestore_export/`** (and auth data if you use Auth). **`docker-compose.yml`** always passes **`--import=/workspace/host-data/firestore-seed`**; if the folder is empty or has no export metadata, Firebase logs a warning and starts with no imported data (then use the Python seed script or the Emulator UI).
 
-You can commit the export under **`data/firestore-emulator-seed/`** so teammates get the same seed, or keep it local-only.
+**If export says it cannot find running emulators:** run the command **inside** the `firebase-emulators` service (as above), not a different `firebase` on your Mac. Include **`-P hsm-dashboard`** and **`-w /workspace`** so the CLI resolves **`firebase.json`**. For more detail: append **`--debug`** to the `firebase` command. To export from the **host** instead, use **`npx firebase-tools@15.12.0`** with the repo root as cwd and emulators reachable on **`127.0.0.1:4400`** (hub).
+
+You can commit the export under **`data/firestore-seed/`** so teammates get the same seed, or keep it local-only.
 
 **Auth (test users):** the Auth emulator starts with **no users**. You can add them in the **Emulator UI** (http://localhost:4000 → Authentication) or via your app once the frontend uses `connectAuthEmulator`. You do **not** need real Google accounts or Firebase Console for the emulators. For **admin routes** (future), you will use test users + custom claims or an allowlist—Console setup applies to **production** only.
 
