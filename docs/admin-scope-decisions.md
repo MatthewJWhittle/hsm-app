@@ -50,3 +50,12 @@ This document captures **product and technical decisions** for [GitHub issue #9]
 Concrete delivery for the open issue remains aligned with [issue #9 description](https://github.com/MatthewJWhittle/hsm-app/issues/9): authenticated **`POST /models`** and **`PUT /models/{id}`**, COG + **EPSG:3857** validation, **GCS or local storage** via the abstraction above, Firestore persistence, **`/admin`** UI with Bearer tokens, and **documentation** (env vars, bootstrap admin claim script, dev vs prod).
 
 Non-goals and acceptance criteria on the issue are still authoritative; **this document steers design** without replacing those checkboxes.
+
+---
+
+## 6. Out of scope for the first `/admin` delivery (issue #9)
+
+The following remain **valid for the data model and future work** but are **not** required for the first admin MVP:
+
+- **`driver_config` in the admin UI** — The API may accept `driver_config` on `POST`/`PUT` for scripts or direct calls; the **`/admin` UI does not** need a JSON field in this milestone. Rich driver editing can follow when point-level drivers are wired.
+- **Registering a model by referencing an existing GCS path** (without uploading a file through the API) — **Deferred.** The first delivery is **multipart file upload** only; “catalog by reference” can be a later increment if still needed.

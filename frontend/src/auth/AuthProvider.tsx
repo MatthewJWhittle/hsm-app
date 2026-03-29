@@ -23,22 +23,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const auth = getFirebaseAuth()
     const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u)
-      setLoading(false)
+      if (!u) {
+        setUser(null)
+        setIsAdmin(false)
+        setLoading(false)
+        return
+      }
+      void u.getIdTokenResult().then(
+        (r) => {
+          setUser(u)
+          setIsAdmin(r.claims.admin === true)
+          setLoading(false)
+        },
+        () => {
+          setUser(u)
+          setIsAdmin(false)
+          setLoading(false)
+        },
+      )
     })
     return () => unsub()
   }, [])
-
-  useEffect(() => {
-    if (!user) {
-      setIsAdmin(false)
-      return
-    }
-    void user.getIdTokenResult().then(
-      (r) => setIsAdmin(r.claims.admin === true),
-      () => setIsAdmin(false),
-    )
-  }, [user])
 
   const signIn = useCallback(async (email: string, password: string) => {
     await signInWithEmailAndPassword(getFirebaseAuth(), email, password)

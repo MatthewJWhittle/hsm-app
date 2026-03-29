@@ -93,7 +93,7 @@ The MVP should not include:
 **Capabilities:**
 
 - Add or register a new species and one or more suitability models (COGs) plus optional metadata (model name, version).
-- Perform updates via an admin UI (form + upload or path to COG) and/or via API (e.g. POST/PUT catalog entries, file upload or reference to storage).
+- Perform updates via an admin UI (form + **file upload** for the COG) and/or via API (POST/PUT with multipart upload). Path-only / reference-only registration is [deferred](admin-scope-decisions.md#6-out-of-scope-for-the-first-admin-delivery-issue-9).
 - Catalog changes are persisted and reflected in the app’s species/model selection (after refresh or immediately depending on implementation).
 
 ### Future direction (design only for first admin milestone)

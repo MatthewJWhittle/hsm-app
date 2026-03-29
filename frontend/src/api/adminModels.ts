@@ -1,5 +1,6 @@
 import type { Model } from '../types/model'
 import { apiBase } from '../utils/apiBase'
+import { parseModel } from './models'
 
 async function errorMessage(r: Response): Promise<string> {
   try {
@@ -25,7 +26,6 @@ export async function createModel(params: {
   file: File
   modelName?: string
   modelVersion?: string
-  driverConfigJson?: string
 }): Promise<Model> {
   const form = new FormData()
   form.append('species', params.species)
@@ -33,7 +33,6 @@ export async function createModel(params: {
   form.append('file', params.file)
   if (params.modelName) form.append('model_name', params.modelName)
   if (params.modelVersion) form.append('model_version', params.modelVersion)
-  if (params.driverConfigJson) form.append('driver_config', params.driverConfigJson)
 
   const r = await fetch(`${apiBase()}/models`, {
     method: 'POST',
@@ -42,7 +41,9 @@ export async function createModel(params: {
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   const raw: unknown = await r.json()
-  return raw as Model
+  const model = parseModel(raw)
+  if (model === null) throw new Error('Invalid create model response')
+  return model
 }
 
 export async function updateModel(params: {
@@ -53,7 +54,6 @@ export async function updateModel(params: {
   file?: File | null
   modelName: string | null
   modelVersion: string | null
-  driverConfigJson?: string | null
 }): Promise<Model> {
   const form = new FormData()
   form.append('species', params.species)
@@ -61,9 +61,6 @@ export async function updateModel(params: {
   if (params.file) form.append('file', params.file)
   form.append('model_name', params.modelName ?? '')
   form.append('model_version', params.modelVersion ?? '')
-  if (params.driverConfigJson !== undefined && params.driverConfigJson !== null) {
-    form.append('driver_config', params.driverConfigJson)
-  }
 
   const r = await fetch(`${apiBase()}/models/${encodeURIComponent(params.modelId)}`, {
     method: 'PUT',
@@ -72,5 +69,7 @@ export async function updateModel(params: {
   })
   if (!r.ok) throw new Error(await errorMessage(r))
   const raw: unknown = await r.json()
-  return raw as Model
+  const model = parseModel(raw)
+  if (model === null) throw new Error('Invalid update model response')
+  return model
 }
