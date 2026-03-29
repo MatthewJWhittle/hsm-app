@@ -111,7 +111,9 @@ flowchart TB
 
 - **Purpose**: Support the admin user story: add new species and upload models and associated data (COGs produced elsewhere, added via admin). In scope for MVP.
 - **Responsibilities**: Accept new or updated models via upload or path; assign stable id on create; write artifacts to a **sensible folder structure** in storage (e.g. one folder per model, consistent naming); store **artifact locations in the DB** (artifact_root, suitability_cog_path, optional driver_config). Admin actions restricted (auth + admin role). **Concrete naming and layout** (fixed suitability filename per folder, `model_id` rules, what to avoid): [Data models — raster naming](data-models.md#raster-files-folders-and-naming-uploads-and-storage). **Validate uploads** (real COG, **EPSG:3857**) before committing the catalog — [Data models — upload validation](data-models.md#upload-validation-cog-format-and-crs).
-- **API**: `POST /models` (create; body: species, activity, COG upload or path, optional metadata and driver config; backend assigns id, writes to storage, saves paths in Firestore), `PUT /models/{id}` (update). List: same `GET /models`.
+- **Authorization**: **Firebase custom claim `admin: true`** on the ID token; bootstrap via **local CLI/Python script** (Admin SDK), not the Firebase Console. Future: additional claims or Firestore roles for project-scoped actions. See [Admin scope decisions](admin-scope-decisions.md).
+- **Storage**: **Environment-selected backend** — local filesystem in dev, **GCS** in production — behind one **storage abstraction** to avoid ad hoc branching. See [Admin scope decisions](admin-scope-decisions.md).
+- **API**: `POST /models` (create; body: species, activity, COG upload or path, optional metadata and driver config; backend assigns id, writes to storage, saves paths in Firestore), `PUT /models/{id}` (update). List: same `GET /models`. **Project-scoped routes** (e.g. `/projects/...`) are a **later** increment; design catalog and ids so projects can wrap models without a breaking redesign — [Admin scope decisions](admin-scope-decisions.md).
 - **UI**: Admin route (e.g. `/admin`): list models, form to add or edit model (species, activity, COG upload or path, optional model name/version, driver config); auth-gated.
 
 ---
@@ -185,7 +187,7 @@ The following keeps the design easy to extend as scope grows (comparison, area q
 
 **Catalog evolution**
 
-- Add optional fields to Model (e.g. driver config, taxon_id, metadata blob) as needed; frontend and admin can ignore unknown keys. Avoid encoding expansion in new top-level resources until necessary (e.g. “projects” or “groups” reference model ids).
+- Add optional fields to Model (e.g. driver config, taxon_id, metadata blob) as needed; frontend and admin can ignore unknown keys. When introducing **projects** (or groups), prefer **referencing model ids** and stable storage prefixes rather than overloading the Model document; see [Admin scope decisions](admin-scope-decisions.md).
 
 ---
 

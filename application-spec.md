@@ -130,6 +130,7 @@ Design choices that make later scope easier (see [Solution architecture §7](doc
 * Define colour ramps & classification methods.
 * Finalise authentication scope: required for admin; optional for general app access in MVP.
 * Sketch wireframes.
+* Admin implementation steering (custom claims, storage abstraction, ids, future projects): see [docs/admin-scope-decisions.md](docs/admin-scope-decisions.md) and [GitHub issue #9](https://github.com/MatthewJWhittle/hsm-app/issues/9).
 
 ---
 

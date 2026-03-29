@@ -96,6 +96,10 @@ The MVP should not include:
 - Perform updates via an admin UI (form + upload or path to COG) and/or via API (e.g. POST/PUT catalog entries, file upload or reference to storage).
 - Catalog changes are persisted and reflected in the app’s species/model selection (after refresh or immediately depending on implementation).
 
+### Future direction (design only for first admin milestone)
+
+The product may later add **projects** (create, configure, add data, publish) with **additional API routes** and resources scoped under projects. The **first admin delivery** (see [GitHub issue #9](https://github.com/MatthewJWhittle/hsm-app/issues/9)) should **not assume the full project feature set** but should **avoid blocking** it (stable ids, clear storage layout, extensible `driver_config`). See [Admin scope decisions](admin-scope-decisions.md).
+
 ## Success criteria for MVP
 
 The MVP is successful if users can:
