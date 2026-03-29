@@ -1,4 +1,3 @@
-import { HelpOutline } from '@mui/icons-material'
 import {
   Alert,
   Box,
@@ -8,6 +7,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormHelperText,
   Paper,
   Stack,
   Table,
@@ -16,11 +16,12 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+
+import '../App.css'
 
 import { createModel, updateModel } from '../api/adminModels'
 import { fetchModelCatalog } from '../api/catalog'
@@ -28,45 +29,20 @@ import { useAuth } from '../auth/useAuth'
 import { Navbar } from '../components/Navbar'
 import type { Model } from '../types/model'
 
-/** Short hints for the catalog fields (aligned with API / data-models). */
+/** One-line hints under each field (keep short to avoid a “wall of text”). */
 const FIELD_HELP = {
-  species:
-    'Species or taxon this layer represents (e.g. common or scientific name). Shown in the catalog and used to identify the model on the map.',
-  activity:
-    'Behaviour or context for this suitability surface (e.g. roosting, foraging). Together with species, this uniquely labels the catalog entry.',
-  modelName:
-    'Optional display name for the model product or scenario if you want a title beyond species and activity.',
-  modelVersion:
-    'Optional version or revision label (e.g. date or semantic version) to track updates to this entry.',
-  cogFile:
-    'Must be a GeoTIFF that is a valid Cloud Optimized GeoTIFF (COG) in Web Mercator (EPSG:3857). Other CRS or invalid COGs are rejected. Maximum upload size is set on the server.',
-  cogReplaceOptional:
-    'Optional. Choose a new file only if you want to replace the suitability raster. Same COG and CRS rules as a new upload. Skip this to keep the existing COG and only change metadata.',
+  species: 'How this layer is labeled in the catalog and on the map.',
+  activity: 'With species, identifies this entry (e.g. roosting, foraging).',
+  modelName: 'Optional extra title beyond species and activity.',
+  modelVersion: 'Optional label for this revision (e.g. date or version).',
 } as const
 
-function FieldLabelWithTip({ text, hint }: { text: string; hint: string }) {
-  return (
-    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25 }}>
-      {text}
-      <Tooltip title={hint} arrow placement="top" enterTouchDelay={0}>
-        <Box
-          component="span"
-          sx={{
-            display: 'inline-flex',
-            color: 'action.active',
-            cursor: 'help',
-            verticalAlign: 'middle',
-            '&:focus-visible': { outline: '2px solid', outlineOffset: 2, borderRadius: '2px' },
-          }}
-          tabIndex={0}
-          aria-label={`${text}: more information`}
-        >
-          <HelpOutline sx={{ fontSize: '1rem' }} />
-        </Box>
-      </Tooltip>
-    </Box>
-  )
-}
+/** Longer COG rules once per form instead of repeating under every control. */
+const COG_REQUIREMENTS_INFO =
+  'Suitability file: valid Cloud Optimized GeoTIFF (COG), Web Mercator (EPSG:3857). The server validates format, CRS, and upload size.'
+
+const COG_REPLACE_HINT =
+  'Optional. Same rules as a new upload; leave empty to keep the current file.'
 
 export function AdminPage() {
   const { user, loading, isAdmin, getIdToken } = useAuth()
@@ -180,41 +156,48 @@ export function AdminPage() {
 
   if (loading) {
     return (
-      <div className="app-container">
+      <div className="app-container app-container--scroll">
         <Navbar />
-        <Typography sx={{ p: 2 }}>Loading…</Typography>
+        <div className="app-scroll-region">
+          <Typography sx={{ p: 2 }}>Loading…</Typography>
+        </div>
       </div>
     )
   }
 
   if (!user) {
     return (
-      <div className="app-container">
+      <div className="app-container app-container--scroll">
         <Navbar />
-        <Container sx={{ py: 3 }}>
-          <Alert severity="info">Sign in to access admin.</Alert>
-        </Container>
+        <div className="app-scroll-region">
+          <Container sx={{ py: 3 }}>
+            <Alert severity="info">Sign in to access admin.</Alert>
+          </Container>
+        </div>
       </div>
     )
   }
 
   if (!isAdmin) {
     return (
-      <div className="app-container">
+      <div className="app-container app-container--scroll">
         <Navbar />
-        <Container sx={{ py: 3 }}>
-          <Alert severity="warning">
-            Admin access requires the <code>admin</code> custom claim on your account.
-          </Alert>
-        </Container>
+        <div className="app-scroll-region">
+          <Container sx={{ py: 3 }}>
+            <Alert severity="warning">
+              Admin access requires the <code>admin</code> custom claim on your account.
+            </Alert>
+          </Container>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="app-container">
+    <div className="app-container app-container--scroll">
       <Navbar />
-      <Container maxWidth="lg" sx={{ py: 2 }}>
+      <div className="app-scroll-region">
+        <Container maxWidth="lg" sx={{ py: 2, pb: 3 }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
           <Typography variant="h5" component="h1">
             Admin — catalog
@@ -234,48 +217,55 @@ export function AdminPage() {
           <Typography variant="subtitle1" sx={{ mb: 1 }}>
             Add model
           </Typography>
+          <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: 560, py: 0.75 }}>
+            {COG_REQUIREMENTS_INFO}
+          </Alert>
           <Box component="form" onSubmit={handleCreate}>
-            <Stack spacing={2} direction={{ xs: 'column', sm: 'row' }} useFlexGap flexWrap="wrap">
+            <Stack spacing={2} sx={{ maxWidth: 560 }}>
               <TextField
                 required
-                label={<FieldLabelWithTip text="Species" hint={FIELD_HELP.species} />}
+                label="Species"
+                helperText={FIELD_HELP.species}
                 value={species}
                 onChange={(e) => setSpecies(e.target.value)}
                 size="small"
+                fullWidth
               />
               <TextField
                 required
-                label={<FieldLabelWithTip text="Activity" hint={FIELD_HELP.activity} />}
+                label="Activity"
+                helperText={FIELD_HELP.activity}
                 value={activity}
                 onChange={(e) => setActivity(e.target.value)}
                 size="small"
+                fullWidth
               />
               <TextField
-                label={<FieldLabelWithTip text="Model name" hint={FIELD_HELP.modelName} />}
+                label="Model name"
+                helperText={FIELD_HELP.modelName}
                 value={modelName}
                 onChange={(e) => setModelName(e.target.value)}
                 size="small"
+                fullWidth
               />
               <TextField
-                label={<FieldLabelWithTip text="Model version" hint={FIELD_HELP.modelVersion} />}
+                label="Model version"
+                helperText={FIELD_HELP.modelVersion}
                 value={modelVersion}
                 onChange={(e) => setModelVersion(e.target.value)}
                 size="small"
+                fullWidth
               />
-              <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" sx={{ alignSelf: 'center' }}>
-                <Tooltip title={FIELD_HELP.cogFile} enterTouchDelay={0}>
-                  <span>
-                    <Button variant="outlined" component="label" size="small">
-                      COG file
-                      <input
-                        type="file"
-                        accept=".tif,.tiff,image/tiff"
-                        hidden
-                        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                      />
-                    </Button>
-                  </span>
-                </Tooltip>
+              <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
+                <Button variant="outlined" component="label" size="small">
+                  COG file
+                  <input
+                    type="file"
+                    accept=".tif,.tiff,image/tiff"
+                    hidden
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  />
+                </Button>
                 <Typography variant="body2" color="text.secondary">
                   {file ? file.name : 'No file chosen'}
                 </Typography>
@@ -326,51 +316,54 @@ export function AdminPage() {
           <DialogContent>
             <Stack spacing={2} sx={{ mt: 1 }}>
               <TextField
-                label={<FieldLabelWithTip text="Species" hint={FIELD_HELP.species} />}
+                label="Species"
+                helperText={FIELD_HELP.species}
                 value={editSpecies}
                 onChange={(e) => setEditSpecies(e.target.value)}
                 size="small"
                 fullWidth
               />
               <TextField
-                label={<FieldLabelWithTip text="Activity" hint={FIELD_HELP.activity} />}
+                label="Activity"
+                helperText={FIELD_HELP.activity}
                 value={editActivity}
                 onChange={(e) => setEditActivity(e.target.value)}
                 size="small"
                 fullWidth
               />
               <TextField
-                label={<FieldLabelWithTip text="Model name" hint={FIELD_HELP.modelName} />}
+                label="Model name"
+                helperText={FIELD_HELP.modelName}
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 size="small"
                 fullWidth
               />
               <TextField
-                label={<FieldLabelWithTip text="Model version" hint={FIELD_HELP.modelVersion} />}
+                label="Model version"
+                helperText={FIELD_HELP.modelVersion}
                 value={editVersion}
                 onChange={(e) => setEditVersion(e.target.value)}
                 size="small"
                 fullWidth
               />
-              <Tooltip title={FIELD_HELP.cogReplaceOptional} enterTouchDelay={0}>
-                <span>
-                  <Button variant="outlined" component="label" size="small" sx={{ alignSelf: 'flex-start' }}>
-                    Replace COG (optional)
-                    <input
-                      type="file"
-                      accept=".tif,.tiff,image/tiff"
-                      hidden
-                      onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
-                    />
-                  </Button>
-                </span>
-              </Tooltip>
-              {editFile && (
-                <Typography variant="caption" color="text.secondary">
-                  {editFile.name}
-                </Typography>
-              )}
+              <Box>
+                <Button variant="outlined" component="label" size="small">
+                  Replace COG (optional)
+                  <input
+                    type="file"
+                    accept=".tif,.tiff,image/tiff"
+                    hidden
+                    onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
+                  />
+                </Button>
+                {editFile && (
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                    {editFile.name}
+                  </Typography>
+                )}
+                <FormHelperText sx={{ mx: 0, mt: 0.5 }}>{COG_REPLACE_HINT}</FormHelperText>
+              </Box>
               {editError && <Alert severity="error">{editError}</Alert>}
             </Stack>
           </DialogContent>
@@ -381,7 +374,8 @@ export function AdminPage() {
             </Button>
           </DialogActions>
         </Dialog>
-      </Container>
+        </Container>
+      </div>
     </div>
   )
 }

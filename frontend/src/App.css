@@ -6,6 +6,22 @@
   overflow: hidden;
 }
 
+/* Non-map pages (e.g. /admin): keep navbar fixed, scroll main content. */
+.app-container.app-container--scroll {
+  height: 100vh;
+  min-height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+.app-scroll-region {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+
 .app-main {
   flex: 1;
   min-height: 0;
