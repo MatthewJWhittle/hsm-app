@@ -35,5 +35,8 @@ docs/_build/
 # Abstra
 .abstra/
 
+# Agent skills (sources pinned in skills-lock.json; sync separately)
+.agents/skills/
+
 # PyPI config (sometimes at home dir symlink; ignore if present in repo)
 .pypirc

@@ -153,6 +153,12 @@ You can commit the export under **`data/firestore-seed/`** so teammates get the 
 
 ## Development
 
+### Catalog backend and issue #4
+
+[Issue #4](https://github.com/MatthewJWhittle/hsm-app/issues/4) originally described **additive** emulator support and an optional **file-backed** catalog for developers who skip emulators. This branch **does not** keep a `CATALOG_BACKEND` switch: the product is **not deployed yet**, so the API loads the catalog from **Firestore only** via `FirestoreCatalogService`. [`data/catalog/firestore_models.json`](data/catalog/firestore_models.json) is **seed data** for the emulator (and tests), not a runtime file catalog.
+
+Firebase-related **agent skills** are pinned in [`skills-lock.json`](skills-lock.json) (upstream sources and hashes); large vendored trees under `.agents/skills/` are not committed here so PRs stay reviewable.
+
 ### Local prototype (this repo today)
 
 For local development, [`data/catalog/firestore_models.json`](data/catalog/firestore_models.json) is a **Firestore-shaped JSON snapshot** (one object per document in **`documents[]`**, document id = `Model.id`) used to **seed** the emulator via **`backend/scripts/seed_firestore_emulator.py`**, not loaded by the API. Regenerate it from COGs under `data/hsm-predictions/cog/` with [`scripts/generate_hsm_index.py`](scripts/generate_hsm_index.py) (also invoked at the end of [`scripts/convert_to_cog.sh`](scripts/convert_to_cog.sh)) — a **temporary** helper until COGs are managed via an admin API. Offline validation of that JSON shape uses **`backend_api.catalog.catalog_to_models`** (see [`docs/data-models.md`](docs/data-models.md)).
