@@ -5,6 +5,7 @@ description = "Habitat Suitability Model Visualiser Backend"
 requires-python = ">=3.11"
 dependencies = [
     "firebase-admin>=6.9.0",
+    "google-cloud-storage>=2.18.0",
     "google-cloud-firestore>=2.19.0",
     "fastapi[standard]>=0.115.12",
     "pydantic-settings>=2.6.1",
@@ -31,9 +32,13 @@ ignore = []
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"] 
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function" 
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.0",
     "pytest>=9.0.2",
+    "pytest-asyncio>=0.25.0",
 ]

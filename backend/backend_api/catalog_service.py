@@ -50,6 +50,14 @@ class FirestoreCatalogService:
         self._models_by_id: dict[str, Model] = {}
         self._load()
 
+    def reload(self) -> None:
+        """Re-read Firestore after admin writes (same process)."""
+        self.validation_error = None
+        self.load_error = None
+        self.models = []
+        self._models_by_id = {}
+        self._load()
+
     def _load(self) -> None:
         try:
             client = firestore.Client(project=self._settings.google_cloud_project)

@@ -3,6 +3,7 @@ import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
+import { Link as RouterLink } from 'react-router-dom'
 
 import { BrandMark } from './BrandMark'
 import { UserMenu } from './UserMenu'
@@ -22,8 +23,8 @@ export function Navbar() {
     >
       <Toolbar variant="dense" sx={{ minHeight: 48, gap: 2, px: { xs: 1, sm: 2 } }}>
         <ButtonBase
-          component="a"
-          href="/"
+          component={RouterLink}
+          to="/"
           disableRipple
           sx={{
             display: 'flex',

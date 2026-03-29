@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from firebase_admin import auth
-from fastapi import HTTPException, Request
+from firebase_admin import exceptions as firebase_exceptions
+from fastapi import Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 
@@ -26,5 +27,14 @@ async def require_id_token_claims(request: Request) -> dict:
 
     try:
         return await run_in_threadpool(_verify)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token") from None
+    except (ValueError, firebase_exceptions.FirebaseError) as e:
+        raise HTTPException(status_code=401, detail="Invalid or expired token") from e
+
+
+async def require_admin_claims(
+    claims: dict = Depends(require_id_token_claims),
+) -> dict:
+    """Verified ID token with Firebase custom claim ``admin: true`` (else 403)."""
+    if claims.get("admin") is not True:
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return claims

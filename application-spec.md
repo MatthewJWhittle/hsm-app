@@ -67,7 +67,7 @@ Recommended for solo-dev cost control: **Firebase Hosting + Cloud Run + Firestor
   * Tiles: frontend builds TiTiler URL from `model.suitability_cog_path` (TiTiler is a separate Cloud Run service).
   * `GET /vectors/{layer}.geojson` → static vector data
   * `POST /auth/token` → OAuth2 token
-  * **Admin:** `POST /models` → create model (body: species, activity, COG upload or path, optional metadata/driver config; backend assigns id, writes artifacts to storage with sensible folder structure, stores artifact_root and paths in DB); `PUT /models/{id}` → update model. **Object naming:** follow [Data models — raster naming](docs/data-models.md#raster-files-folders-and-naming-uploads-and-storage) (folder per `model_id`, fixed `suitability_cog.tif`, catalog holds display names). **Validation:** reject non-COG GeoTIFFs and rasters not in **EPSG:3857** before registering — [Data models — upload validation](docs/data-models.md#upload-validation-cog-format-and-crs).
+  * **Admin:** `POST /models` → create model (body: species, activity, **COG file upload**, optional metadata; optional `driver_config` for scripted/API use — not required in `/admin` UI in the first milestone); `PUT /models/{id}` → update model. **Object naming:** follow [Data models — raster naming](docs/data-models.md#raster-files-folders-and-naming-uploads-and-storage) (folder per `model_id`, fixed `suitability_cog.tif`, catalog holds display names). **Validation:** reject non-COG GeoTIFFs and rasters not in **EPSG:3857** before registering — [Data models — upload validation](docs/data-models.md#upload-validation-cog-format-and-crs). Path-only registration (no upload) is [out of scope for the first admin delivery](docs/admin-scope-decisions.md#6-out-of-scope-for-the-first-admin-delivery-issue-9).
 * **Frontend Components**
 
   * `App`: root, routes
@@ -77,7 +77,7 @@ Recommended for solo-dev cost control: **Firebase Hosting + Cloud Run + Firestor
   * `Legend`: dynamic colour ramp
   * **Interpretation guidance / caveats**: in-app content (panel, modal, or legend) explaining what the map means, that output is relative suitability not proof of presence/absence, and that the tool supports (not replaces) expert judgement (MVP must-have).
   * `ExportButton`: screenshot + share link generator
-  * **Admin:** `AdminRoute` or `/admin`: list models (`GET /models`), form to add (`POST /models`) or edit (`PUT /models/{id}`) species, activity, COG (upload or path), optional model name/version; auth-gated
+  * **Admin:** `AdminRoute` or `/admin`: list models (`GET /models`), form to add (`POST /models`) or edit (`PUT /models/{id}`) species, activity, COG upload, optional model name/version; auth-gated
 
 ### 4.1 Extensibility
 
@@ -130,6 +130,7 @@ Design choices that make later scope easier (see [Solution architecture §7](doc
 * Define colour ramps & classification methods.
 * Finalise authentication scope: required for admin; optional for general app access in MVP.
 * Sketch wireframes.
+* Admin implementation steering (custom claims, storage abstraction, ids, future projects): see [docs/admin-scope-decisions.md](docs/admin-scope-decisions.md) and [GitHub issue #9](https://github.com/MatthewJWhittle/hsm-app/issues/9).
 
 ---
 

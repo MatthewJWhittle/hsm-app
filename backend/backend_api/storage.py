@@ -1,0 +1,89 @@
+"""Pluggable storage for admin suitability COG uploads (local vs GCS)."""
+
+from __future__ import annotations
+
+import logging
+import re
+from pathlib import Path
+from typing import Protocol
+
+from backend_api.settings import Settings
+
+logger = logging.getLogger(__name__)
+
+SUITABILITY_FILENAME = "suitability_cog.tif"
+
+
+class ObjectStorage(Protocol):
+    """Write suitability COG bytes for a model id; return catalog path fields."""
+
+    def write_suitability_cog(self, model_id: str, content: bytes) -> tuple[str, str]:
+        """
+        Persist the COG and return ``(artifact_root, suitability_cog_path)``.
+
+        ``suitability_cog_path`` may be relative to ``artifact_root`` or absolute
+        (see ``resolve_cog_path`` in point_sampling).
+        """
+
+
+class LocalObjectStorage:
+    """Store under ``{root}/models/{model_id}/suitability_cog.tif``."""
+
+    def __init__(self, root: Path) -> None:
+        self._root = root
+
+    def write_suitability_cog(self, model_id: str, content: bytes) -> tuple[str, str]:
+        safe_id = _safe_segment(model_id)
+        dest_dir = self._root / "models" / safe_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = dest_dir / SUITABILITY_FILENAME
+        dest_path.write_bytes(content)
+        artifact_root = str(dest_dir)
+        # Relative filename matches docs/data-models.md (folder-per-model + fixed name).
+        return artifact_root, SUITABILITY_FILENAME
+
+
+class GcsObjectStorage:
+    """Upload to ``gs://{bucket}/{prefix}models/{model_id}/suitability_cog.tif``."""
+
+    def __init__(self, bucket_name: str, prefix: str) -> None:
+        from google.cloud import storage
+
+        self._client = storage.Client()
+        self._bucket = self._client.bucket(bucket_name)
+        self._prefix = normalize_gcs_prefix(prefix)
+
+    def write_suitability_cog(self, model_id: str, content: bytes) -> tuple[str, str]:
+        safe_id = _safe_segment(model_id)
+        blob_name = f"{self._prefix}models/{safe_id}/{SUITABILITY_FILENAME}"
+        blob = self._bucket.blob(blob_name)
+        blob.upload_from_string(content, content_type="image/tiff")
+        artifact_root = f"gs://{self._bucket.name}/{self._prefix}models/{safe_id}"
+        return artifact_root, SUITABILITY_FILENAME
+
+
+def normalize_gcs_prefix(prefix: str) -> str:
+    """Ensure non-empty prefix ends with '/' for safe concatenation."""
+    p = (prefix or "").strip()
+    if not p:
+        return ""
+    return p if p.endswith("/") else f"{p}/"
+
+
+def _safe_segment(model_id: str) -> str:
+    if not re.match(r"^[a-zA-Z0-9._-]+$", model_id):
+        raise ValueError("model id contains invalid characters")
+    return model_id
+
+
+def build_object_storage(settings: Settings) -> ObjectStorage:
+    backend = (settings.storage_backend or "local").strip().lower()
+    if backend == "local":
+        root = Path(settings.local_storage_root).expanduser().resolve()
+        logger.info("Object storage: local root=%s", root)
+        return LocalObjectStorage(root)
+    if backend == "gcs":
+        if not settings.gcs_bucket:
+            raise RuntimeError("GCS_BUCKET is required when STORAGE_BACKEND=gcs")
+        return GcsObjectStorage(settings.gcs_bucket, settings.gcs_object_prefix)
+    raise RuntimeError(f"Unknown STORAGE_BACKEND={settings.storage_backend!r}")

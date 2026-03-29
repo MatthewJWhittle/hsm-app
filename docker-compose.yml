@@ -37,12 +37,15 @@ services:
       # on the frontend) hides the host’s `.venv` so macOS shebangs are never used in Linux.
       - ./backend:/app
       - /app/.venv
-      - ./data:/data:ro
+      # Read-write: admin POST/PUT writes COGs under LOCAL_STORAGE_ROOT (see STORAGE_BACKEND).
+      - ./data:/data:rw
     environment:
       # Firestore client → emulator; GOOGLE_CLOUD_PROJECT default: backend_api/settings.py
       - FIRESTORE_EMULATOR_HOST=firebase-emulators:8085
       # Admin SDK verify_id_token → Auth emulator (host is Docker service name)
       - FIREBASE_AUTH_EMULATOR_HOST=firebase-emulators:9099
+      - STORAGE_BACKEND=local
+      - LOCAL_STORAGE_ROOT=/data
     depends_on:
       firebase-emulators:
         condition: service_started

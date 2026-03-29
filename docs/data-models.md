@@ -12,7 +12,7 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | string | **Required.** Stable identifier (e.g. slug: `myotis_daubentonii_in_flight`). Assigned once on create. |
+| `id` | string | **Required.** Stable identifier assigned **once on create**. Prefer **server-generated opaque ids** (UUID or ULID) for robustness; structured slugs remain an alternative where human-readable ids are required. See [Admin scope decisions](admin-scope-decisions.md). |
 | `species` | string | Display name (e.g. "Myotis daubentonii"). |
 | `activity` | string | Display name (e.g. "In flight"). |
 | `artifact_root` | string | **Required.** Base path or prefix in storage (GCS, etc.) for this model’s artifacts. All paths for this model are relative or derived from this (suitability COG, driver data). Enables a consistent folder-per-model layout. |
@@ -23,7 +23,7 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 
 **Extensibility:** Add optional fields as needed (e.g. `taxon_id`, `meta` blob). Backend and frontend should ignore unknown keys so schema can evolve.
 
-**API:** `GET /models` returns a list of Model. `GET /models/{id}` returns one Model. Admin: `POST /models` (body: species, activity, COG upload or path, optional metadata; backend assigns id, writes artifacts to a named folder structure, stores `artifact_root` and paths in DB), `PUT /models/{id}`.
+**API:** `GET /models` returns a list of Model. `GET /models/{id}` returns one Model. Admin: `POST /models` (body: species, activity, **COG file upload**, optional metadata; backend assigns id, writes artifacts to a named folder structure, stores `artifact_root` and paths in DB), `PUT /models/{id}`. Registering a model by **path-only** (no upload) is not part of the first admin MVP — see [Admin scope decisions — §6](admin-scope-decisions.md#6-out-of-scope-for-the-first-admin-delivery-issue-9).
 
 ### Raster files, folders, and naming (uploads and storage)
 
@@ -97,8 +97,9 @@ Drivers must be available to the API for point inspection. Each model is tied to
 
 - **Single multi-band COG:** One COG contains all driver variables (e.g. one band per feature). The model document specifies which **band names or feature ids** belong to this model. For `GET /models/{id}/point`, the API reads that subset at the requested location and returns DriverVariables. The “environment” (feature set) and the model are linked via this subset.
 - **Per-model driver raster or lookup:** Each model has its own driver dataset (path in `driver_config`); no shared COG.
+- **Shared multi-band environmental stack (common case for scaling):** A **single raster** (or stack) of environmental variables may be **shared** — e.g. scoped to a **project** or **reused across projects** — while each **model** still references only the **subset of bands/features** it uses via `driver_config`. Suitability outputs remain **per-model** under each model’s artifact prefix; driver **inputs** can point at shared storage without duplicating rasters per model.
 
-The data model should record enough for the API to resolve “this model → these features at this point” (e.g. `driver_cog_path` + `feature_ids` or `band_names`). Exact shape can be refined when driver data format is fixed.
+The data model should record enough for the API to resolve “this model → these features at this point” (e.g. `driver_cog_path` + `feature_ids` or `band_names`). Exact shape can be refined when driver data format is fixed. See [Admin scope decisions](admin-scope-decisions.md) for steering.
 
 ### Catalog storage (target shape)
 

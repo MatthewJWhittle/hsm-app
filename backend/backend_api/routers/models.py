@@ -1,0 +1,289 @@
+"""Catalog and model routes (read + admin write)."""
+
+from __future__ import annotations
+
+import uuid
+from typing import Annotated
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
+from starlette.concurrency import run_in_threadpool
+
+from backend_api.auth_deps import require_admin_claims
+from backend_api.catalog_service import CatalogService, FirestoreCatalogService
+from backend_api.catalog_write import upsert_model
+from backend_api.cog_validation import CogValidationError, validate_suitability_cog_bytes
+from backend_api.deps.catalog import (
+    get_catalog_service,
+    get_model_or_404,
+    get_object_storage,
+    require_catalog_ready,
+)
+from backend_api.deps.settings_dep import get_settings
+from backend_api.point_sampling import PointSamplingError, inspect_point
+from backend_api.schemas import Model, PointInspection
+from backend_api.schemas_admin import parse_driver_config_form
+from backend_api.settings import Settings
+from backend_api.storage import ObjectStorage
+
+router = APIRouter()
+
+_ADMIN_WRITE_RESPONSES: dict[int | str, dict[str, str]] = {
+    status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid bearer token"},
+    status.HTTP_403_FORBIDDEN: {"description": "Valid token but admin claim not set"},
+    status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {"description": "Upload exceeds MAX_UPLOAD_BYTES"},
+    status.HTTP_422_UNPROCESSABLE_ENTITY: {
+        "description": "Empty file, invalid COG/CRS, or bad driver_config JSON",
+    },
+    status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Storage or Firestore failure"},
+}
+
+
+async def _validate_cog_bytes_threaded(content: bytes) -> None:
+    def _run() -> None:
+        validate_suitability_cog_bytes(content)
+
+    await run_in_threadpool(_run)
+
+
+async def _reload_catalog_threaded(request: Request) -> None:
+    def _run() -> None:
+        cat = request.app.state.catalog_service
+        if isinstance(cat, FirestoreCatalogService):
+            cat.reload()
+
+    await run_in_threadpool(_run)
+
+
+def _parse_driver_config_http(raw: str | None) -> dict | None:
+    try:
+        return parse_driver_config_form(raw)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.get("/models", response_model=list[Model], tags=["catalog"])
+async def list_models(
+    catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+):
+    """List all suitability models (catalog). Aligns with docs/data-models.md."""
+    return catalog.models
+
+
+@router.get("/models/{model_id}", response_model=Model, tags=["catalog"])
+async def get_model(m: Annotated[Model, Depends(get_model_or_404)]):
+    """Return one model by id."""
+    return m
+
+
+@router.get("/models/{model_id}/point", response_model=PointInspection, tags=["catalog"])
+async def get_model_point(
+    lng: Annotated[
+        float,
+        Query(..., ge=-180.0, le=180.0, description="Longitude (WGS84)"),
+    ],
+    lat: Annotated[
+        float,
+        Query(..., ge=-90.0, le=90.0, description="Latitude (WGS84)"),
+    ],
+    m: Annotated[Model, Depends(get_model_or_404)],
+):
+    """
+    Suitability value at a WGS84 point (band 1 of the model COG).
+
+    Returns 422 if the point is outside the raster, nodata, or the file CRS is not EPSG:3857.
+    """
+
+    def _run() -> PointInspection:
+        return inspect_point(m, lng, lat)
+
+    try:
+        return await run_in_threadpool(_run)
+    except PointSamplingError as e:
+        raise HTTPException(status_code=422, detail=e.detail) from e
+    except FileNotFoundError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="suitability raster not found on server",
+        ) from e
+
+
+@router.post(
+    "/models",
+    response_model=Model,
+    status_code=201,
+    tags=["admin"],
+    responses=_ADMIN_WRITE_RESPONSES,
+    summary="Create catalog entry and upload suitability COG",
+)
+async def create_model(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _claims: Annotated[dict, Depends(require_admin_claims)],
+    storage: Annotated[ObjectStorage, Depends(get_object_storage)],
+    species: Annotated[str, Form()],
+    activity: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()],
+    model_name: Annotated[str | None, Form()] = None,
+    model_version: Annotated[str | None, Form()] = None,
+    driver_config: Annotated[str | None, Form()] = None,
+):
+    """Create a catalog entry and store the suitability COG (admin only)."""
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="empty file")
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
+        )
+
+    try:
+        await _validate_cog_bytes_threaded(content)
+    except CogValidationError as e:
+        raise HTTPException(status_code=422, detail=e.message) from e
+
+    model_id = str(uuid.uuid4())
+
+    def _write() -> tuple[str, str]:
+        return storage.write_suitability_cog(model_id, content)
+
+    try:
+        artifact_root, suitability_cog_path = await run_in_threadpool(_write)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"could not store file: {e}",
+        ) from e
+
+    dc = _parse_driver_config_http(driver_config)
+    model = Model(
+        id=model_id,
+        species=species.strip(),
+        activity=activity.strip(),
+        artifact_root=artifact_root,
+        suitability_cog_path=suitability_cog_path,
+        model_name=model_name.strip() if model_name else None,
+        model_version=model_version.strip() if model_version else None,
+        driver_config=dc,
+    )
+
+    def _persist() -> None:
+        upsert_model(settings, model)
+
+    try:
+        await run_in_threadpool(_persist)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"could not save catalog: {e}",
+        ) from e
+
+    await _reload_catalog_threaded(request)
+    return model
+
+
+@router.put(
+    "/models/{model_id}",
+    response_model=Model,
+    tags=["admin"],
+    responses=_ADMIN_WRITE_RESPONSES,
+    summary="Update model metadata and/or replace COG",
+)
+async def update_model(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _claims: Annotated[dict, Depends(require_admin_claims)],
+    storage: Annotated[ObjectStorage, Depends(get_object_storage)],
+    existing: Annotated[Model, Depends(get_model_or_404)],
+    species: Annotated[str | None, Form()] = None,
+    activity: Annotated[str | None, Form()] = None,
+    file: Annotated[UploadFile | None, File()] = None,
+    model_name: Annotated[str | None, Form()] = None,
+    model_version: Annotated[str | None, Form()] = None,
+    driver_config: Annotated[str | None, Form()] = None,
+):
+    """Update metadata and/or replace the suitability COG (admin only)."""
+    model_id = existing.id
+    artifact_root = existing.artifact_root
+    suitability_cog_path = existing.suitability_cog_path
+
+    if file is not None:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=422, detail="empty file")
+        if len(content) > settings.max_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
+            )
+        try:
+            await _validate_cog_bytes_threaded(content)
+        except CogValidationError as e:
+            raise HTTPException(status_code=422, detail=e.message) from e
+
+        def _write() -> tuple[str, str]:
+            return storage.write_suitability_cog(model_id, content)
+
+        try:
+            artifact_root, suitability_cog_path = await run_in_threadpool(_write)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"could not store file: {e}",
+            ) from e
+
+    new_species = species.strip() if species is not None else existing.species
+    new_activity = activity.strip() if activity is not None else existing.activity
+    if model_name is not None:
+        stripped = model_name.strip()
+        new_name = stripped if stripped else None
+    else:
+        new_name = existing.model_name
+    if model_version is not None:
+        stripped_v = model_version.strip()
+        new_ver = stripped_v if stripped_v else None
+    else:
+        new_ver = existing.model_version
+    if driver_config is not None:
+        new_driver = _parse_driver_config_http(driver_config)
+    else:
+        new_driver = existing.driver_config
+
+    model = Model(
+        id=model_id,
+        species=new_species,
+        activity=new_activity,
+        artifact_root=artifact_root,
+        suitability_cog_path=suitability_cog_path,
+        model_name=new_name,
+        model_version=new_ver,
+        driver_config=new_driver,
+    )
+
+    def _persist() -> None:
+        upsert_model(settings, model)
+
+    try:
+        await run_in_threadpool(_persist)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"could not save catalog: {e}",
+        ) from e
+
+    await _reload_catalog_threaded(request)
+    return model
