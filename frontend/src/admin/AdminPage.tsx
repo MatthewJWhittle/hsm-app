@@ -1,3 +1,4 @@
+import { HelpOutline } from '@mui/icons-material'
 import {
   Alert,
   Box,
@@ -15,6 +16,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { useCallback, useEffect, useState } from 'react'
@@ -25,6 +27,46 @@ import { fetchModelCatalog } from '../api/catalog'
 import { useAuth } from '../auth/useAuth'
 import { Navbar } from '../components/Navbar'
 import type { Model } from '../types/model'
+
+/** Short hints for the catalog fields (aligned with API / data-models). */
+const FIELD_HELP = {
+  species:
+    'Species or taxon this layer represents (e.g. common or scientific name). Shown in the catalog and used to identify the model on the map.',
+  activity:
+    'Behaviour or context for this suitability surface (e.g. roosting, foraging). Together with species, this uniquely labels the catalog entry.',
+  modelName:
+    'Optional display name for the model product or scenario if you want a title beyond species and activity.',
+  modelVersion:
+    'Optional version or revision label (e.g. date or semantic version) to track updates to this entry.',
+  cogFile:
+    'Must be a GeoTIFF that is a valid Cloud Optimized GeoTIFF (COG) in Web Mercator (EPSG:3857). Other CRS or invalid COGs are rejected. Maximum upload size is set on the server.',
+  cogReplaceOptional:
+    'Optional. Choose a new file only if you want to replace the suitability raster. Same COG and CRS rules as a new upload. Skip this to keep the existing COG and only change metadata.',
+} as const
+
+function FieldLabelWithTip({ text, hint }: { text: string; hint: string }) {
+  return (
+    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25 }}>
+      {text}
+      <Tooltip title={hint} arrow placement="top" enterTouchDelay={0}>
+        <Box
+          component="span"
+          sx={{
+            display: 'inline-flex',
+            color: 'action.active',
+            cursor: 'help',
+            verticalAlign: 'middle',
+            '&:focus-visible': { outline: '2px solid', outlineOffset: 2, borderRadius: '2px' },
+          }}
+          tabIndex={0}
+          aria-label={`${text}: more information`}
+        >
+          <HelpOutline sx={{ fontSize: '1rem' }} />
+        </Box>
+      </Tooltip>
+    </Box>
+  )
+}
 
 export function AdminPage() {
   const { user, loading, isAdmin, getIdToken } = useAuth()
@@ -196,42 +238,48 @@ export function AdminPage() {
             <Stack spacing={2} direction={{ xs: 'column', sm: 'row' }} useFlexGap flexWrap="wrap">
               <TextField
                 required
-                label="Species"
+                label={<FieldLabelWithTip text="Species" hint={FIELD_HELP.species} />}
                 value={species}
                 onChange={(e) => setSpecies(e.target.value)}
                 size="small"
               />
               <TextField
                 required
-                label="Activity"
+                label={<FieldLabelWithTip text="Activity" hint={FIELD_HELP.activity} />}
                 value={activity}
                 onChange={(e) => setActivity(e.target.value)}
                 size="small"
               />
               <TextField
-                label="Model name"
+                label={<FieldLabelWithTip text="Model name" hint={FIELD_HELP.modelName} />}
                 value={modelName}
                 onChange={(e) => setModelName(e.target.value)}
                 size="small"
               />
               <TextField
-                label="Model version"
+                label={<FieldLabelWithTip text="Model version" hint={FIELD_HELP.modelVersion} />}
                 value={modelVersion}
                 onChange={(e) => setModelVersion(e.target.value)}
                 size="small"
               />
-              <Button variant="outlined" component="label" size="small">
-                COG file
-                <input
-                  type="file"
-                  accept=".tif,.tiff,image/tiff"
-                  hidden
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                />
-              </Button>
-              <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }}>
-                {file ? file.name : 'No file chosen'}
-              </Typography>
+              <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" sx={{ alignSelf: 'center' }}>
+                <Tooltip title={FIELD_HELP.cogFile} enterTouchDelay={0}>
+                  <span>
+                    <Button variant="outlined" component="label" size="small">
+                      COG file
+                      <input
+                        type="file"
+                        accept=".tif,.tiff,image/tiff"
+                        hidden
+                        onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                      />
+                    </Button>
+                  </span>
+                </Tooltip>
+                <Typography variant="body2" color="text.secondary">
+                  {file ? file.name : 'No file chosen'}
+                </Typography>
+              </Stack>
             </Stack>
             {createError && (
               <Alert severity="error" sx={{ mt: 2 }}>
@@ -278,42 +326,46 @@ export function AdminPage() {
           <DialogContent>
             <Stack spacing={2} sx={{ mt: 1 }}>
               <TextField
-                label="Species"
+                label={<FieldLabelWithTip text="Species" hint={FIELD_HELP.species} />}
                 value={editSpecies}
                 onChange={(e) => setEditSpecies(e.target.value)}
                 size="small"
                 fullWidth
               />
               <TextField
-                label="Activity"
+                label={<FieldLabelWithTip text="Activity" hint={FIELD_HELP.activity} />}
                 value={editActivity}
                 onChange={(e) => setEditActivity(e.target.value)}
                 size="small"
                 fullWidth
               />
               <TextField
-                label="Model name"
+                label={<FieldLabelWithTip text="Model name" hint={FIELD_HELP.modelName} />}
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 size="small"
                 fullWidth
               />
               <TextField
-                label="Model version"
+                label={<FieldLabelWithTip text="Model version" hint={FIELD_HELP.modelVersion} />}
                 value={editVersion}
                 onChange={(e) => setEditVersion(e.target.value)}
                 size="small"
                 fullWidth
               />
-              <Button variant="outlined" component="label" size="small" sx={{ alignSelf: 'flex-start' }}>
-                Replace COG (optional)
-                <input
-                  type="file"
-                  accept=".tif,.tiff,image/tiff"
-                  hidden
-                  onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
-                />
-              </Button>
+              <Tooltip title={FIELD_HELP.cogReplaceOptional} enterTouchDelay={0}>
+                <span>
+                  <Button variant="outlined" component="label" size="small" sx={{ alignSelf: 'flex-start' }}>
+                    Replace COG (optional)
+                    <input
+                      type="file"
+                      accept=".tif,.tiff,image/tiff"
+                      hidden
+                      onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
+                    />
+                  </Button>
+                </span>
+              </Tooltip>
               {editFile && (
                 <Typography variant="caption" color="text.secondary">
                   {editFile.name}
