@@ -1,15 +1,20 @@
+import json
+import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 
-from backend_api.auth_deps import require_id_token_claims
-from backend_api.catalog_service import CatalogService, build_catalog_service
+from backend_api.auth_deps import require_admin_claims, require_id_token_claims
+from backend_api.catalog_service import CatalogService, FirestoreCatalogService, build_catalog_service
+from backend_api.catalog_write import upsert_model
+from backend_api.cog_validation import CogValidationError, validate_suitability_cog_bytes
 from backend_api.firebase_admin_app import init_firebase_admin
 from backend_api.point_sampling import PointSamplingError, inspect_point
 from backend_api.schemas import AuthMeResponse, Model, PointInspection
 from backend_api.settings import Settings
+from backend_api.storage import ObjectStorage, build_object_storage
 
 
 def _cors_allow_origins(settings: Settings) -> list[str]:
@@ -23,11 +28,16 @@ def get_catalog_service(request: Request) -> CatalogService:
     return request.app.state.catalog_service
 
 
+def get_object_storage(request: Request) -> ObjectStorage:
+    return request.app.state.object_storage
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.settings = _settings
     init_firebase_admin(_settings)
     app.state.catalog_service = build_catalog_service(_settings)
+    app.state.object_storage = build_object_storage(_settings)
     yield
 
 
@@ -123,3 +133,175 @@ async def get_model_point(
             status_code=503,
             detail="suitability raster not found on server",
         ) from e
+
+
+def _reload_catalog(request: Request) -> None:
+    cat = request.app.state.catalog_service
+    if isinstance(cat, FirestoreCatalogService):
+        cat.reload()
+
+
+def _parse_driver_config(raw: str | None) -> dict | None:
+    if raw is None or (isinstance(raw, str) and raw.strip() == ""):
+        return None
+    try:
+        out = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"driver_config must be valid JSON: {e}",
+        ) from e
+    if not isinstance(out, dict):
+        raise HTTPException(status_code=422, detail="driver_config must be a JSON object")
+    return out
+
+
+@app.post("/models", response_model=Model, status_code=201)
+async def create_model(
+    request: Request,
+    species: str = Form(...),
+    activity: str = Form(...),
+    file: UploadFile = File(...),
+    model_name: str | None = Form(None),
+    model_version: str | None = Form(None),
+    driver_config: str | None = Form(None),
+    _claims: dict = Depends(require_admin_claims),
+    storage: ObjectStorage = Depends(get_object_storage),
+):
+    """Create a catalog entry and store the suitability COG (admin only)."""
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=422, detail="empty file")
+    try:
+        validate_suitability_cog_bytes(content)
+    except CogValidationError as e:
+        raise HTTPException(status_code=422, detail=e.message) from e
+
+    model_id = str(uuid.uuid4())
+
+    def _write() -> tuple[str, str]:
+        return storage.write_suitability_cog(model_id, content)
+
+    try:
+        artifact_root, suitability_cog_path = await run_in_threadpool(_write)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"could not store file: {e}",
+        ) from e
+
+    dc = _parse_driver_config(driver_config)
+    model = Model(
+        id=model_id,
+        species=species.strip(),
+        activity=activity.strip(),
+        artifact_root=artifact_root,
+        suitability_cog_path=suitability_cog_path,
+        model_name=model_name.strip() if model_name else None,
+        model_version=model_version.strip() if model_version else None,
+        driver_config=dc,
+    )
+
+    def _persist() -> None:
+        upsert_model(_settings, model)
+
+    try:
+        await run_in_threadpool(_persist)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"could not save catalog: {e}",
+        ) from e
+
+    _reload_catalog(request)
+    return model
+
+
+@app.put("/models/{model_id}", response_model=Model)
+async def update_model(
+    request: Request,
+    model_id: str,
+    species: str | None = Form(None),
+    activity: str | None = Form(None),
+    file: UploadFile | None = File(None),
+    model_name: str | None = Form(None),
+    model_version: str | None = Form(None),
+    driver_config: str | None = Form(None),
+    _claims: dict = Depends(require_admin_claims),
+    catalog: CatalogService = Depends(get_catalog_service),
+    storage: ObjectStorage = Depends(get_object_storage),
+):
+    """Update metadata and/or replace the suitability COG (admin only)."""
+    _raise_catalog_http_errors(catalog)
+    existing = catalog.get_model(model_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="model not found")
+
+    artifact_root = existing.artifact_root
+    suitability_cog_path = existing.suitability_cog_path
+
+    if file is not None:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=422, detail="empty file")
+        try:
+            validate_suitability_cog_bytes(content)
+        except CogValidationError as e:
+            raise HTTPException(status_code=422, detail=e.message) from e
+
+        def _write() -> tuple[str, str]:
+            return storage.write_suitability_cog(model_id, content)
+
+        try:
+            artifact_root, suitability_cog_path = await run_in_threadpool(_write)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"could not store file: {e}",
+            ) from e
+
+    new_species = species.strip() if species is not None else existing.species
+    new_activity = activity.strip() if activity is not None else existing.activity
+    if model_name is not None:
+        stripped = model_name.strip()
+        new_name = stripped if stripped else None
+    else:
+        new_name = existing.model_name
+    if model_version is not None:
+        stripped_v = model_version.strip()
+        new_ver = stripped_v if stripped_v else None
+    else:
+        new_ver = existing.model_version
+    if driver_config is not None:
+        new_driver = _parse_driver_config(driver_config)
+    else:
+        new_driver = existing.driver_config
+
+    model = Model(
+        id=model_id,
+        species=new_species,
+        activity=new_activity,
+        artifact_root=artifact_root,
+        suitability_cog_path=suitability_cog_path,
+        model_name=new_name,
+        model_version=new_ver,
+        driver_config=new_driver,
+    )
+
+    def _persist() -> None:
+        upsert_model(_settings, model)
+
+    try:
+        await run_in_threadpool(_persist)
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"could not save catalog: {e}",
+        ) from e
+
+    _reload_catalog(request)
+    return model

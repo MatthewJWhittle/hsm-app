@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     Catalog documents use collection id ``models`` (``MODELS_COLLECTION_ID`` in
     ``catalog_service``).
+
+    **Storage (admin uploads):** ``STORAGE_BACKEND`` is ``local`` (default) or ``gcs``.
+    Local writes use ``LOCAL_STORAGE_ROOT``. GCS uses ``GCS_BUCKET`` and optional
+    ``GCS_OBJECT_PREFIX``.
     """
 
     model_config = SettingsConfigDict(extra="ignore")
@@ -46,5 +50,29 @@ class Settings(BaseSettings):
         default=None,
         description="Auth emulator host:port (set before Admin SDK init in dev).",
         validation_alias=AliasChoices("FIREBASE_AUTH_EMULATOR_HOST"),
+    )
+
+    storage_backend: str = Field(
+        default="local",
+        description="Object storage for admin uploads: 'local' or 'gcs'.",
+        validation_alias=AliasChoices("STORAGE_BACKEND"),
+    )
+
+    local_storage_root: str = Field(
+        default="/data",
+        description="Filesystem root for suitability COGs when STORAGE_BACKEND=local.",
+        validation_alias=AliasChoices("LOCAL_STORAGE_ROOT"),
+    )
+
+    gcs_bucket: str | None = Field(
+        default=None,
+        description="GCS bucket when STORAGE_BACKEND=gcs.",
+        validation_alias=AliasChoices("GCS_BUCKET"),
+    )
+
+    gcs_object_prefix: str = Field(
+        default="",
+        description="Optional prefix inside the bucket (e.g. 'hsm/'); trailing slash optional.",
+        validation_alias=AliasChoices("GCS_OBJECT_PREFIX"),
     )
 

@@ -43,6 +43,8 @@ Map tiles are loaded from the **TiTiler Cloud Run URL**, not the Hosting `/api` 
 
 COGs stay in a **private** GCS bucket. The TiTiler Cloud Run service runs as a **service account** with **`storage.objectViewer`** (or tighter) on that bucket; raster paths are **`gs://…`** and TiTiler reads them via [ADC](https://cloud.google.com/docs/authentication/application-default-credentials) on Cloud Run. Signed URLs or public buckets are optional shortcuts, not the default.
 
+**Admin uploads (FastAPI):** Configure **`STORAGE_BACKEND`** — **`local`** for development (e.g. bind-mounted directory; Docker Compose sets **`LOCAL_STORAGE_ROOT=/data`** and **`STORAGE_BACKEND=local`**), **`gcs`** for production with **`GCS_BUCKET`** (and optional **`GCS_OBJECT_PREFIX`**). The API writes **`models/{model_id}/suitability_cog.tif`** and stores **`artifact_root`** / **`suitability_cog_path`** in Firestore. The FastAPI service account needs **`storage.objectAdmin`** or equivalent on the bucket for uploads. TiTiler continues to resolve tiles from the same logical paths (`file://` locally, **`gs://`** in cloud) as documented in [Data models](data-models.md).
+
 ### Cold starts (scale-to-zero) and UX
 
 With **`min-instances=0`**, FastAPI and TiTiler can both **cold start** after idle—acceptable for cost; raise `min-instances` only if traffic justifies it.

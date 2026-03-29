@@ -10,7 +10,7 @@ This document captures **product and technical decisions** for [GitHub issue #9]
 
 - **Admin gate:** Use **Firebase custom claims** on the ID token — specifically **`admin: true`** — for users allowed to call write/admin APIs and use the admin UI. This matches the existing frontend check (`claims.admin === true`).
 - **Not via Console:** Custom claims **cannot** be set from the Firebase Console UI; they are set with the **Firebase Admin SDK** (`auth.set_custom_user_claims`) or equivalent server-side API.
-- **Local / bootstrap:** Use a **CLI or Python script** (run locally with credentials or against the **Auth emulator**) to grant the first admin user(s). Document the script in the README next to other emulator setup.
+- **Local / bootstrap:** Run [`backend/scripts/set_admin_claim.py`](../backend/scripts/set_admin_claim.py) (from the `backend/` directory with `uv run`) with **`FIREBASE_AUTH_EMULATOR_HOST`** set when using the Auth emulator. See the README **Auth** section for the exact command.
 - **Future:** An admin may **grant other users** permissions (e.g. create a project, manage data). That implies **additional claims** and/or **Firestore-backed roles** later; **Firestore remains available for richer user and membership data** when needed. **This issue implements custom claims first**; fine-grained roles can build on the same patterns.
 
 - **HTTP semantics:** **`401`** if the bearer token is missing or invalid; **`403`** if the token is valid but the user does not have the required claim(s).

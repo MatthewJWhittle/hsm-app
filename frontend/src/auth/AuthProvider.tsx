@@ -52,16 +52,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await signOut(getFirebaseAuth())
   }, [])
 
+  const getIdToken = useCallback(async (forceRefresh?: boolean) => {
+    if (!user) return null
+    return user.getIdToken(Boolean(forceRefresh))
+  }, [user])
+
   const value = useMemo(
     () => ({
       user,
       loading,
       isAdmin,
+      getIdToken,
       signIn,
       signUp,
       signOutUser,
     }),
-    [user, loading, isAdmin, signIn, signUp, signOutUser],
+    [user, loading, isAdmin, getIdToken, signIn, signUp, signOutUser],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

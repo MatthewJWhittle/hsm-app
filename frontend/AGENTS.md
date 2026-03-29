@@ -314,7 +314,7 @@ When several valid options exist, choose the one that is:
 * Server state: **none** (imperative `fetch` from `src/api/*`; add TanStack Query only if caching/refetch patterns justify it)
 * Forms: **none** (no forms-heavy flows yet; MUI primitives when needed)
 * Validation: **manual type guards** in `src/api/` (no Zod in tree today; add if validation grows)
-* Routing: **none** (single-view Vite SPA)
+* Routing: **react-router-dom** — `/` map app, `/admin` catalog admin ([`src/main.tsx`](src/main.tsx), [`src/admin/AdminPage.tsx`](src/admin/AdminPage.tsx))
 * Styling: **MUI 7 + Emotion** (`@mui/material`, `@emotion/react`, `@emotion/styled`), plus `src/index.css` / `src/App.css`
 * Testing: **not wired yet** — track [issue #7](https://github.com/MatthewJWhittle/hsm-app/issues/7) (Vitest + Testing Library + `npm test`)
 

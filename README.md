@@ -146,7 +146,15 @@ That directory gets **`firebase-export-metadata.json`** plus **`firestore_export
 
 You can commit the export under **`data/firestore-seed/`** so teammates get the same seed, or keep it local-only.
 
-**Auth (test users):** the Auth emulator starts with **no users**. Add them in the **Emulator UI** (http://localhost:4000 → Authentication), use **Register** in the in-app **Auth (dev)** panel (bottom-left), or sign in with an existing email/password. The frontend uses **`connectAuthEmulator`** against **`http://127.0.0.1:9099`** when **`VITE_USE_AUTH_EMULATOR=true`**; the backend uses **`FIREBASE_AUTH_EMULATOR_HOST=firebase-emulators:9099`** inside Compose so **`GET /auth/me`** can verify emulator-issued ID tokens. You do **not** need real Google accounts for the emulators; copy **Firebase web app config** from the console only so **`VITE_FIREBASE_API_KEY`** (and related fields) match project **`hsm-dashboard`**. **Admin (`admin: true` custom claim)** is set with the **Firebase Admin SDK** (not the Console); use a **local CLI or Python script** to bootstrap admins and against the Auth emulator — see [docs/admin-scope-decisions.md](docs/admin-scope-decisions.md) and [issue #9](https://github.com/MatthewJWhittle/hsm-app/issues/9).
+**Auth (test users):** the Auth emulator starts with **no users**. Add them in the **Emulator UI** (http://localhost:4000 → Authentication), use **Register** in the in-app **Auth (dev)** panel (bottom-left), or sign in with an existing email/password. The frontend uses **`connectAuthEmulator`** against **`http://127.0.0.1:9099`** when **`VITE_USE_AUTH_EMULATOR=true`**; the backend uses **`FIREBASE_AUTH_EMULATOR_HOST=firebase-emulators:9099`** inside Compose so **`GET /auth/me`** can verify emulator-issued ID tokens. You do **not** need real Google accounts for the emulators; copy **Firebase web app config** from the console only so **`VITE_FIREBASE_API_KEY`** (and related fields) match project **`hsm-dashboard`**. **Admin (`admin: true` custom claim)** is set with the **Firebase Admin SDK** (not the Console); use [`backend/scripts/set_admin_claim.py`](backend/scripts/set_admin_claim.py) from the host (with **`FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099`** so the script targets the emulator) — see [docs/admin-scope-decisions.md](docs/admin-scope-decisions.md).
+
+```bash
+# After creating a user in the emulator, copy their uid from the Emulator UI, then:
+cd backend && FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 \
+  uv run python scripts/set_admin_claim.py "<firebase-uid>"
+```
+
+Sign out and back in (or use **Sign in** again) so the client gets a **fresh ID token** with the claim. Then open **`/admin`** to manage the catalog (`POST`/`PUT` require the claim server-side).
 
 **Without Docker:** you can still run **`firebase emulators:start`** on the host; point the backend at **`FIRESTORE_EMULATOR_HOST=127.0.0.1:8085`** (host) or **`host.docker.internal:8085`** (backend in Docker, emulators on host).
 
@@ -168,6 +176,7 @@ For local development, [`data/catalog/firestore_models.json`](data/catalog/fires
 
 - `GET /models` — list catalog entries from Firestore ([`Model`](docs/data-models.md)); **`503`** if Firestore could not be read or a document fails schema validation; **`200`** with **`[]`** if the collection is empty
 - `GET /models/{id}` — single model (**`404`** if unknown; **`503`** when the catalog could not be loaded or failed validation)
+- `POST /models` / `PUT /models/{id}` — create or update catalog entries and suitability COG (**`admin: true`** claim required; **`401`** / **`403`** otherwise). Multipart form; see OpenAPI **`/docs`**. Writes COGs under **`LOCAL_STORAGE_ROOT`** when **`STORAGE_BACKEND=local`** (Compose), or **GCS** when **`STORAGE_BACKEND=gcs`**. COGs must pass validation (tiled GeoTIFF, **EPSG:3857**).
 - `GET /auth/me` — returns **`{ uid, email }`** from a verified Firebase **ID token**; requires **`Authorization: Bearer <token>`**; **`401`** if missing or invalid. Uses Firebase Admin **`verify_id_token`**; set **`FIREBASE_AUTH_EMULATOR_HOST`** in dev so verification targets the Auth emulator.
 
 The **`FirestoreCatalogService`** in `backend_api.catalog_service` implements the **`CatalogService`** protocol (injected via FastAPI `Depends`). **`GOOGLE_CLOUD_PROJECT`** (default **`hsm-dashboard`**) and **`FIRESTORE_EMULATOR_HOST`** (dev only) are read from the environment. **`FIREBASE_AUTH_EMULATOR_HOST`** is optional (dev only; omit in production and use Application Default Credentials for Admin SDK).

@@ -6,6 +6,8 @@ export type AuthContextValue = {
   loading: boolean
   /** True when Firebase custom claim `admin` is set on the ID token. */
   isAdmin: boolean
+  /** ID token for API `Authorization: Bearer` (null if signed out). */
+  getIdToken: (forceRefresh?: boolean) => Promise<string | null>
   signIn: (email: string, password: string) => Promise<void>
   signUp: (email: string, password: string) => Promise<void>
   signOutUser: () => Promise<void>
