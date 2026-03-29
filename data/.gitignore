@@ -2,3 +2,6 @@
 !.gitignore
 !catalog/
 !catalog/firestore_models.json
+# Emulator snapshot (`firebase emulators:export`); optional to commit for team seed
+!firestore-seed/
+!firestore-seed/**

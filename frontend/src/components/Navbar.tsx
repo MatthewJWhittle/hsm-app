@@ -1,0 +1,73 @@
+import AppBar from '@mui/material/AppBar'
+import Box from '@mui/material/Box'
+import ButtonBase from '@mui/material/ButtonBase'
+import Toolbar from '@mui/material/Toolbar'
+import Typography from '@mui/material/Typography'
+
+import { BrandMark } from './BrandMark'
+import { UserMenu } from './UserMenu'
+
+export function Navbar() {
+  return (
+    <AppBar
+      position="static"
+      color="inherit"
+      elevation={0}
+      sx={{
+        flexShrink: 0,
+        borderBottom: 1,
+        borderColor: 'divider',
+        bgcolor: 'background.paper',
+      }}
+    >
+      <Toolbar variant="dense" sx={{ minHeight: 48, gap: 2, px: { xs: 1, sm: 2 } }}>
+        <ButtonBase
+          component="a"
+          href="/"
+          disableRipple
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.25,
+            py: 0.5,
+            pr: 1,
+            pl: 0.5,
+            maxWidth: 'min(100%, 420px)',
+            borderRadius: 1.5,
+            color: 'text.primary',
+            textAlign: 'left',
+            transition: (theme) =>
+              theme.transitions.create(['background-color'], { duration: theme.transitions.duration.shortest }),
+            '&:hover': {
+              bgcolor: 'action.hover',
+            },
+            '&:focus-visible': {
+              outline: '2px solid',
+              outlineColor: 'primary.main',
+              outlineOffset: 2,
+            },
+          }}
+          aria-label="Habitat suitability — home"
+        >
+          <BrandMark />
+          <Box component="span" sx={{ minWidth: 0 }}>
+            <Typography
+              variant="subtitle1"
+              component="span"
+              sx={{
+                fontWeight: 700,
+                letterSpacing: '-0.03em',
+                lineHeight: 1.25,
+                display: 'block',
+              }}
+            >
+              Habitat suitability
+            </Typography>
+          </Box>
+        </ButtonBase>
+        <Box sx={{ flex: 1 }} />
+        <UserMenu />
+      </Toolbar>
+    </AppBar>
+  )
+}

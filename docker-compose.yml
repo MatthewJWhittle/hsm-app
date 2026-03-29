@@ -1,6 +1,31 @@
-
+# Dev stack: backend, frontend, TiTiler, Firebase emulators (Firestore + Auth).
+# Backend catalog uses the Firestore emulator (`models` collection); seed via README or export/import.
 
 services:
+  firebase-emulators:
+    build:
+      context: ./docker/firebase-emulators
+      dockerfile: Dockerfile
+    ports:
+      # UI shell loads from 4000, but the SPA also needs Hub + Firestore websocket on the host.
+      # Without 4400 / 9150 / 4500 the Firestore tab stays blank (browser talks to localhost, not only 4000).
+      - "4000:4000"
+      - "4400:4400"
+      - "4500:4500"
+      - "8085:8085"
+      - "9099:9099"
+      - "9150:9150"
+    volumes:
+      - ./firebase.json:/workspace/firebase.json:ro
+      - ./.firebaserc:/workspace/.firebaserc:ro
+      - ./firestore.rules:/workspace/firestore.rules:ro
+      - ./firestore.indexes.json:/workspace/firestore.indexes.json:ro
+      # Mount all of `data/`, not only `firestore-seed/`. If the export path is the mount root,
+      # `firebase emulators:export` fails with EBUSY when it replaces that directory.
+      - ./data:/workspace/host-data:rw
+      - firebase_emulator_cache:/root/.cache/firebase
+    command: ["firebase", "emulators:start", "--only", "firestore,auth", "--project", "hsm-dashboard", "--import=/workspace/host-data/firestore-seed"]
+
   backend:
     build:
       context: ./backend
@@ -14,12 +39,28 @@ services:
       - /app/.venv
       - ./data:/data:ro
     environment:
-      - ENVIRONMENT=development
-      - DATABASE_URL=sqlite:///./app.db
-      - CATALOG_BACKEND=file
-      - CATALOG_PATH=/data/catalog/firestore_models.json
+      # Firestore client → emulator; GOOGLE_CLOUD_PROJECT default: backend_api/settings.py
+      - FIRESTORE_EMULATOR_HOST=firebase-emulators:8085
+      # Admin SDK verify_id_token → Auth emulator (host is Docker service name)
+      - FIREBASE_AUTH_EMULATOR_HOST=firebase-emulators:9099
+    depends_on:
+      firebase-emulators:
+        condition: service_started
     command: >
       sh -c "uv sync --no-dev && uv run uvicorn backend_api.main:app --host 0.0.0.0 --port 8000 --reload"
+    healthcheck:
+      # Avoid frontend Vite proxying /api before uvicorn is listening (ECONNREFUSED on first paint).
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
 
   frontend:
     build:
@@ -30,13 +71,23 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    env_file:
+      - path: ./frontend/.env
+        required: false
     environment:
       # Vite proxy runs inside this container; use service DNS, not localhost.
       - API_PROXY_TARGET=http://backend:8000
+      - VITE_USE_AUTH_EMULATOR=true
+      - VITE_FIREBASE_PROJECT_ID=hsm-dashboard
+      - VITE_FIREBASE_AUTH_DOMAIN=hsm-dashboard.firebaseapp.com
+      # Fallback for local dev; override via frontend/.env or host env (real key from Firebase Console).
+      - VITE_FIREBASE_API_KEY=${VITE_FIREBASE_API_KEY:-demo}
     command: npm run dev -- --host 0.0.0.0
     depends_on:
-      - backend
-      - titiler
+      backend:
+        condition: service_healthy
+      titiler:
+        condition: service_started
 
   titiler:
     image: ghcr.io/developmentseed/titiler:latest
@@ -52,3 +103,6 @@ services:
 
 
     command: uvicorn titiler.application.main:app --host 0.0.0.0 --port 8080
+
+volumes:
+  firebase_emulator_cache:
