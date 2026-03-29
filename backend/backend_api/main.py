@@ -4,10 +4,19 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 
+from backend_api.auth_deps import require_id_token_claims
 from backend_api.catalog_service import CatalogService, build_catalog_service
+from backend_api.firebase_admin_app import init_firebase_admin
 from backend_api.point_sampling import PointSamplingError, inspect_point
-from backend_api.schemas import Model, PointInspection
+from backend_api.schemas import AuthMeResponse, Model, PointInspection
 from backend_api.settings import Settings
+
+
+def _cors_allow_origins(settings: Settings) -> list[str]:
+    return [x.strip() for x in settings.cors_origins.split(",") if x.strip()]
+
+
+_settings = Settings()
 
 
 def get_catalog_service(request: Request) -> CatalogService:
@@ -16,9 +25,9 @@ def get_catalog_service(request: Request) -> CatalogService:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = Settings()
-    app.state.settings = settings
-    app.state.catalog_service = build_catalog_service(settings)
+    app.state.settings = _settings
+    init_firebase_admin(_settings)
+    app.state.catalog_service = build_catalog_service(_settings)
     yield
 
 
@@ -31,11 +40,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=_cors_allow_origins(_settings),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,6 +55,17 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+@app.get("/auth/me", response_model=AuthMeResponse)
+async def auth_me(claims: dict = Depends(require_id_token_claims)):
+    """Return uid/email from a verified Firebase ID token (Bearer)."""
+    uid = claims.get("uid")
+    if not uid or not isinstance(uid, str):
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+    email = claims.get("email")
+    email_out = email if isinstance(email, str) else None
+    return AuthMeResponse(uid=uid, email=email_out)
 
 
 def _raise_catalog_http_errors(catalog: CatalogService) -> None:

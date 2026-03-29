@@ -41,3 +41,10 @@ class PointInspection(BaseModel):
     value: float
     unit: str | None = None
     drivers: list[DriverVariable] | None = None
+
+
+class AuthMeResponse(BaseModel):
+    """Decoded Firebase ID token fields exposed to the client."""
+
+    uid: str
+    email: str | None = None

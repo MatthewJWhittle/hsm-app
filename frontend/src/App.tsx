@@ -7,6 +7,7 @@ import type { Model } from './types/model'
 import type { PointInspection } from './types/pointInspection'
 import { fetchModelCatalog } from './api/catalog'
 import { fetchPointInspection } from './api/inspectPoint'
+import { Navbar } from './components/Navbar'
 
 function App() {
   const [models, setModels] = useState<Model[]>([])
@@ -93,47 +94,50 @@ function App() {
 
   return (
     <div className="app-container">
-      <MapControlPanel
-        models={models}
-        selectedModelId={selectedModelId}
-        opacity={opacity}
-        onModelChange={onModelChange}
-        onOpacityChange={setOpacity}
-      />
-      {loadError && (
-        <div
-          role="alert"
-          style={{
-            position: 'absolute',
-            top: 20,
-            right: 20,
-            zIndex: 1001,
-            background: 'rgba(255, 230, 230, 0.95)',
-            padding: '12px 16px',
-            borderRadius: 8,
-            maxWidth: 360,
-            fontSize: 14,
-          }}
-        >
-          {loadError}
-        </div>
-      )}
-      {hudOpen && selectedModel && !loadError && (
-        <InspectionHud
-          onClose={closeHud}
-          modelLabel={`${selectedModel.species} — ${selectedModel.activity}`}
-          lng={inspectCoords?.lng ?? null}
-          lat={inspectCoords?.lat ?? null}
-          inspection={inspection}
-          loading={inspectLoading}
-          error={inspectError}
+      <Navbar />
+      <div className="app-main">
+        <MapControlPanel
+          models={models}
+          selectedModelId={selectedModelId}
+          opacity={opacity}
+          onModelChange={onModelChange}
+          onOpacityChange={setOpacity}
         />
-      )}
-      <MapComponent
-        opacity={opacity / 100}
-        model={selectedModel}
-        onInspect={selectedModel && !loadError ? handleInspect : undefined}
-      />
+        {loadError && (
+          <div
+            role="alert"
+            style={{
+              position: 'absolute',
+              top: 20,
+              right: 20,
+              zIndex: 1001,
+              background: 'rgba(255, 230, 230, 0.95)',
+              padding: '12px 16px',
+              borderRadius: 8,
+              maxWidth: 360,
+              fontSize: 14,
+            }}
+          >
+            {loadError}
+          </div>
+        )}
+        {hudOpen && selectedModel && !loadError && (
+          <InspectionHud
+            onClose={closeHud}
+            modelLabel={`${selectedModel.species} — ${selectedModel.activity}`}
+            lng={inspectCoords?.lng ?? null}
+            lat={inspectCoords?.lat ?? null}
+            inspection={inspection}
+            loading={inspectLoading}
+            error={inspectError}
+          />
+        )}
+        <MapComponent
+          opacity={opacity / 100}
+          model={selectedModel}
+          onInspect={selectedModel && !loadError ? handleInspect : undefined}
+        />
+      </div>
     </div>
   )
 }

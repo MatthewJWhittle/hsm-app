@@ -86,7 +86,7 @@ The backend service mounts an **anonymous volume** on `/app/.venv` (same idea as
 
 The **frontend** waits until the **backend healthcheck** passes (`GET /health`) so Vite does not proxy `/api` to the API before `uvicorn` is listening (avoids `ECONNREFUSED` on first load).
 
-Optional Firebase/JOSE dependencies live under `[project.optional-dependencies] auth` in `backend/pyproject.toml`; install with `uv sync --extra auth` when you add those imports.
+The backend depends on **`firebase-admin`** for verifying Firebase ID tokens (see **`GET /auth/me`**).
 
 **If Docker reports `no space left on device`:** see [Root cause: Docker “no space left on device”](#root-cause-docker-no-space-left-on-device) below.
 
@@ -145,7 +145,7 @@ That directory gets **`firebase-export-metadata.json`** plus **`firestore_export
 
 You can commit the export under **`data/firestore-seed/`** so teammates get the same seed, or keep it local-only.
 
-**Auth (test users):** the Auth emulator starts with **no users**. You can add them in the **Emulator UI** (http://localhost:4000 → Authentication) or via your app once the frontend uses `connectAuthEmulator`. You do **not** need real Google accounts or Firebase Console for the emulators. For **admin routes** (future), you will use test users + custom claims or an allowlist—Console setup applies to **production** only.
+**Auth (test users):** the Auth emulator starts with **no users**. Add them in the **Emulator UI** (http://localhost:4000 → Authentication), use **Register** in the in-app **Auth (dev)** panel (bottom-left), or sign in with an existing email/password. The frontend uses **`connectAuthEmulator`** against **`http://127.0.0.1:9099`** when **`VITE_USE_AUTH_EMULATOR=true`**; the backend uses **`FIREBASE_AUTH_EMULATOR_HOST=firebase-emulators:9099`** inside Compose so **`GET /auth/me`** can verify emulator-issued ID tokens. You do **not** need real Google accounts for the emulators; copy **Firebase web app config** from the console only so **`VITE_FIREBASE_API_KEY`** (and related fields) match project **`hsm-dashboard`**. Custom claims / admin roles are a **follow-up** (issue #9).
 
 **Without Docker:** you can still run **`firebase emulators:start`** on the host; point the backend at **`FIRESTORE_EMULATOR_HOST=127.0.0.1:8085`** (host) or **`host.docker.internal:8085`** (backend in Docker, emulators on host).
 
@@ -167,8 +167,16 @@ For local development, [`data/catalog/firestore_models.json`](data/catalog/fires
 
 - `GET /models` — list catalog entries from Firestore ([`Model`](docs/data-models.md)); **`503`** if Firestore could not be read or a document fails schema validation; **`200`** with **`[]`** if the collection is empty
 - `GET /models/{id}` — single model (**`404`** if unknown; **`503`** when the catalog could not be loaded or failed validation)
+- `GET /auth/me` — returns **`{ uid, email }`** from a verified Firebase **ID token**; requires **`Authorization: Bearer <token>`**; **`401`** if missing or invalid. Uses Firebase Admin **`verify_id_token`**; set **`FIREBASE_AUTH_EMULATOR_HOST`** in dev so verification targets the Auth emulator.
 
-The **`FirestoreCatalogService`** in `backend_api.catalog_service` implements the **`CatalogService`** protocol (injected via FastAPI `Depends`). **`GOOGLE_CLOUD_PROJECT`** (default **`hsm-dashboard`**) and **`FIRESTORE_EMULATOR_HOST`** (dev only) are read from the environment.
+The **`FirestoreCatalogService`** in `backend_api.catalog_service` implements the **`CatalogService`** protocol (injected via FastAPI `Depends`). **`GOOGLE_CLOUD_PROJECT`** (default **`hsm-dashboard`**) and **`FIRESTORE_EMULATOR_HOST`** (dev only) are read from the environment. **`FIREBASE_AUTH_EMULATOR_HOST`** is optional (dev only; omit in production and use Application Default Credentials for Admin SDK).
+
+### Firebase Auth (dev slice)
+
+- **Compose:** backend receives **`FIREBASE_AUTH_EMULATOR_HOST=firebase-emulators:9099`**; frontend receives **`VITE_USE_AUTH_EMULATOR`**, **`VITE_FIREBASE_PROJECT_ID`**, **`VITE_FIREBASE_AUTH_DOMAIN`**, and **`VITE_FIREBASE_API_KEY`** (default **`demo`** unless you set **`VITE_FIREBASE_API_KEY`** in the shell or **`frontend/.env`** — use a real **Web API key** from Firebase Console for reliable sign-in).
+- **Browser vs backend:** the app calls the emulator at **`127.0.0.1:9099`**; the API container uses the **`firebase-emulators`** hostname on the Docker network.
+- **Local env:** copy [`frontend/.env.example`](frontend/.env.example) to **`frontend/.env`** and fill **`VITE_FIREBASE_API_KEY`**. Compose loads **`frontend/.env`** when present (`required: false`).
+- **End-to-end check:** use **Sign in** in the top nav → register or sign in; **`GET /auth/me`** still verifies the backend. The user menu shows **Admin** when the Firebase ID token includes custom claim **`admin: true`** (set via Admin SDK or emulator tooling — see issue #9).
 
 **Frontend**
 
@@ -185,11 +193,16 @@ The **`FirestoreCatalogService`** in `backend_api.catalog_service` implements th
 cd backend && uv run pytest
 ```
 
-If you run **`uvicorn` outside Docker** with the emulator on the host, set **`FIRESTORE_EMULATOR_HOST=127.0.0.1:8085`**. Omit **`FIRESTORE_EMULATOR_HOST`** in production so the client uses real Firestore.
+If you run **`uvicorn` outside Docker** with the emulator on the host, set **`FIRESTORE_EMULATOR_HOST=127.0.0.1:8085`**. Omit **`FIRESTORE_EMULATOR_HOST`** in production so the client uses real Firestore. For Auth verification against the emulator on the host, set **`FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099`**. Omit **`FIREBASE_AUTH_EMULATOR_HOST`** in production.
+
+### Production (Hosting + API)
+
+- **CORS:** The API reads **`CORS_ORIGINS`** (comma-separated). Defaults include local dev URLs and **`https://hsm-dashboard.web.app`** / **`https://hsm-dashboard.firebaseapp.com`**. Override in Cloud Run (or your host env) if you add more web origins.
+- **Hosting CI builds:** Add GitHub repository secret **`VITE_FIREBASE_API_KEY`** (Firebase Console → Project settings → Web app config). Merge and PR workflows set **`VITE_USE_AUTH_EMULATOR=false`** and the project id for **`npm run build`**.
 
 ### Next steps
 
-Firestore-backed catalog, Firebase Auth, `GET /models/{id}/point`, and admin `POST/PUT /models` are described in [`application-spec.md`](application-spec.md). The frontend will keep using relative `/api/...` URLs behind Firebase Hosting rewrites to Cloud Run.
+Catalog in Firestore and the Auth dev slice (`GET /auth/me`, email/password + emulator) are in place. Remaining product scope: `GET /models/{id}/point` polish, admin **`POST/PUT /models`**, custom claims, and **`/admin`** UI — see [`application-spec.md`](application-spec.md). The frontend keeps relative `/api/...` URLs behind Firebase Hosting rewrites to Cloud Run.
 
 ### Root cause: Docker “no space left on device”
 
