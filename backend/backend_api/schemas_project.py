@@ -9,8 +9,9 @@ from pydantic import BaseModel, Field
 
 class CatalogProject(BaseModel):
     """
-    Admin-defined grouping: one shared environmental (multi-band) COG per project;
-    models reference ``project_id`` and a band subset on the model document.
+    Admin-defined grouping: optional shared environmental (multi-band) COG per project
+    (upload on create or later via admin update); models reference ``project_id`` and a
+    band subset on the model document.
     """
 
     id: str = Field(..., description="Stable opaque id (document id in Firestore)")
@@ -22,12 +23,12 @@ class CatalogProject(BaseModel):
         default_factory=list,
         description="Firebase uids allowed when visibility is private",
     )
-    driver_artifact_root: str = Field(
-        ...,
-        description="Storage prefix for the project's shared environmental COG",
+    driver_artifact_root: str | None = Field(
+        default=None,
+        description="Storage prefix for the project's shared environmental COG (set after upload).",
     )
-    driver_cog_path: str = Field(
-        ...,
+    driver_cog_path: str | None = Field(
+        default=None,
         description="Filename or path relative to driver_artifact_root",
     )
     created_at: str | None = None

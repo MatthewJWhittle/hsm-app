@@ -48,7 +48,7 @@ const COG_REQUIREMENTS_INFO =
   'Suitability file: valid Cloud Optimized GeoTIFF (COG), Web Mercator (EPSG:3857). The server validates format, CRS, and upload size.'
 
 const DRIVER_COG_INFO =
-  'Shared environmental stack: multi-band COG (EPSG:3857), same validation as suitability uploads.'
+  'Optional on create: shared environmental stack (multi-band COG, EPSG:3857), same validation as suitability uploads. You can add or replace it later from project settings.'
 
 const COG_REPLACE_HINT =
   'Optional. Same rules as a new upload; leave empty to keep the current file.'
@@ -131,10 +131,6 @@ export function AdminPage() {
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault()
     setProjError(null)
-    if (!projFile) {
-      setProjError('Choose an environmental COG file.')
-      return
-    }
     const token = await getIdToken(true)
     if (!token) {
       setProjError('Not signed in.')
@@ -145,7 +141,7 @@ export function AdminPage() {
       await createProject({
         token,
         name: projName,
-        file: projFile,
+        file: projFile ?? undefined,
         description: projDesc || undefined,
         visibility: projVisibility,
         allowedUids: projAllowedUids || undefined,

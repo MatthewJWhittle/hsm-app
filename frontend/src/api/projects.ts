@@ -16,10 +16,19 @@ export function parseProject(value: unknown): CatalogProject | null {
     created_at,
     updated_at,
   } = value
+  if (typeof id !== 'string' || typeof name !== 'string') {
+    return null
+  }
   if (
-    typeof id !== 'string' ||
-    typeof name !== 'string' ||
-    typeof driver_artifact_root !== 'string' ||
+    driver_artifact_root !== undefined &&
+    driver_artifact_root !== null &&
+    typeof driver_artifact_root !== 'string'
+  ) {
+    return null
+  }
+  if (
+    driver_cog_path !== undefined &&
+    driver_cog_path !== null &&
     typeof driver_cog_path !== 'string'
   ) {
     return null
@@ -35,9 +44,9 @@ export function parseProject(value: unknown): CatalogProject | null {
     status,
     visibility,
     allowed_uids,
-    driver_artifact_root,
-    driver_cog_path,
   }
+  if (driver_artifact_root !== undefined) out.driver_artifact_root = driver_artifact_root
+  if (driver_cog_path !== undefined) out.driver_cog_path = driver_cog_path
   if (description !== undefined) {
     if (description !== null && typeof description !== 'string') return null
     out.description = description

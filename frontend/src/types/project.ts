@@ -7,8 +7,9 @@ export interface CatalogProject {
   status: 'active' | 'archived'
   visibility: 'public' | 'private'
   allowed_uids: string[]
-  driver_artifact_root: string
-  driver_cog_path: string
+  /** Set after environmental COG is uploaded. */
+  driver_artifact_root?: string | null
+  driver_cog_path?: string | null
   created_at?: string | null
   updated_at?: string | null
 }

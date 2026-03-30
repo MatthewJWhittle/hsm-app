@@ -6,14 +6,14 @@ import { parseProject } from './projects'
 export async function createProject(params: {
   token: string
   name: string
-  file: File
+  file?: File | null
   description?: string
   visibility?: 'public' | 'private'
   allowedUids?: string
 }): Promise<CatalogProject> {
   const form = new FormData()
   form.append('name', params.name)
-  form.append('file', params.file)
+  if (params.file) form.append('file', params.file)
   form.append('visibility', params.visibility ?? 'public')
   if (params.description) form.append('description', params.description)
   if (params.allowedUids !== undefined) form.append('allowed_uids', params.allowedUids)

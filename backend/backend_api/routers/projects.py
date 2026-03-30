@@ -88,7 +88,7 @@ async def get_project(
     status_code=201,
     tags=["admin"],
     responses=_ADMIN_RESPONSES,
-    summary="Create catalog project and upload shared environmental COG",
+    summary="Create catalog project (optional shared environmental COG upload)",
 )
 async def create_project(
     request: Request,
@@ -96,43 +96,46 @@ async def create_project(
     _claims: Annotated[dict, Depends(require_admin_claims)],
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
     name: Annotated[str, Form()],
-    file: Annotated[UploadFile, File()],
+    file: Annotated[UploadFile | None, File()] = None,
     description: Annotated[str | None, Form()] = None,
     visibility: Annotated[str, Form()] = "public",
     allowed_uids: Annotated[str | None, Form()] = None,
 ):
-    """Create a project and store the shared environmental COG (admin only)."""
+    """Create a project; environmental COG may be uploaded now or added via PUT (admin only)."""
     visibility_v = parse_visibility(visibility)
     try:
         uids = _parse_allowed_uids(allowed_uids)
     except (json.JSONDecodeError, ValueError) as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=422, detail="empty file")
-    if len(content) > settings.max_environmental_upload_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
-        )
-    try:
-        await validate_cog_bytes_threaded(content)
-    except CogValidationError as e:
-        raise HTTPException(status_code=422, detail=e.message) from e
-
     project_id = str(uuid.uuid4())
+    artifact_root: str | None = None
+    cog_path: str | None = None
+    if file is not None:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=422, detail="empty file")
+        if len(content) > settings.max_environmental_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
+            )
+        try:
+            await validate_cog_bytes_threaded(content)
+        except CogValidationError as e:
+            raise HTTPException(status_code=422, detail=e.message) from e
+
+        def _write() -> tuple[str, str]:
+            return storage.write_project_driver_cog(project_id, content)
+
+        try:
+            artifact_root, cog_path = await run_in_threadpool(_write)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"could not store file: {e}") from e
+
     now = datetime.now(UTC).isoformat()
-
-    def _write() -> tuple[str, str]:
-        return storage.write_project_driver_cog(project_id, content)
-
-    try:
-        artifact_root, cog_path = await run_in_threadpool(_write)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"could not store file: {e}") from e
 
     project = CatalogProject(
         id=project_id,
