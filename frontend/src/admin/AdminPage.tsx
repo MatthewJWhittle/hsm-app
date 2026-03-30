@@ -11,10 +11,13 @@ import {
   Divider,
   FormControl,
   FormHelperText,
+  IconButton,
   InputLabel,
+  LinearProgress,
   MenuItem,
   Paper,
   Select,
+  Skeleton,
   Stack,
   Tab,
   Table,
@@ -30,6 +33,7 @@ import {
 } from '@mui/material'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
+import RefreshIcon from '@mui/icons-material/Refresh'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -66,6 +70,17 @@ function shortId(id: string, head = 8): string {
   return `${id.slice(0, head)}…`
 }
 
+function formatAdminDate(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    if (Number.isNaN(d.getTime())) return '—'
+    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
+  } catch {
+    return '—'
+  }
+}
+
 function TabPanel(props: { children?: React.ReactNode; index: number; value: number }) {
   const { children, value, index, ...other } = props
   return (
@@ -88,6 +103,10 @@ export function AdminPage() {
   const [projects, setProjects] = useState<CatalogProject[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [listError, setListError] = useState<string | null>(null)
+  const [listRefreshing, setListRefreshing] = useState(true)
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null)
+  const [projectTableFilter, setProjectTableFilter] = useState('')
+  const [modelTableFilter, setModelTableFilter] = useState('')
 
   const [projName, setProjName] = useState('')
   const [projDesc, setProjDesc] = useState('')
@@ -126,9 +145,33 @@ export function AdminPage() {
     return m
   }, [projects])
 
+  const filteredProjectsTable = useMemo(() => {
+    const q = projectTableFilter.trim().toLowerCase()
+    if (!q) return projects
+    return projects.filter(
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.id.toLowerCase().includes(q) ||
+        (p.description?.toLowerCase().includes(q) ?? false),
+    )
+  }, [projects, projectTableFilter])
+
+  const filteredModelsTable = useMemo(() => {
+    const q = modelTableFilter.trim().toLowerCase()
+    if (!q) return models
+    return models.filter((m) => {
+      const hay = `${m.species} ${m.activity} ${m.id} ${m.project_id ?? ''} ${m.model_name ?? ''} ${m.model_version ?? ''}`.toLowerCase()
+      return hay.includes(q)
+    })
+  }, [models, modelTableFilter])
+
   const refreshList = useCallback(async () => {
+    setListRefreshing(true)
     const token = await getIdToken(true)
-    if (!token) return
+    if (!token) {
+      setListRefreshing(false)
+      return
+    }
     try {
       const [plist, mlist] = await Promise.all([
         fetchProjectCatalog({ token }),
@@ -137,8 +180,11 @@ export function AdminPage() {
       setProjects(plist)
       setModels(mlist)
       setListError(null)
+      setLastRefreshedAt(new Date())
     } catch {
       setListError('Could not load catalog.')
+    } finally {
+      setListRefreshing(false)
     }
   }, [getIdToken])
 
@@ -324,33 +370,60 @@ export function AdminPage() {
         }}
       >
         <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 }, pb: 5 }}>
-          <Stack
-            direction={{ xs: 'column', sm: 'row' }}
-            alignItems={{ xs: 'stretch', sm: 'flex-start' }}
-            justifyContent="space-between"
-            spacing={2}
-            sx={{ mb: 3 }}
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 2,
+              mb: 2,
+              borderRadius: 2,
+              display: 'flex',
+              flexDirection: { xs: 'column', sm: 'row' },
+              alignItems: { xs: 'stretch', sm: 'flex-start' },
+              justifyContent: 'space-between',
+              gap: 2,
+            }}
           >
-            <Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="h4" component="h1" fontWeight={700} sx={{ letterSpacing: '-0.02em' }}>
                 Catalog admin
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 520 }}>
-                Create <strong>projects</strong> first (shared environmental stack), then attach{' '}
-                <strong>models</strong> (species suitability layers). Everything here updates the live map
-                catalog.
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 560 }}>
+                Create <strong>catalog projects</strong> first (shared environmental COG), then attach{' '}
+                <strong>suitability models</strong> for the map. Changes apply to the live catalog.
               </Typography>
             </Box>
-            <Button
-              component={Link}
-              to="/"
-              variant="outlined"
-              size="medium"
-              sx={{ flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'center' } }}
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={1}
+              flexWrap="wrap"
+              justifyContent={{ xs: 'flex-start', sm: 'flex-end' }}
+              sx={{ flexShrink: 0 }}
             >
-              Back to map
-            </Button>
-          </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ width: '100%', textAlign: { sm: 'right' } }}>
+                {lastRefreshedAt
+                  ? `Catalog loaded ${lastRefreshedAt.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}`
+                  : listRefreshing
+                    ? 'Loading catalog…'
+                    : ''}
+              </Typography>
+              <Tooltip title="Reload catalog from API">
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={() => void refreshList()}
+                    disabled={listRefreshing}
+                    aria-label="Refresh catalog"
+                  >
+                    <RefreshIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Button component={Link} to="/" variant="outlined" size="medium">
+                Back to map
+              </Button>
+            </Stack>
+          </Paper>
 
           {listError && (
             <Alert severity="error" sx={{ mb: 2 }}>
@@ -361,6 +434,7 @@ export function AdminPage() {
           <Paper
             elevation={0}
             sx={{
+              position: 'relative',
               borderRadius: 2,
               border: 1,
               borderColor: 'divider',
@@ -368,6 +442,12 @@ export function AdminPage() {
               bgcolor: 'background.paper',
             }}
           >
+            {listRefreshing && (
+              <LinearProgress
+                sx={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2 }}
+                aria-label="Loading catalog"
+              />
+            )}
             <Tabs
               value={tab}
               onChange={(_e, v) => setTab(v)}
@@ -399,10 +479,10 @@ export function AdminPage() {
                 <Stack spacing={3}>
                   <Box>
                     <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-                      New project
+                      New catalog project
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      Projects group models and hold the optional shared environmental COG.
+                      A catalog project groups suitability models and may include one shared environmental (multi-band) COG.
                     </Typography>
                     <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: formMaxWidth }}>
                       {DRIVER_COG_INFO}
@@ -447,6 +527,11 @@ export function AdminPage() {
                           size="small"
                           fullWidth
                         />
+                        {projVisibility === 'private' && !projAllowedUids.trim() && (
+                          <Alert severity="warning" sx={{ py: 0.5 }}>
+                            Private projects should list at least one Firebase uid, or map users may not see this project.
+                          </Alert>
+                        )}
                         <Box>
                           <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
                             Environmental COG (optional)
@@ -473,7 +558,7 @@ export function AdminPage() {
                         </Alert>
                       )}
                       <Button type="submit" variant="contained" sx={{ mt: 2 }} disabled={projCreating}>
-                        {projCreating ? 'Creating…' : 'Create project'}
+                        {projCreating ? 'Creating…' : 'Create catalog project'}
                       </Button>
                     </Box>
                   </Box>
@@ -482,36 +567,56 @@ export function AdminPage() {
 
                   <Box>
                     <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-                      All projects
+                      All catalog projects
                     </Typography>
+                    <TextField
+                      size="small"
+                      fullWidth
+                      placeholder="Filter by name, id, or description…"
+                      value={projectTableFilter}
+                      onChange={(e) => setProjectTableFilter(e.target.value)}
+                      sx={{ mb: 1, maxWidth: 400 }}
+                      aria-label="Filter catalog projects table"
+                    />
                     <TableContainer
+                      component={Paper}
+                      variant="outlined"
                       sx={{
                         borderRadius: 1,
-                        border: 1,
-                        borderColor: 'divider',
                         maxHeight: 360,
                       }}
                     >
-                      <Table size="small" stickyHeader>
+                      <Table size="small" stickyHeader aria-label="Catalog projects">
                         <TableHead>
                           <TableRow>
-                            <TableCell>Project</TableCell>
+                            <TableCell>Catalog project</TableCell>
                             <TableCell width={120}>Env. COG</TableCell>
                             <TableCell width={110}>Visibility</TableCell>
                             <TableCell width={100}>Status</TableCell>
+                            <TableCell width={140}>Updated</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {projects.length === 0 ? (
+                          {listRefreshing && projects.length === 0 ? (
+                            Array.from({ length: 5 }).map((_, i) => (
+                              <TableRow key={i}>
+                                <TableCell colSpan={5}>
+                                  <Skeleton variant="text" width="80%" height={28} />
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          ) : filteredProjectsTable.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={4}>
+                              <TableCell colSpan={5}>
                                 <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                                  No projects yet. Create one above.
+                                  {projects.length === 0
+                                    ? 'No catalog projects yet. Create one above.'
+                                    : 'No projects match this filter.'}
                                 </Typography>
                               </TableCell>
                             </TableRow>
                           ) : (
-                            projects.map((p) => (
+                            filteredProjectsTable.map((p) => (
                               <TableRow key={p.id} hover>
                                 <TableCell>
                                   <Typography variant="body2" fontWeight={600}>
@@ -531,7 +636,7 @@ export function AdminPage() {
                                 </TableCell>
                                 <TableCell>
                                   {p.driver_cog_path ? (
-                                    <Chip label="Uploaded" size="small" color="success" variant="outlined" />
+                                    <Chip label="On file" size="small" color="success" variant="outlined" />
                                   ) : (
                                     <Chip label="None" size="small" variant="outlined" />
                                   )}
@@ -552,6 +657,11 @@ export function AdminPage() {
                                     variant="outlined"
                                   />
                                 </TableCell>
+                                <TableCell>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {formatAdminDate(p.updated_at ?? p.created_at)}
+                                  </Typography>
+                                </TableCell>
                               </TableRow>
                             ))
                           )}
@@ -566,10 +676,10 @@ export function AdminPage() {
                 <Stack spacing={3}>
                   <Box>
                     <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-                      New model
+                      New suitability model
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      Each model is a suitability COG tied to a project.
+                      Each row is one suitability COG tied to a catalog project (species / activity).
                     </Typography>
                     {!canAddModel && (
                       <Alert severity="warning" sx={{ mb: 2, maxWidth: formMaxWidth }}>
@@ -679,7 +789,7 @@ export function AdminPage() {
                         sx={{ mt: 2 }}
                         disabled={creating || !canAddModel}
                       >
-                        {creating ? 'Creating…' : 'Create model'}
+                        {creating ? 'Creating…' : 'Create suitability model'}
                       </Button>
                     </Box>
                   </Box>
@@ -688,21 +798,30 @@ export function AdminPage() {
 
                   <Box>
                     <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-                      All models
+                      All suitability models
                     </Typography>
+                    <TextField
+                      size="small"
+                      fullWidth
+                      placeholder="Filter by species, activity, project, id…"
+                      value={modelTableFilter}
+                      onChange={(e) => setModelTableFilter(e.target.value)}
+                      sx={{ mb: 1, maxWidth: 400 }}
+                      aria-label="Filter suitability models table"
+                    />
                     <TableContainer
+                      component={Paper}
+                      variant="outlined"
                       sx={{
                         borderRadius: 1,
-                        border: 1,
-                        borderColor: 'divider',
                         maxHeight: 480,
                       }}
                     >
-                      <Table size="small" stickyHeader>
+                      <Table size="small" stickyHeader aria-label="Suitability models">
                         <TableHead>
                           <TableRow>
                             <TableCell width={100}>ID</TableCell>
-                            <TableCell width={160}>Project</TableCell>
+                            <TableCell width={160}>Catalog project</TableCell>
                             <TableCell>Species</TableCell>
                             <TableCell>Activity</TableCell>
                             <TableCell>Name / version</TableCell>
@@ -712,16 +831,26 @@ export function AdminPage() {
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {models.length === 0 ? (
+                          {listRefreshing && models.length === 0 ? (
+                            Array.from({ length: 6 }).map((_, i) => (
+                              <TableRow key={i}>
+                                <TableCell colSpan={6}>
+                                  <Skeleton variant="text" width="70%" height={28} />
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          ) : filteredModelsTable.length === 0 ? (
                             <TableRow>
                               <TableCell colSpan={6}>
                                 <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                                  No models yet. Add one above once a project exists.
+                                  {models.length === 0
+                                    ? 'No suitability models yet. Add one above once a catalog project exists.'
+                                    : 'No models match this filter.'}
                                 </Typography>
                               </TableCell>
                             </TableRow>
                           ) : (
-                            models.map((m) => {
+                            filteredModelsTable.map((m) => {
                               const projectLabel = m.project_id
                                 ? (projectById.get(m.project_id) ?? shortId(m.project_id))
                                 : 'Legacy'
@@ -778,7 +907,7 @@ export function AdminPage() {
             maxWidth="sm"
             PaperProps={{ sx: { borderRadius: 2 } }}
           >
-            <DialogTitle sx={{ fontWeight: 700 }}>Edit model</DialogTitle>
+            <DialogTitle sx={{ fontWeight: 700 }}>Edit suitability model</DialogTitle>
             <DialogContent>
               <Stack spacing={2} sx={{ mt: 1 }}>
                 <FormControl size="small" fullWidth>
