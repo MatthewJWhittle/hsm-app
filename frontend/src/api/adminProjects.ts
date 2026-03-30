@@ -1,23 +1,7 @@
 import type { CatalogProject } from '../types/project'
 import { apiBase } from '../utils/apiBase'
+import { readFetchErrorDetail } from './errors'
 import { parseProject } from './projects'
-
-async function errorMessage(r: Response): Promise<string> {
-  try {
-    const raw: unknown = await r.json()
-    if (
-      raw &&
-      typeof raw === 'object' &&
-      'detail' in raw &&
-      typeof (raw as { detail: unknown }).detail === 'string'
-    ) {
-      return (raw as { detail: string }).detail
-    }
-  } catch {
-    /* ignore */
-  }
-  return r.statusText || String(r.status)
-}
 
 export async function createProject(params: {
   token: string
@@ -39,7 +23,7 @@ export async function createProject(params: {
     headers: { Authorization: `Bearer ${params.token}` },
     body: form,
   })
-  if (!r.ok) throw new Error(await errorMessage(r))
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()
   const p = parseProject(raw)
   if (p === null) throw new Error('Invalid create project response')
@@ -69,7 +53,7 @@ export async function updateProject(params: {
     headers: { Authorization: `Bearer ${params.token}` },
     body: form,
   })
-  if (!r.ok) throw new Error(await errorMessage(r))
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()
   const p = parseProject(raw)
   if (p === null) throw new Error('Invalid update project response')

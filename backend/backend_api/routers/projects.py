@@ -20,18 +20,28 @@ from fastapi import (
 from starlette.concurrency import run_in_threadpool
 
 from backend_api.auth_deps import optional_id_token_claims, require_admin_claims
-from backend_api.catalog_service import CatalogService, FirestoreCatalogService
+from backend_api.catalog_service import CatalogService
 from backend_api.catalog_write import upsert_project
-from backend_api.cog_validation import CogValidationError, validate_suitability_cog_bytes
+from backend_api.cog_validation import CogValidationError
 from backend_api.deps.catalog import get_object_storage, require_catalog_ready
 from backend_api.deps.settings_dep import get_settings
 from backend_api.deps.visibility_models import (
     filter_projects_for_viewer,
     get_project_visible_or_404,
 )
+from backend_api.routers.catalog_upload_utils import (
+    reload_catalog_threaded,
+    validate_cog_bytes_threaded,
+)
+from backend_api.routers.project_visibility_parse import (
+    parse_status_optional,
+    parse_visibility,
+    parse_visibility_optional,
+)
 from backend_api.schemas_project import CatalogProject
 from backend_api.settings import Settings
 from backend_api.storage import ObjectStorage
+
 router = APIRouter()
 
 _ADMIN_RESPONSES: dict[int | str, dict[str, str]] = {
@@ -41,22 +51,6 @@ _ADMIN_RESPONSES: dict[int | str, dict[str, str]] = {
     status.HTTP_422_UNPROCESSABLE_ENTITY: {"description": "Invalid COG/CRS or form data"},
     status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Storage or Firestore failure"},
 }
-
-
-async def _validate_cog_bytes_threaded(content: bytes) -> None:
-    def _run() -> None:
-        validate_suitability_cog_bytes(content)
-
-    await run_in_threadpool(_run)
-
-
-async def _reload_catalog_threaded(request: Request) -> None:
-    def _run() -> None:
-        cat = request.app.state.catalog_service
-        if isinstance(cat, FirestoreCatalogService):
-            cat.reload()
-
-    await run_in_threadpool(_run)
 
 
 def _parse_allowed_uids(raw: str | None) -> list[str]:
@@ -108,8 +102,7 @@ async def create_project(
     allowed_uids: Annotated[str | None, Form()] = None,
 ):
     """Create a project and store the shared environmental COG (admin only)."""
-    if visibility not in ("public", "private"):
-        raise HTTPException(status_code=422, detail="visibility must be public or private")
+    visibility_v = parse_visibility(visibility)
     try:
         uids = _parse_allowed_uids(allowed_uids)
     except (json.JSONDecodeError, ValueError) as e:
@@ -124,7 +117,7 @@ async def create_project(
             detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
         )
     try:
-        await _validate_cog_bytes_threaded(content)
+        await validate_cog_bytes_threaded(content)
     except CogValidationError as e:
         raise HTTPException(status_code=422, detail=e.message) from e
 
@@ -146,7 +139,7 @@ async def create_project(
         name=name.strip(),
         description=description.strip() if description else None,
         status="active",
-        visibility=visibility,  # type: ignore[arg-type]
+        visibility=visibility_v,
         allowed_uids=uids,
         driver_artifact_root=artifact_root,
         driver_cog_path=cog_path,
@@ -162,7 +155,7 @@ async def create_project(
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"could not save catalog: {e}") from e
 
-    await _reload_catalog_threaded(request)
+    await reload_catalog_threaded(request)
     return project
 
 
@@ -192,10 +185,14 @@ async def update_project(
     if existing is None:
         raise HTTPException(status_code=404, detail="project not found")
 
-    if visibility is not None and visibility not in ("public", "private"):
-        raise HTTPException(status_code=422, detail="visibility must be public or private")
-    if status is not None and status not in ("active", "archived"):
-        raise HTTPException(status_code=422, detail="status must be active or archived")
+    new_status = (
+        parse_status_optional(status) if status is not None else existing.status
+    )
+    new_visibility = (
+        parse_visibility_optional(visibility)
+        if visibility is not None
+        else existing.visibility
+    )
 
     try:
         new_uids = (
@@ -217,7 +214,7 @@ async def update_project(
                 detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
             )
         try:
-            await _validate_cog_bytes_threaded(content)
+            await validate_cog_bytes_threaded(content)
         except CogValidationError as e:
             raise HTTPException(status_code=422, detail=e.message) from e
 
@@ -238,8 +235,8 @@ async def update_project(
         description=(
             description.strip() if description is not None else existing.description
         ),
-        status=status if status is not None else existing.status,  # type: ignore[arg-type]
-        visibility=visibility if visibility is not None else existing.visibility,  # type: ignore[arg-type]
+        status=new_status,
+        visibility=new_visibility,
         allowed_uids=new_uids if new_uids is not None else existing.allowed_uids,
         driver_artifact_root=artifact_root,
         driver_cog_path=cog_path,
@@ -255,5 +252,5 @@ async def update_project(
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"could not save catalog: {e}") from e
 
-    await _reload_catalog_threaded(request)
+    await reload_catalog_threaded(request)
     return project

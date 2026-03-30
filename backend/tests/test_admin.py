@@ -58,7 +58,7 @@ def _admin_client(
             return_value=claims,
         ),
         patch(
-            "backend_api.routers.models.validate_suitability_cog_bytes",
+            "backend_api.routers.catalog_upload_utils.validate_suitability_cog_bytes",
             return_value=None,
         ),
         patch("backend_api.routers.models.upsert_model"),

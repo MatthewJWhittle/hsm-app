@@ -1,23 +1,7 @@
 import type { Model } from '../types/model'
 import { apiBase } from '../utils/apiBase'
+import { readFetchErrorDetail } from './errors'
 import { parseModel } from './models'
-
-async function errorMessage(r: Response): Promise<string> {
-  try {
-    const raw: unknown = await r.json()
-    if (
-      raw &&
-      typeof raw === 'object' &&
-      'detail' in raw &&
-      typeof (raw as { detail: unknown }).detail === 'string'
-    ) {
-      return (raw as { detail: string }).detail
-    }
-  } catch {
-    /* ignore */
-  }
-  return r.statusText || String(r.status)
-}
 
 export async function createModel(params: {
   token: string
@@ -45,7 +29,7 @@ export async function createModel(params: {
     headers: { Authorization: `Bearer ${params.token}` },
     body: form,
   })
-  if (!r.ok) throw new Error(await errorMessage(r))
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()
   const model = parseModel(raw)
   if (model === null) throw new Error('Invalid create model response')
@@ -81,7 +65,7 @@ export async function updateModel(params: {
     headers: { Authorization: `Bearer ${params.token}` },
     body: form,
   })
-  if (!r.ok) throw new Error(await errorMessage(r))
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()
   const model = parseModel(raw)
   if (model === null) throw new Error('Invalid update model response')

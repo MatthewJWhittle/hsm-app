@@ -19,11 +19,10 @@ from fastapi import (
 )
 from starlette.concurrency import run_in_threadpool
 
-from backend_api.auth_deps import require_admin_claims
-from backend_api.catalog_service import CatalogService, FirestoreCatalogService
+from backend_api.auth_deps import optional_id_token_claims, require_admin_claims
+from backend_api.catalog_service import CatalogService
 from backend_api.catalog_write import upsert_model
-from backend_api.cog_validation import CogValidationError, validate_suitability_cog_bytes
-from backend_api.auth_deps import optional_id_token_claims
+from backend_api.cog_validation import CogValidationError
 from backend_api.deps.catalog import (
     get_catalog_service,
     get_model_or_404,
@@ -38,6 +37,10 @@ from backend_api.deps.settings_dep import get_settings
 from backend_api.point_sampling import PointSamplingError, inspect_point
 from backend_api.schemas import Model, PointInspection
 from backend_api.schemas_admin import parse_driver_config_form
+from backend_api.routers.catalog_upload_utils import (
+    reload_catalog_threaded,
+    validate_cog_bytes_threaded,
+)
 from backend_api.settings import Settings
 from backend_api.storage import ObjectStorage
 
@@ -52,22 +55,6 @@ _ADMIN_WRITE_RESPONSES: dict[int | str, dict[str, str]] = {
     },
     status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Storage or Firestore failure"},
 }
-
-
-async def _validate_cog_bytes_threaded(content: bytes) -> None:
-    def _run() -> None:
-        validate_suitability_cog_bytes(content)
-
-    await run_in_threadpool(_run)
-
-
-async def _reload_catalog_threaded(request: Request) -> None:
-    def _run() -> None:
-        cat = request.app.state.catalog_service
-        if isinstance(cat, FirestoreCatalogService):
-            cat.reload()
-
-    await run_in_threadpool(_run)
 
 
 def _parse_driver_config_http(raw: str | None) -> dict | None:
@@ -181,7 +168,7 @@ async def create_model(
         )
 
     try:
-        await _validate_cog_bytes_threaded(content)
+        await validate_cog_bytes_threaded(content)
     except CogValidationError as e:
         raise HTTPException(status_code=422, detail=e.message) from e
 
@@ -225,7 +212,7 @@ async def create_model(
             detail=f"could not save catalog: {e}",
         ) from e
 
-    await _reload_catalog_threaded(request)
+    await reload_catalog_threaded(request)
     return model
 
 
@@ -267,7 +254,7 @@ async def update_model(
                 detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
             )
         try:
-            await _validate_cog_bytes_threaded(content)
+            await validate_cog_bytes_threaded(content)
         except CogValidationError as e:
             raise HTTPException(status_code=422, detail=e.message) from e
 
@@ -336,5 +323,5 @@ async def update_model(
             detail=f"could not save catalog: {e}",
         ) from e
 
-    await _reload_catalog_threaded(request)
+    await reload_catalog_threaded(request)
     return model

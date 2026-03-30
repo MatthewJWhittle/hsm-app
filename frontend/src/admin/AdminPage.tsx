@@ -237,6 +237,7 @@ export function AdminPage() {
   }
 
   const activeProjects = projects.filter((p) => p.status === 'active')
+  const canAddModel = activeProjects.length > 0
 
   if (loading) {
     return (
@@ -398,12 +399,17 @@ export function AdminPage() {
             <Typography variant="subtitle1" sx={{ mb: 1 }}>
               Add model
             </Typography>
+            {!canAddModel && (
+              <Alert severity="warning" sx={{ mb: 2, maxWidth: 560 }}>
+                Create at least one active catalog project above before you can add a model.
+              </Alert>
+            )}
             <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: 560, py: 0.75 }}>
               {COG_REQUIREMENTS_INFO}
             </Alert>
             <Box component="form" onSubmit={handleCreate}>
               <Stack spacing={2} sx={{ maxWidth: 560 }}>
-                <FormControl required size="small" fullWidth>
+                <FormControl required size="small" fullWidth disabled={!canAddModel}>
                   <InputLabel>Catalog project</InputLabel>
                   <Select
                     value={modelProjectId}
@@ -479,7 +485,12 @@ export function AdminPage() {
                   {createError}
                 </Alert>
               )}
-              <Button type="submit" variant="contained" sx={{ mt: 2 }} disabled={creating}>
+              <Button
+                type="submit"
+                variant="contained"
+                sx={{ mt: 2 }}
+                disabled={creating || !canAddModel}
+              >
                 {creating ? 'Creating…' : 'Create model'}
               </Button>
             </Box>

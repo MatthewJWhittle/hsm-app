@@ -54,9 +54,11 @@ function App() {
   const [inspectError, setInspectError] = useState<string | null>(null)
   const [hudOpen, setHudOpen] = useState(false)
   const inspectAbortRef = useRef<AbortController | null>(null)
+  const [catalogReady, setCatalogReady] = useState(false)
 
   useEffect(() => {
     let cancelled = false
+    setCatalogReady(false)
     ;(async () => {
       try {
         const token = user ? await getIdToken(true).catch(() => null) : null
@@ -69,42 +71,45 @@ function App() {
         setProjects(plist)
         setModels(mlist)
         setLoadError(null)
-
-        const opts = buildProjectOptions(plist, mlist)
-        const pu = searchParams.get('project')
-        const mu = searchParams.get('model')
-        const defaultProject = opts[0]?.id ?? ''
-        const projectId =
-          pu && opts.some((o) => o.id === pu) ? pu : defaultProject
-        const filtered = modelsForProject(projectId, mlist)
-        const defaultModel = filtered[0]?.id ?? ''
-        const modelId =
-          mu && filtered.some((m) => m.id === mu) ? mu : defaultModel
-
-        setSelectedProjectId(projectId)
-        setSelectedModelId(modelId)
-        if (projectId && modelId) {
-          setSearchParams({ project: projectId, model: modelId }, { replace: true })
-        }
       } catch {
         if (!cancelled) {
           setProjects([])
           setModels([])
           setLoadError('Could not load catalog. Is the API running?')
         }
+      } finally {
+        if (!cancelled) setCatalogReady(true)
       }
     })()
     return () => {
       cancelled = true
     }
-    // Intentionally reload catalog when auth user changes; read URL once per load.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, getIdToken])
 
   const projectOptions = useMemo(
     () => buildProjectOptions(projects, models),
     [projects, models],
   )
+
+  useEffect(() => {
+    if (!catalogReady) return
+    const opts = projectOptions
+    const pu = searchParams.get('project')
+    const mu = searchParams.get('model')
+    const defaultProject = opts[0]?.id ?? ''
+    const projectId =
+      pu && opts.some((o) => o.id === pu) ? pu : defaultProject
+    const filtered = modelsForProject(projectId, models)
+    const defaultModel = filtered[0]?.id ?? ''
+    const modelId =
+      mu && filtered.some((m) => m.id === mu) ? mu : defaultModel
+
+    setSelectedProjectId(projectId)
+    setSelectedModelId(modelId)
+    if (projectId && modelId && (pu !== projectId || mu !== modelId)) {
+      setSearchParams({ project: projectId, model: modelId }, { replace: true })
+    }
+  }, [catalogReady, searchParams, projectOptions, models, setSearchParams])
 
   const filteredModels = useMemo(
     () => modelsForProject(selectedProjectId, models),
