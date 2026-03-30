@@ -31,8 +31,10 @@ class Settings(BaseSettings):
     **OpenAPI / docs:** set ``OPENAPI_ENABLED=false`` in production to disable ``/docs``,
     ``/redoc``, and ``/openapi.json``.
 
-    **Uploads:** ``MAX_UPLOAD_BYTES`` caps admin COG uploads (default ~100 MB). Enforce
-    in-process; also configure a reverse proxy or Cloud Run request size limits in production.
+    **Uploads:** ``MAX_UPLOAD_BYTES`` caps admin suitability COG uploads (default ~100 MB).
+    ``MAX_ENVIRONMENTAL_UPLOAD_BYTES`` caps project environmental (driver) COG uploads
+    (default 1 GiB). Enforce in-process; also configure a reverse proxy or Cloud Run
+    request size limits in production.
     """
 
     model_config = SettingsConfigDict(extra="ignore")
@@ -93,6 +95,13 @@ class Settings(BaseSettings):
         default=100 * 1024 * 1024,
         description="Maximum admin suitability COG upload size in bytes.",
         validation_alias=AliasChoices("MAX_UPLOAD_BYTES"),
+        ge=1024,
+    )
+
+    max_environmental_upload_bytes: int = Field(
+        default=1024 * 1024 * 1024,
+        description="Maximum admin environmental (project driver) COG upload size in bytes.",
+        validation_alias=AliasChoices("MAX_ENVIRONMENTAL_UPLOAD_BYTES"),
         ge=1024,
     )
 

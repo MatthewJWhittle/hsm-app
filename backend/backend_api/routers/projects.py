@@ -111,10 +111,10 @@ async def create_project(
     content = await file.read()
     if not content:
         raise HTTPException(status_code=422, detail="empty file")
-    if len(content) > settings.max_upload_bytes:
+    if len(content) > settings.max_environmental_upload_bytes:
         raise HTTPException(
             status_code=413,
-            detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
+            detail=f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
         )
     try:
         await validate_cog_bytes_threaded(content)
@@ -208,10 +208,10 @@ async def update_project(
         content = await file.read()
         if not content:
             raise HTTPException(status_code=422, detail="empty file")
-        if len(content) > settings.max_upload_bytes:
+        if len(content) > settings.max_environmental_upload_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
+                detail=f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
             )
         try:
             await validate_cog_bytes_threaded(content)
