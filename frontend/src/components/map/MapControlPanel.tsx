@@ -9,7 +9,6 @@ import {
 } from '@mui/material'
 import { useMemo } from 'react'
 import { ProjectSelector, type ProjectOption } from './ProjectSelector'
-import { OpacityControl } from './OpacityControl'
 import type { Model } from '../../types/model'
 
 /** Left map sidebar width (GIS-style controls; keeps map focal area clear). */
@@ -28,9 +27,7 @@ interface MapControlPanelProps {
   onProjectChange: (projectId: string) => void
   models: Model[]
   selectedModelId: string
-  opacity: number
   onModelChange: (modelId: string) => void
-  onOpacityChange: (opacity: number) => void
   projectSummary: ProjectSummary
 }
 
@@ -44,9 +41,7 @@ export function MapControlPanel({
   onProjectChange,
   models,
   selectedModelId,
-  opacity,
   onModelChange,
-  onOpacityChange,
   projectSummary,
 }: MapControlPanelProps) {
   const selectedModel = useMemo(
@@ -164,8 +159,6 @@ export function MapControlPanel({
             )}
             sx={{ mb: 2 }}
           />
-
-          <OpacityControl value={opacity} onChange={onOpacityChange} />
         </Box>
 
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45, opacity: 0.9, mt: 'auto', pt: 1 }}>

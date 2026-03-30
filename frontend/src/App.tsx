@@ -3,6 +3,7 @@ import MapComponent from './components/Map'
 import { Box } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { FloatingMapTools } from './components/map/FloatingMapTools'
 import { MapControlPanel, type ProjectSummary } from './components/map/MapControlPanel'
 import { InspectionHud } from './components/InspectionHud'
 import type { Model } from './types/model'
@@ -220,9 +221,7 @@ function App() {
           onProjectChange={onProjectChange}
           models={filteredModels}
           selectedModelId={selectedModelId}
-          opacity={opacity}
           onModelChange={onModelChange}
-          onOpacityChange={setOpacity}
           projectSummary={projectSummary}
         />
         <Box
@@ -274,6 +273,11 @@ function App() {
               opacity={opacity / 100}
               model={selectedModel}
               onInspect={selectedModel && !loadError ? handleInspect : undefined}
+            />
+            <FloatingMapTools
+              opacity={opacity}
+              onOpacityChange={setOpacity}
+              disabled={!selectedModel || Boolean(loadError)}
             />
           </Box>
         </Box>
