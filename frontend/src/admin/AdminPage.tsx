@@ -2,11 +2,13 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   Container,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   FormControl,
   FormHelperText,
   InputLabel,
@@ -14,15 +16,21 @@ import {
   Paper,
   Select,
   Stack,
+  Tab,
   Table,
   TableBody,
   TableCell,
+  TableContainer,
   TableHead,
   TableRow,
+  Tabs,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
-import { useCallback, useEffect, useState } from 'react'
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
+import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import '../App.css'
@@ -48,13 +56,35 @@ const COG_REQUIREMENTS_INFO =
   'Suitability file: valid Cloud Optimized GeoTIFF (COG), Web Mercator (EPSG:3857). The server validates format, CRS, and upload size.'
 
 const DRIVER_COG_INFO =
-  'Optional on create: shared environmental stack (multi-band COG, EPSG:3857), same validation as suitability uploads. You can add or replace it later from project settings.'
+  'Optional on create: shared environmental stack (multi-band COG, EPSG:3857), same validation as suitability uploads. You can add or replace it later when editing the project.'
 
 const COG_REPLACE_HINT =
   'Optional. Same rules as a new upload; leave empty to keep the current file.'
 
+function shortId(id: string, head = 8): string {
+  if (id.length <= head + 2) return id
+  return `${id.slice(0, head)}…`
+}
+
+function TabPanel(props: { children?: React.ReactNode; index: number; value: number }) {
+  const { children, value, index, ...other } = props
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`admin-tabpanel-${index}`}
+      aria-labelledby={`admin-tab-${index}`}
+      {...other}
+    >
+      {/* Keep mounted so form state survives tab switches */}
+      <Box sx={{ py: { xs: 2, sm: 2.5 } }}>{children}</Box>
+    </div>
+  )
+}
+
 export function AdminPage() {
   const { user, loading, isAdmin, getIdToken } = useAuth()
+  const [tab, setTab] = useState(0)
   const [projects, setProjects] = useState<CatalogProject[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [listError, setListError] = useState<string | null>(null)
@@ -87,6 +117,14 @@ export function AdminPage() {
   const [editFile, setEditFile] = useState<File | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
+
+  const projectById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const p of projects) {
+      m.set(p.id, p.name)
+    }
+    return m
+  }, [projects])
 
   const refreshList = useCallback(async () => {
     const token = await getIdToken(true)
@@ -235,6 +273,8 @@ export function AdminPage() {
   const activeProjects = projects.filter((p) => p.status === 'active')
   const canAddModel = activeProjects.length > 0
 
+  const formMaxWidth = 640
+
   if (loading) {
     return (
       <div className="app-container app-container--scroll">
@@ -277,13 +317,37 @@ export function AdminPage() {
   return (
     <div className="app-container app-container--scroll">
       <Navbar />
-      <div className="app-scroll-region">
-        <Container maxWidth="lg" sx={{ py: 2, pb: 3 }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-            <Typography variant="h5" component="h1">
-              Admin — catalog
-            </Typography>
-            <Button component={Link} to="/" variant="outlined" size="small">
+      <Box
+        className="app-scroll-region"
+        sx={{
+          bgcolor: (t) => (t.palette.mode === 'dark' ? 'grey.900' : 'grey.50'),
+        }}
+      >
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 }, pb: 5 }}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            alignItems={{ xs: 'stretch', sm: 'flex-start' }}
+            justifyContent="space-between"
+            spacing={2}
+            sx={{ mb: 3 }}
+          >
+            <Box>
+              <Typography variant="h4" component="h1" fontWeight={700} sx={{ letterSpacing: '-0.02em' }}>
+                Catalog admin
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 520 }}>
+                Create <strong>projects</strong> first (shared environmental stack), then attach{' '}
+                <strong>models</strong> (species suitability layers). Everything here updates the live map
+                catalog.
+              </Typography>
+            </Box>
+            <Button
+              component={Link}
+              to="/"
+              variant="outlined"
+              size="medium"
+              sx={{ flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'center' } }}
+            >
               Back to map
             </Button>
           </Stack>
@@ -294,239 +358,427 @@ export function AdminPage() {
             </Alert>
           )}
 
-          <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-            <Typography variant="subtitle1" sx={{ mb: 1 }}>
-              Add catalog project
-            </Typography>
-            <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: 560, py: 0.75 }}>
-              {DRIVER_COG_INFO}
-            </Alert>
-            <Box component="form" onSubmit={(e) => void handleCreateProject(e)}>
-              <Stack spacing={2} sx={{ maxWidth: 560 }}>
-                <TextField
-                  required
-                  label="Project name"
-                  value={projName}
-                  onChange={(e) => setProjName(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <TextField
-                  label="Description"
-                  value={projDesc}
-                  onChange={(e) => setProjDesc(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Visibility</InputLabel>
-                  <Select
-                    value={projVisibility}
-                    label="Visibility"
-                    onChange={(e) =>
-                      setProjVisibility(e.target.value as 'public' | 'private')
-                    }
-                  >
-                    <MenuItem value="public">Public</MenuItem>
-                    <MenuItem value="private">Private</MenuItem>
-                  </Select>
-                </FormControl>
-                <TextField
-                  label="Allowed user ids (private)"
-                  helperText="Comma-separated Firebase uids, or JSON array"
-                  value={projAllowedUids}
-                  onChange={(e) => setProjAllowedUids(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
-                  <Button variant="outlined" component="label" size="small">
-                    Environmental COG
-                    <input
-                      type="file"
-                      accept=".tif,.tiff,image/tiff"
-                      hidden
-                      onChange={(e) => setProjFile(e.target.files?.[0] ?? null)}
-                    />
-                  </Button>
-                  <Typography variant="body2" color="text.secondary">
-                    {projFile ? projFile.name : 'No file chosen'}
-                  </Typography>
+          <Paper
+            elevation={0}
+            sx={{
+              borderRadius: 2,
+              border: 1,
+              borderColor: 'divider',
+              overflow: 'hidden',
+              bgcolor: 'background.paper',
+            }}
+          >
+            <Tabs
+              value={tab}
+              onChange={(_e, v) => setTab(v)}
+              variant="fullWidth"
+              sx={{
+                borderBottom: 1,
+                borderColor: 'divider',
+                '& .MuiTab-root': { py: 1.75, textTransform: 'none', fontWeight: 600, fontSize: '0.95rem' },
+              }}
+            >
+              <Tab
+                icon={<FolderOutlinedIcon fontSize="small" />}
+                iconPosition="start"
+                label={`Projects (${projects.length})`}
+                id="admin-tab-0"
+                aria-controls="admin-tabpanel-0"
+              />
+              <Tab
+                icon={<LayersOutlinedIcon fontSize="small" />}
+                iconPosition="start"
+                label={`Models (${models.length})`}
+                id="admin-tab-1"
+                aria-controls="admin-tabpanel-1"
+              />
+            </Tabs>
+
+            <Box sx={{ px: { xs: 2, sm: 3 } }}>
+              <TabPanel value={tab} index={0}>
+                <Stack spacing={3}>
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
+                      New project
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      Projects group models and hold the optional shared environmental COG.
+                    </Typography>
+                    <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: formMaxWidth }}>
+                      {DRIVER_COG_INFO}
+                    </Alert>
+                    <Box component="form" onSubmit={(e) => void handleCreateProject(e)}>
+                      <Stack spacing={2} sx={{ maxWidth: formMaxWidth }}>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                          <TextField
+                            required
+                            label="Project name"
+                            value={projName}
+                            onChange={(e) => setProjName(e.target.value)}
+                            size="small"
+                            fullWidth
+                          />
+                          <FormControl size="small" sx={{ minWidth: { sm: 200 } }} fullWidth>
+                            <InputLabel>Visibility</InputLabel>
+                            <Select
+                              value={projVisibility}
+                              label="Visibility"
+                              onChange={(e) =>
+                                setProjVisibility(e.target.value as 'public' | 'private')
+                              }
+                            >
+                              <MenuItem value="public">Public</MenuItem>
+                              <MenuItem value="private">Private</MenuItem>
+                            </Select>
+                          </FormControl>
+                        </Stack>
+                        <TextField
+                          label="Description"
+                          value={projDesc}
+                          onChange={(e) => setProjDesc(e.target.value)}
+                          size="small"
+                          fullWidth
+                        />
+                        <TextField
+                          label="Allowed user ids (private)"
+                          helperText="Comma-separated Firebase uids, or JSON array"
+                          value={projAllowedUids}
+                          onChange={(e) => setProjAllowedUids(e.target.value)}
+                          size="small"
+                          fullWidth
+                        />
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
+                            Environmental COG (optional)
+                          </Typography>
+                          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
+                            <Button variant="outlined" component="label" size="small">
+                              Choose file
+                              <input
+                                type="file"
+                                accept=".tif,.tiff,image/tiff"
+                                hidden
+                                onChange={(e) => setProjFile(e.target.files?.[0] ?? null)}
+                              />
+                            </Button>
+                            <Typography variant="body2" color="text.secondary" noWrap sx={{ maxWidth: 280 }}>
+                              {projFile ? projFile.name : 'No file selected'}
+                            </Typography>
+                          </Stack>
+                        </Box>
+                      </Stack>
+                      {projError && (
+                        <Alert severity="error" sx={{ mt: 2, maxWidth: formMaxWidth }}>
+                          {projError}
+                        </Alert>
+                      )}
+                      <Button type="submit" variant="contained" sx={{ mt: 2 }} disabled={projCreating}>
+                        {projCreating ? 'Creating…' : 'Create project'}
+                      </Button>
+                    </Box>
+                  </Box>
+
+                  <Divider />
+
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
+                      All projects
+                    </Typography>
+                    <TableContainer
+                      sx={{
+                        borderRadius: 1,
+                        border: 1,
+                        borderColor: 'divider',
+                        maxHeight: 360,
+                      }}
+                    >
+                      <Table size="small" stickyHeader>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Project</TableCell>
+                            <TableCell width={120}>Env. COG</TableCell>
+                            <TableCell width={110}>Visibility</TableCell>
+                            <TableCell width={100}>Status</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {projects.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4}>
+                                <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                                  No projects yet. Create one above.
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            projects.map((p) => (
+                              <TableRow key={p.id} hover>
+                                <TableCell>
+                                  <Typography variant="body2" fontWeight={600}>
+                                    {p.name}
+                                  </Typography>
+                                  <Tooltip title={p.id}>
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                      fontFamily="monospace"
+                                      component="span"
+                                      sx={{ display: 'block' }}
+                                    >
+                                      {shortId(p.id)}
+                                    </Typography>
+                                  </Tooltip>
+                                </TableCell>
+                                <TableCell>
+                                  {p.driver_cog_path ? (
+                                    <Chip label="Uploaded" size="small" color="success" variant="outlined" />
+                                  ) : (
+                                    <Chip label="None" size="small" variant="outlined" />
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Chip
+                                    label={p.visibility}
+                                    size="small"
+                                    color={p.visibility === 'public' ? 'primary' : 'default'}
+                                    variant="outlined"
+                                  />
+                                </TableCell>
+                                <TableCell>
+                                  <Chip
+                                    label={p.status}
+                                    size="small"
+                                    color={p.status === 'active' ? 'success' : 'default'}
+                                    variant="outlined"
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Box>
                 </Stack>
-              </Stack>
-              {projError && (
-                <Alert severity="error" sx={{ mt: 2 }}>
-                  {projError}
-                </Alert>
-              )}
-              <Button type="submit" variant="contained" sx={{ mt: 2 }} disabled={projCreating}>
-                {projCreating ? 'Creating…' : 'Create project'}
-              </Button>
+              </TabPanel>
+
+              <TabPanel value={tab} index={1}>
+                <Stack spacing={3}>
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
+                      New model
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      Each model is a suitability COG tied to a project.
+                    </Typography>
+                    {!canAddModel && (
+                      <Alert severity="warning" sx={{ mb: 2, maxWidth: formMaxWidth }}>
+                        Create at least one active project in the <strong>Projects</strong> tab first.
+                      </Alert>
+                    )}
+                    <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: formMaxWidth }}>
+                      {COG_REQUIREMENTS_INFO}
+                    </Alert>
+                    <Box
+                      component="form"
+                      onSubmit={handleCreate}
+                      sx={{
+                        opacity: canAddModel ? 1 : 0.55,
+                        pointerEvents: canAddModel ? 'auto' : 'none',
+                      }}
+                    >
+                      <Stack spacing={2} sx={{ maxWidth: formMaxWidth }}>
+                        <FormControl required size="small" fullWidth disabled={!canAddModel}>
+                          <InputLabel>Catalog project</InputLabel>
+                          <Select
+                            value={modelProjectId}
+                            label="Catalog project"
+                            onChange={(e) => setModelProjectId(e.target.value)}
+                          >
+                            {activeProjects.map((p) => (
+                              <MenuItem key={p.id} value={p.id}>
+                                {p.name}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                          <TextField
+                            required
+                            label="Species"
+                            helperText={FIELD_HELP.species}
+                            value={species}
+                            onChange={(e) => setSpecies(e.target.value)}
+                            size="small"
+                            fullWidth
+                          />
+                          <TextField
+                            required
+                            label="Activity"
+                            helperText={FIELD_HELP.activity}
+                            value={activity}
+                            onChange={(e) => setActivity(e.target.value)}
+                            size="small"
+                            fullWidth
+                          />
+                        </Stack>
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+                          <TextField
+                            label="Model name"
+                            helperText={FIELD_HELP.modelName}
+                            value={modelName}
+                            onChange={(e) => setModelName(e.target.value)}
+                            size="small"
+                            fullWidth
+                          />
+                          <TextField
+                            label="Model version"
+                            helperText={FIELD_HELP.modelVersion}
+                            value={modelVersion}
+                            onChange={(e) => setModelVersion(e.target.value)}
+                            size="small"
+                            fullWidth
+                          />
+                        </Stack>
+                        <TextField
+                          label="Driver band indices (JSON array)"
+                          helperText="Optional. E.g. [0,1,2] for bands from the project environmental COG."
+                          value={driverBandIndices}
+                          onChange={(e) => setDriverBandIndices(e.target.value)}
+                          size="small"
+                          fullWidth
+                        />
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
+                            Suitability COG (required)
+                          </Typography>
+                          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
+                            <Button variant="outlined" component="label" size="small">
+                              Choose file
+                              <input
+                                type="file"
+                                accept=".tif,.tiff,image/tiff"
+                                hidden
+                                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                              />
+                            </Button>
+                            <Typography variant="body2" color="text.secondary" noWrap sx={{ maxWidth: 280 }}>
+                              {file ? file.name : 'No file selected'}
+                            </Typography>
+                          </Stack>
+                        </Box>
+                      </Stack>
+                      {createError && (
+                        <Alert severity="error" sx={{ mt: 2, maxWidth: formMaxWidth }}>
+                          {createError}
+                        </Alert>
+                      )}
+                      <Button
+                        type="submit"
+                        variant="contained"
+                        sx={{ mt: 2 }}
+                        disabled={creating || !canAddModel}
+                      >
+                        {creating ? 'Creating…' : 'Create model'}
+                      </Button>
+                    </Box>
+                  </Box>
+
+                  <Divider />
+
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
+                      All models
+                    </Typography>
+                    <TableContainer
+                      sx={{
+                        borderRadius: 1,
+                        border: 1,
+                        borderColor: 'divider',
+                        maxHeight: 480,
+                      }}
+                    >
+                      <Table size="small" stickyHeader>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell width={100}>ID</TableCell>
+                            <TableCell width={160}>Project</TableCell>
+                            <TableCell>Species</TableCell>
+                            <TableCell>Activity</TableCell>
+                            <TableCell>Name / version</TableCell>
+                            <TableCell align="right" width={88}>
+                              Actions
+                            </TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {models.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6}>
+                                <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+                                  No models yet. Add one above once a project exists.
+                                </Typography>
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            models.map((m) => {
+                              const projectLabel = m.project_id
+                                ? (projectById.get(m.project_id) ?? shortId(m.project_id))
+                                : 'Legacy'
+                              return (
+                                <TableRow key={m.id} hover>
+                                  <TableCell>
+                                    <Tooltip title={m.id}>
+                                      <Typography
+                                        variant="body2"
+                                        fontFamily="monospace"
+                                        fontSize={12}
+                                        sx={{ cursor: 'default' }}
+                                      >
+                                        {shortId(m.id)}
+                                      </Typography>
+                                    </Tooltip>
+                                  </TableCell>
+                                  <TableCell>
+                                    {m.project_id ? (
+                                      <Typography variant="body2" noWrap title={projectLabel}>
+                                        {projectLabel}
+                                      </Typography>
+                                    ) : (
+                                      <Chip label="Legacy" size="small" variant="outlined" />
+                                    )}
+                                  </TableCell>
+                                  <TableCell>{m.species}</TableCell>
+                                  <TableCell>{m.activity}</TableCell>
+                                  <TableCell>
+                                    {[m.model_name, m.model_version].filter(Boolean).join(' · ') || '—'}
+                                  </TableCell>
+                                  <TableCell align="right">
+                                    <Button size="small" onClick={() => openEdit(m)}>
+                                      Edit
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              )
+                            })
+                          )}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Box>
+                </Stack>
+              </TabPanel>
             </Box>
           </Paper>
 
-          <Table size="small" sx={{ mb: 3 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Project</TableCell>
-                <TableCell>Visibility</TableCell>
-                <TableCell>Status</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {projects.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell>
-                    <Typography variant="body2" fontWeight={600}>
-                      {p.name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" fontFamily="monospace">
-                      {p.id}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>{p.visibility}</TableCell>
-                  <TableCell>{p.status}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          <Paper variant="outlined" sx={{ p: 2, mb: 3 }}>
-            <Typography variant="subtitle1" sx={{ mb: 1 }}>
-              Add model
-            </Typography>
-            {!canAddModel && (
-              <Alert severity="warning" sx={{ mb: 2, maxWidth: 560 }}>
-                Create at least one active catalog project above before you can add a model.
-              </Alert>
-            )}
-            <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: 560, py: 0.75 }}>
-              {COG_REQUIREMENTS_INFO}
-            </Alert>
-            <Box component="form" onSubmit={handleCreate}>
-              <Stack spacing={2} sx={{ maxWidth: 560 }}>
-                <FormControl required size="small" fullWidth disabled={!canAddModel}>
-                  <InputLabel>Catalog project</InputLabel>
-                  <Select
-                    value={modelProjectId}
-                    label="Catalog project"
-                    onChange={(e) => setModelProjectId(e.target.value)}
-                  >
-                    {activeProjects.map((p) => (
-                      <MenuItem key={p.id} value={p.id}>
-                        {p.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <TextField
-                  required
-                  label="Species"
-                  helperText={FIELD_HELP.species}
-                  value={species}
-                  onChange={(e) => setSpecies(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <TextField
-                  required
-                  label="Activity"
-                  helperText={FIELD_HELP.activity}
-                  value={activity}
-                  onChange={(e) => setActivity(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <TextField
-                  label="Model name"
-                  helperText={FIELD_HELP.modelName}
-                  value={modelName}
-                  onChange={(e) => setModelName(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <TextField
-                  label="Model version"
-                  helperText={FIELD_HELP.modelVersion}
-                  value={modelVersion}
-                  onChange={(e) => setModelVersion(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <TextField
-                  label="Driver band indices (JSON array)"
-                  helperText="Optional. E.g. [0,1,2] for bands from the project environmental COG."
-                  value={driverBandIndices}
-                  onChange={(e) => setDriverBandIndices(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap">
-                  <Button variant="outlined" component="label" size="small">
-                    Suitability COG file
-                    <input
-                      type="file"
-                      accept=".tif,.tiff,image/tiff"
-                      hidden
-                      onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                    />
-                  </Button>
-                  <Typography variant="body2" color="text.secondary">
-                    {file ? file.name : 'No file chosen'}
-                  </Typography>
-                </Stack>
-              </Stack>
-              {createError && (
-                <Alert severity="error" sx={{ mt: 2 }}>
-                  {createError}
-                </Alert>
-              )}
-              <Button
-                type="submit"
-                variant="contained"
-                sx={{ mt: 2 }}
-                disabled={creating || !canAddModel}
-              >
-                {creating ? 'Creating…' : 'Create model'}
-              </Button>
-            </Box>
-          </Paper>
-
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>ID</TableCell>
-                <TableCell>Project</TableCell>
-                <TableCell>Species</TableCell>
-                <TableCell>Activity</TableCell>
-                <TableCell>Name / version</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {models.map((m) => (
-                <TableRow key={m.id}>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{m.id}</TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: 11 }}>
-                    {m.project_id ?? '—'}
-                  </TableCell>
-                  <TableCell>{m.species}</TableCell>
-                  <TableCell>{m.activity}</TableCell>
-                  <TableCell>
-                    {[m.model_name, m.model_version].filter(Boolean).join(' · ') || '—'}
-                  </TableCell>
-                  <TableCell align="right">
-                    <Button size="small" onClick={() => openEdit(m)}>
-                      Edit
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          <Dialog open={editOpen} onClose={() => setEditOpen(false)} fullWidth maxWidth="sm">
-            <DialogTitle>Edit model</DialogTitle>
+          <Dialog
+            open={editOpen}
+            onClose={() => setEditOpen(false)}
+            fullWidth
+            maxWidth="sm"
+            PaperProps={{ sx: { borderRadius: 2 } }}
+          >
+            <DialogTitle sx={{ fontWeight: 700 }}>Edit model</DialogTitle>
             <DialogContent>
               <Stack spacing={2} sx={{ mt: 1 }}>
                 <FormControl size="small" fullWidth>
@@ -595,7 +847,7 @@ export function AdminPage() {
                 {editError && <Alert severity="error">{editError}</Alert>}
               </Stack>
             </DialogContent>
-            <DialogActions>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
               <Button onClick={() => setEditOpen(false)}>Cancel</Button>
               <Button variant="contained" onClick={() => void handleSaveEdit()} disabled={savingEdit}>
                 {savingEdit ? 'Saving…' : 'Save'}
@@ -603,7 +855,7 @@ export function AdminPage() {
             </DialogActions>
           </Dialog>
         </Container>
-      </div>
+      </Box>
     </div>
   )
 }
