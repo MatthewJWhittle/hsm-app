@@ -16,15 +16,20 @@ from google.cloud.firestore_v1 import DocumentSnapshot
 from pydantic import ValidationError
 
 from backend_api.schemas import Model
+from backend_api.schemas_project import CatalogProject
 from backend_api.settings import Settings
 
 logger = logging.getLogger(__name__)
 
 # Single collection for Model documents (document id = Model.id).
 MODELS_COLLECTION_ID = "models"
+PROJECTS_COLLECTION_ID = "projects"
 
 CATALOG_VALIDATION_DETAIL = (
     "Catalog data does not match the Model schema; fix Firestore documents or see server logs."
+)
+PROJECT_CATALOG_VALIDATION_DETAIL = (
+    "Catalog data does not match the CatalogProject schema; fix Firestore documents or see server logs."
 )
 
 
@@ -34,9 +39,13 @@ class CatalogService(Protocol):
     validation_error: str | None
     load_error: str | None
     models: list[Model]
+    projects: list[CatalogProject]
 
     def get_model(self, model_id: str) -> Model | None:
         """Return one model by id, or ``None`` if not found."""
+
+    def get_project(self, project_id: str) -> CatalogProject | None:
+        """Return one catalog project by id, or ``None`` if not found."""
 
 
 class FirestoreCatalogService:
@@ -47,7 +56,9 @@ class FirestoreCatalogService:
         self.validation_error: str | None = None
         self.load_error: str | None = None
         self.models: list[Model] = []
+        self.projects: list[CatalogProject] = []
         self._models_by_id: dict[str, Model] = {}
+        self._projects_by_id: dict[str, CatalogProject] = {}
         self._load()
 
     def reload(self) -> None:
@@ -55,7 +66,9 @@ class FirestoreCatalogService:
         self.validation_error = None
         self.load_error = None
         self.models = []
+        self.projects = []
         self._models_by_id = {}
+        self._projects_by_id = {}
         self._load()
 
     def _load(self) -> None:
@@ -69,8 +82,10 @@ class FirestoreCatalogService:
             )
             return
 
+        proj_coll = client.collection(PROJECTS_COLLECTION_ID)
         coll = client.collection(MODELS_COLLECTION_ID)
         models: list[Model] = []
+        projects: list[CatalogProject] = []
         use_emulator = bool(os.environ.get("FIRESTORE_EMULATOR_HOST"))
         max_attempts = (
             _FIRESTORE_EMULATOR_READ_RETRIES if use_emulator else 1
@@ -78,6 +93,22 @@ class FirestoreCatalogService:
         for attempt in range(max_attempts):
             try:
                 models = []
+                projects = []
+                for doc in proj_coll.stream():
+                    try:
+                        payload = _snapshot_to_model_dict(doc)
+                        projects.append(CatalogProject.model_validate(payload))
+                    except ValidationError:
+                        logger.exception(
+                            "Firestore document %s is not a valid CatalogProject; fix catalog data",
+                            doc.id,
+                        )
+                        self.validation_error = PROJECT_CATALOG_VALIDATION_DETAIL
+                        self.models = []
+                        self.projects = []
+                        self._models_by_id = {}
+                        self._projects_by_id = {}
+                        return
                 for doc in coll.stream():
                     try:
                         payload = _snapshot_to_model_dict(doc)
@@ -89,7 +120,9 @@ class FirestoreCatalogService:
                         )
                         self.validation_error = CATALOG_VALIDATION_DETAIL
                         self.models = []
+                        self.projects = []
                         self._models_by_id = {}
+                        self._projects_by_id = {}
                         return
                 break
             except Exception as e:
@@ -108,17 +141,25 @@ class FirestoreCatalogService:
                 time.sleep(_FIRESTORE_EMULATOR_READ_DELAY_SEC)
 
         models.sort(key=lambda m: m.id)
+        projects.sort(key=lambda p: p.id)
         self.models = models
+        self.projects = projects
         self._models_by_id = {m.id: m for m in models}
+        self._projects_by_id = {p.id: p for p in projects}
         if self.load_error is None:
             logger.info(
-                "Loaded %s model(s) from Firestore collection %r",
+                "Loaded %s project(s) from %r and %s model(s) from %r",
+                len(self.projects),
+                PROJECTS_COLLECTION_ID,
                 len(self.models),
                 MODELS_COLLECTION_ID,
             )
 
     def get_model(self, model_id: str) -> Model | None:
         return self._models_by_id.get(model_id)
+
+    def get_project(self, project_id: str) -> CatalogProject | None:
+        return self._projects_by_id.get(project_id)
 
 
 def _snapshot_to_model_dict(doc: DocumentSnapshot) -> dict[str, Any]:

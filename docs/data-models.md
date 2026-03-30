@@ -13,15 +13,34 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | string | **Required.** Stable identifier assigned **once on create**. Prefer **server-generated opaque ids** (UUID or ULID) for robustness; structured slugs remain an alternative where human-readable ids are required. See [Admin scope decisions](admin-scope-decisions.md). |
+| `project_id` | string? | **Catalog project** this model belongs to (Firestore `projects` collection). **Required** for new admin-created models; legacy documents may omit until migrated. |
 | `species` | string | Display name (e.g. "Myotis daubentonii"). |
 | `activity` | string | Display name (e.g. "In flight"). |
 | `artifact_root` | string | **Required.** Base path or prefix in storage (GCS, etc.) for this model’s artifacts. All paths for this model are relative or derived from this (suitability COG, driver data). Enables a consistent folder-per-model layout. |
 | `suitability_cog_path` | string | Path to the suitability COG (absolute or relative to `artifact_root`). Frontend/TiTiler use this for tiles. |
 | `model_name` | string? | Optional. Model or run name (MVP: basic metadata). |
 | `model_version` | string? | Optional. Model version or date. |
-| `driver_config` | object? | Optional. Links this model to driver/feature data: e.g. path to a multi-band COG or driver raster, plus the **subset of features (band names or feature ids) that this model uses**. Needed because each model depends on a specific set of features; the API must know which subset to read for point inspection. See “Driver and feature linkage” below. |
+| `driver_band_indices` | int[]? | Optional typed subset: **0-based band indices** into the parent project’s shared **environmental COG** (preferred for new data when projects are used). |
+| `driver_config` | object? | Optional. Links this model to driver/feature data: e.g. path to a multi-band COG or driver raster, plus the **subset of features (band names or feature ids) that this model uses**. Needed because each model depends on a specific set of features; the API must know which subset to read for point inspection. See “Driver and feature linkage” below. Prefer **`driver_band_indices`** when the stack is project-scoped. |
 
 **Extensibility:** Add optional fields as needed (e.g. `taxon_id`, `meta` blob). Backend and frontend should ignore unknown keys so schema can evolve.
+
+### Catalog project (shared environmental stack)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | **Required.** Opaque id (Firestore document id). |
+| `name` | string | Display name. |
+| `description` | string? | Optional. |
+| `status` | `active` \| `archived` | Archived projects are hidden from non-admin catalog readers. |
+| `visibility` | `public` \| `private` | **Public** models are visible to anonymous catalog reads. **Private** restricts listing to **allowed_uids** (Firebase uids) and **admins**. |
+| `allowed_uids` | string[] | When `visibility` is `private`, these uids may read the project and its models (via optional `Authorization: Bearer` on `GET /projects` and `GET /models`). |
+| `driver_artifact_root` | string | Storage prefix for the project’s shared multi-band environmental COG. |
+| `driver_cog_path` | string | Filename or path relative to `driver_artifact_root` (e.g. `environmental_cog.tif`). |
+
+**Firestore:** Collection **`projects`**. **Models** stay in the top-level **`models`** collection and reference **`project_id`** (no subcollections for models under projects).
+
+**Storage layout:** Local `{LOCAL_STORAGE_ROOT}/projects/{project_id}/environmental_cog.tif`; GCS mirror under `projects/{project_id}/` in the bucket.
 
 **API:** `GET /models` returns a list of Model. `GET /models/{id}` returns one Model. Admin: `POST /models` (body: species, activity, **COG file upload**, optional metadata; backend assigns id, writes artifacts to a named folder structure, stores `artifact_root` and paths in DB), `PUT /models/{id}`. Registering a model by **path-only** (no upload) is not part of the first admin MVP — see [Admin scope decisions — §6](admin-scope-decisions.md#6-out-of-scope-for-the-first-admin-delivery-issue-9).
 
@@ -103,7 +122,7 @@ The data model should record enough for the API to resolve “this model → the
 
 ### Catalog storage (target shape)
 
-- **Firestore:** Collection `models`; each document = one Model (id as document id or field). No separate species/activities arrays; frontend derives dropdowns from the model list.
+- **Firestore:** Collections **`projects`** (Catalog projects) and **`models`** (Model). Each document is one entity; **model** documents include **`project_id`** when applicable. No separate species/activities arrays; frontend derives dropdowns from the model list.
 - **JSON snapshot (local Docker):** Firestore-shaped object with a **`documents`** array (one object per Model, `id` as document id). Optional metadata such as `generated_at`. The repo uses [`data/catalog/firestore_models.json`](../data/catalog/firestore_models.json); regenerate via `scripts/generate_hsm_index.py`.
 
 ---

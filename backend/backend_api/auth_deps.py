@@ -38,3 +38,24 @@ async def require_admin_claims(
     if claims.get("admin") is not True:
         raise HTTPException(status_code=403, detail="Admin privileges required")
     return claims
+
+
+async def optional_id_token_claims(request: Request) -> dict | None:
+    """
+    If ``Authorization: Bearer`` is absent, return ``None`` (anonymous).
+    If present, verify and return claims, or **401** if invalid/expired.
+    """
+    header = request.headers.get("Authorization")
+    if not header or not header.startswith("Bearer "):
+        return None
+    token = header.removeprefix("Bearer ").strip()
+    if not token:
+        return None
+
+    def _verify() -> dict:
+        return auth.verify_id_token(token)
+
+    try:
+        return await run_in_threadpool(_verify)
+    except (ValueError, firebase_exceptions.FirebaseError) as e:
+        raise HTTPException(status_code=401, detail="Invalid or expired token") from e

@@ -2,6 +2,7 @@ import { Paper, Typography, Box } from '@mui/material'
 import { styled } from '@mui/material/styles'
 import type { Theme } from '@mui/material'
 import { ModelSelector } from './ModelSelector'
+import { ProjectSelector, type ProjectOption } from './ProjectSelector'
 import { OpacityControl } from './OpacityControl'
 import type { Model } from '../../types/model'
 
@@ -18,6 +19,9 @@ const FloatingPanel = styled(Paper)(({ theme }: { theme: Theme }) => ({
 }))
 
 interface MapControlPanelProps {
+  projectOptions: ProjectOption[]
+  selectedProjectId: string
+  onProjectChange: (projectId: string) => void
   models: Model[]
   selectedModelId: string
   opacity: number
@@ -26,6 +30,9 @@ interface MapControlPanelProps {
 }
 
 export function MapControlPanel({
+  projectOptions,
+  selectedProjectId,
+  onProjectChange,
   models,
   selectedModelId,
   opacity,
@@ -39,6 +46,14 @@ export function MapControlPanel({
       </Typography>
 
       <Box sx={{ mb: 2 }}>
+        {projectOptions.length > 0 && (
+          <ProjectSelector
+            value={selectedProjectId}
+            options={projectOptions}
+            onChange={onProjectChange}
+          />
+        )}
+
         <ModelSelector
           value={selectedModelId}
           models={models}

@@ -10,12 +10,23 @@ from fastapi.testclient import TestClient
 
 from tests.helpers import mock_firestore_client_for_documents
 
+SAMPLE_PROJECT = {
+    "id": "proj-1",
+    "name": "Test project",
+    "driver_artifact_root": "/data/projects/proj-1",
+    "driver_cog_path": "environmental_cog.tif",
+    "visibility": "public",
+    "allowed_uids": [],
+    "status": "active",
+}
+
 
 @pytest.fixture
 def catalog_docs():
     return [
         {
             "id": "existing-id",
+            "project_id": "proj-1",
             "species": "Bat",
             "activity": "Roost",
             "artifact_root": "/data/models/existing-id",
@@ -25,8 +36,17 @@ def catalog_docs():
 
 
 @contextmanager
-def _admin_client(documents: list[dict], mock_storage: MagicMock, admin: bool = True):
-    mock_client = mock_firestore_client_for_documents(documents)
+def _admin_client(
+    documents: list[dict],
+    mock_storage: MagicMock,
+    admin: bool = True,
+    *,
+    project_documents: list[dict] | None = None,
+):
+    mock_client = mock_firestore_client_for_documents(
+        documents,
+        project_documents=project_documents or [],
+    )
     claims: dict = {"uid": "admin-1", "email": "a@example.com"}
     if admin:
         claims["admin"] = True
@@ -66,7 +86,10 @@ def test_post_models_requires_admin_claim():
             "suitability_cog_path": "a.tif",
         }
     ]
-    mock_client = mock_firestore_client_for_documents(docs)
+    mock_client = mock_firestore_client_for_documents(
+        docs,
+        project_documents=[SAMPLE_PROJECT],
+    )
     with (
         patch("backend_api.catalog_service.firestore.Client", return_value=mock_client),
         patch(
@@ -85,7 +108,11 @@ def test_post_models_requires_admin_claim():
             r = c.post(
                 "/models",
                 headers={"Authorization": "Bearer fake.token"},
-                data={"species": "Sp", "activity": "Act"},
+                data={
+                    "project_id": "proj-1",
+                    "species": "Sp",
+                    "activity": "Act",
+                },
                 files={"file": ("cog.tif", BytesIO(b"dummy"), "image/tiff")},
             )
     assert r.status_code == 403
@@ -97,11 +124,16 @@ def test_post_models_201_creates_model(catalog_docs):
         "/data/models/new-id",
         "suitability_cog.tif",
     )
-    with _admin_client(catalog_docs, mock_storage) as c:
+    with _admin_client(
+        catalog_docs,
+        mock_storage,
+        project_documents=[SAMPLE_PROJECT],
+    ) as c:
         r = c.post(
             "/models",
             headers={"Authorization": "Bearer fake.token"},
             data={
+                "project_id": "proj-1",
                 "species": "New species",
                 "activity": "Flight",
                 "model_name": "m1",
@@ -113,6 +145,7 @@ def test_post_models_201_creates_model(catalog_docs):
     assert data["species"] == "New species"
     assert data["activity"] == "Flight"
     assert data["model_name"] == "m1"
+    assert data["project_id"] == "proj-1"
     assert "id" in data
     mock_storage.write_suitability_cog.assert_called_once()
 
@@ -123,7 +156,11 @@ def test_put_models_updates_metadata(catalog_docs):
         "/data/models/existing-id",
         "suitability_cog.tif",
     )
-    with _admin_client(catalog_docs, mock_storage) as c:
+    with _admin_client(
+        catalog_docs,
+        mock_storage,
+        project_documents=[SAMPLE_PROJECT],
+    ) as c:
         r = c.put(
             "/models/existing-id",
             headers={"Authorization": "Bearer fake.token"},
@@ -136,7 +173,11 @@ def test_put_models_updates_metadata(catalog_docs):
 
 def test_put_models_unknown_404(catalog_docs):
     mock_storage = MagicMock()
-    with _admin_client(catalog_docs, mock_storage) as c:
+    with _admin_client(
+        catalog_docs,
+        mock_storage,
+        project_documents=[SAMPLE_PROJECT],
+    ) as c:
         r = c.put(
             "/models/missing",
             headers={"Authorization": "Bearer fake.token"},

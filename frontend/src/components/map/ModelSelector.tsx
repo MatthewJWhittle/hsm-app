@@ -13,15 +13,23 @@ export function ModelSelector({ value, models, onChange }: ModelSelectorProps) {
     onChange(event.target.value)
   }
 
+  const safeValue = models.some((m) => m.id === value) ? value : ''
+
   return (
     <FormControl fullWidth size="small" sx={{ mb: 2 }}>
       <InputLabel>Model</InputLabel>
-      <Select value={value} label="Model" onChange={handleChange}>
-        {models.map((m) => (
-          <MenuItem key={m.id} value={m.id}>
-            {m.species} — {m.activity}
+      <Select value={safeValue} label="Model" onChange={handleChange}>
+        {models.length === 0 ? (
+          <MenuItem value="" disabled>
+            No models in this project
           </MenuItem>
-        ))}
+        ) : (
+          models.map((m) => (
+            <MenuItem key={m.id} value={m.id}>
+              {m.species} — {m.activity}
+            </MenuItem>
+          ))
+        )}
       </Select>
     </FormControl>
   )

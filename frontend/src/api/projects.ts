@@ -1,0 +1,79 @@
+import type { CatalogProject } from '../types/project'
+import { apiBase } from '../utils/apiBase'
+import { isRecord } from './jsonGuards'
+
+export function parseProject(value: unknown): CatalogProject | null {
+  if (!isRecord(value)) return null
+  const {
+    id,
+    name,
+    description,
+    status,
+    visibility,
+    allowed_uids,
+    driver_artifact_root,
+    driver_cog_path,
+    created_at,
+    updated_at,
+  } = value
+  if (
+    typeof id !== 'string' ||
+    typeof name !== 'string' ||
+    typeof driver_artifact_root !== 'string' ||
+    typeof driver_cog_path !== 'string'
+  ) {
+    return null
+  }
+  if (status !== 'active' && status !== 'archived') return null
+  if (visibility !== 'public' && visibility !== 'private') return null
+  if (!Array.isArray(allowed_uids) || !allowed_uids.every((u) => typeof u === 'string')) {
+    return null
+  }
+  const out: CatalogProject = {
+    id,
+    name,
+    status,
+    visibility,
+    allowed_uids,
+    driver_artifact_root,
+    driver_cog_path,
+  }
+  if (description !== undefined) {
+    if (description !== null && typeof description !== 'string') return null
+    out.description = description
+  }
+  if (created_at !== undefined) {
+    if (created_at !== null && typeof created_at !== 'string') return null
+    out.created_at = created_at
+  }
+  if (updated_at !== undefined) {
+    if (updated_at !== null && typeof updated_at !== 'string') return null
+    out.updated_at = updated_at
+  }
+  return out
+}
+
+function parseProjectList(value: unknown): CatalogProject[] | null {
+  if (!Array.isArray(value)) return null
+  const out: CatalogProject[] = []
+  for (const item of value) {
+    const p = parseProject(item)
+    if (p === null) return null
+    out.push(p)
+  }
+  return out
+}
+
+export async function fetchProjectCatalog(opts?: {
+  token?: string | null
+}): Promise<CatalogProject[]> {
+  const base = apiBase()
+  const headers: Record<string, string> = {}
+  if (opts?.token) headers.Authorization = `Bearer ${opts.token}`
+  const r = await fetch(`${base}/projects`, { headers })
+  if (!r.ok) throw new Error(r.statusText || String(r.status))
+  const raw: unknown = await r.json()
+  const list = parseProjectList(raw)
+  if (list === null) throw new Error('Invalid projects response')
+  return list
+}

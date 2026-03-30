@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from typing import Annotated
 
@@ -22,11 +23,16 @@ from backend_api.auth_deps import require_admin_claims
 from backend_api.catalog_service import CatalogService, FirestoreCatalogService
 from backend_api.catalog_write import upsert_model
 from backend_api.cog_validation import CogValidationError, validate_suitability_cog_bytes
+from backend_api.auth_deps import optional_id_token_claims
 from backend_api.deps.catalog import (
     get_catalog_service,
     get_model_or_404,
     get_object_storage,
     require_catalog_ready,
+)
+from backend_api.deps.visibility_models import (
+    filter_models_for_viewer,
+    get_model_visible_or_404,
 )
 from backend_api.deps.settings_dep import get_settings
 from backend_api.point_sampling import PointSamplingError, inspect_point
@@ -71,17 +77,38 @@ def _parse_driver_config_http(raw: str | None) -> dict | None:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
 
+def _parse_driver_band_indices(raw: str | None) -> list[int] | None:
+    if raw is None or not str(raw).strip():
+        return None
+    try:
+        data = json.loads(raw.strip())
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=422, detail=f"driver_band_indices: {e}") from e
+    if not isinstance(data, list):
+        raise HTTPException(
+            status_code=422, detail="driver_band_indices must be a JSON array of integers"
+        )
+    try:
+        return [int(x) for x in data]
+    except (TypeError, ValueError) as e:
+        raise HTTPException(
+            status_code=422, detail="driver_band_indices must be integers"
+        ) from e
+
+
 @router.get("/models", response_model=list[Model], tags=["catalog"])
 async def list_models(
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    claims: Annotated[dict | None, Depends(optional_id_token_claims)],
+    project_id: Annotated[str | None, Query()] = None,
 ):
-    """List all suitability models (catalog). Aligns with docs/data-models.md."""
-    return catalog.models
+    """List suitability models visible to the caller (optionally filter by ``project_id``)."""
+    return filter_models_for_viewer(catalog, claims, project_id=project_id)
 
 
 @router.get("/models/{model_id}", response_model=Model, tags=["catalog"])
-async def get_model(m: Annotated[Model, Depends(get_model_or_404)]):
-    """Return one model by id."""
+async def get_model(m: Annotated[Model, Depends(get_model_visible_or_404)]):
+    """Return one model by id if visible to the caller."""
     return m
 
 
@@ -95,7 +122,7 @@ async def get_model_point(
         float,
         Query(..., ge=-90.0, le=90.0, description="Latitude (WGS84)"),
     ],
-    m: Annotated[Model, Depends(get_model_or_404)],
+    m: Annotated[Model, Depends(get_model_visible_or_404)],
 ):
     """
     Suitability value at a WGS84 point (band 1 of the model COG).
@@ -130,14 +157,20 @@ async def create_model(
     settings: Annotated[Settings, Depends(get_settings)],
     _claims: Annotated[dict, Depends(require_admin_claims)],
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
+    catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    project_id: Annotated[str, Form()],
     species: Annotated[str, Form()],
     activity: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],
     model_name: Annotated[str | None, Form()] = None,
     model_version: Annotated[str | None, Form()] = None,
+    driver_band_indices: Annotated[str | None, Form()] = None,
     driver_config: Annotated[str | None, Form()] = None,
 ):
     """Create a catalog entry and store the suitability COG (admin only)."""
+    if catalog.get_project(project_id.strip()) is None:
+        raise HTTPException(status_code=422, detail="unknown project_id")
+    band_indices = _parse_driver_band_indices(driver_band_indices)
     content = await file.read()
     if not content:
         raise HTTPException(status_code=422, detail="empty file")
@@ -170,12 +203,14 @@ async def create_model(
     dc = _parse_driver_config_http(driver_config)
     model = Model(
         id=model_id,
+        project_id=project_id.strip(),
         species=species.strip(),
         activity=activity.strip(),
         artifact_root=artifact_root,
         suitability_cog_path=suitability_cog_path,
         model_name=model_name.strip() if model_name else None,
         model_version=model_version.strip() if model_version else None,
+        driver_band_indices=band_indices,
         driver_config=dc,
     )
 
@@ -206,12 +241,15 @@ async def update_model(
     settings: Annotated[Settings, Depends(get_settings)],
     _claims: Annotated[dict, Depends(require_admin_claims)],
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
+    catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
     existing: Annotated[Model, Depends(get_model_or_404)],
     species: Annotated[str | None, Form()] = None,
     activity: Annotated[str | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
     model_name: Annotated[str | None, Form()] = None,
     model_version: Annotated[str | None, Form()] = None,
+    project_id: Annotated[str | None, Form()] = None,
+    driver_band_indices: Annotated[str | None, Form()] = None,
     driver_config: Annotated[str | None, Form()] = None,
 ):
     """Update metadata and/or replace the suitability COG (admin only)."""
@@ -263,14 +301,27 @@ async def update_model(
     else:
         new_driver = existing.driver_config
 
+    new_project_id = existing.project_id
+    if project_id is not None:
+        pid = project_id.strip()
+        if catalog.get_project(pid) is None:
+            raise HTTPException(status_code=422, detail="unknown project_id")
+        new_project_id = pid
+
+    new_band_indices = existing.driver_band_indices
+    if driver_band_indices is not None:
+        new_band_indices = _parse_driver_band_indices(driver_band_indices)
+
     model = Model(
         id=model_id,
+        project_id=new_project_id,
         species=new_species,
         activity=new_activity,
         artifact_root=artifact_root,
         suitability_cog_path=suitability_cog_path,
         model_name=new_name,
         model_version=new_ver,
+        driver_band_indices=new_band_indices,
         driver_config=new_driver,
     )
 

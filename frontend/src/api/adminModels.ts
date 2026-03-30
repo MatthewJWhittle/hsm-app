@@ -21,18 +21,24 @@ async function errorMessage(r: Response): Promise<string> {
 
 export async function createModel(params: {
   token: string
+  projectId: string
   species: string
   activity: string
   file: File
   modelName?: string
   modelVersion?: string
+  driverBandIndicesJson?: string
 }): Promise<Model> {
   const form = new FormData()
+  form.append('project_id', params.projectId)
   form.append('species', params.species)
   form.append('activity', params.activity)
   form.append('file', params.file)
   if (params.modelName) form.append('model_name', params.modelName)
   if (params.modelVersion) form.append('model_version', params.modelVersion)
+  if (params.driverBandIndicesJson) {
+    form.append('driver_band_indices', params.driverBandIndicesJson)
+  }
 
   const r = await fetch(`${apiBase()}/models`, {
     method: 'POST',
@@ -54,6 +60,8 @@ export async function updateModel(params: {
   file?: File | null
   modelName: string | null
   modelVersion: string | null
+  projectId?: string | null
+  driverBandIndicesJson?: string | null
 }): Promise<Model> {
   const form = new FormData()
   form.append('species', params.species)
@@ -61,6 +69,12 @@ export async function updateModel(params: {
   if (params.file) form.append('file', params.file)
   form.append('model_name', params.modelName ?? '')
   form.append('model_version', params.modelVersion ?? '')
+  if (params.projectId) {
+    form.append('project_id', params.projectId)
+  }
+  if (params.driverBandIndicesJson !== undefined && params.driverBandIndicesJson !== null) {
+    form.append('driver_band_indices', params.driverBandIndicesJson)
+  }
 
   const r = await fetch(`${apiBase()}/models/${encodeURIComponent(params.modelId)}`, {
     method: 'PUT',
