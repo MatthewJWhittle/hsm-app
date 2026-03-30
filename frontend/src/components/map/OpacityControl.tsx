@@ -12,11 +12,11 @@ export function OpacityControl({ value, onChange }: OpacityControlProps) {
 
   return (
     <>
-      <Typography gutterBottom>Layer Opacity</Typography>
+      <Typography gutterBottom>Suitability layer opacity</Typography>
       <Slider
         value={value}
         onChange={handleChange}
-        aria-label="Layer opacity"
+        aria-label="Suitability layer opacity"
         valueLabelDisplay="auto"
         min={0}
         max={100}

@@ -1,7 +1,21 @@
-import { Box, IconButton, Paper, Typography } from '@mui/material'
+import {
+  Box,
+  Button,
+  Collapse,
+  IconButton,
+  Paper,
+  Tooltip,
+  Typography,
+} from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PointInspection as PointInspectionData } from '../types/pointInspection'
+
+export interface InspectionTechnicalDetails {
+  modelId: string
+  projectId?: string | null
+  driverBandIndices?: number[] | null
+}
 
 interface InspectionHudProps {
   onClose: () => void
@@ -11,6 +25,12 @@ interface InspectionHudProps {
   inspection: PointInspectionData | null
   loading: boolean
   error: string | null
+  technicalDetails?: InspectionTechnicalDetails | null
+}
+
+function shortId(id: string, head = 8): string {
+  if (id.length <= head + 2) return id
+  return `${id.slice(0, head)}…`
 }
 
 function formatCoord(n: number, digits: number): string {
@@ -60,13 +80,19 @@ export function InspectionHud({
   inspection,
   loading,
   error,
+  technicalDetails,
 }: InspectionHudProps) {
   const theme = useTheme()
   const paperRef = useRef<HTMLDivElement>(null)
   const prevLoadingRef = useRef<boolean | undefined>(undefined)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
+  const [technicalOpen, setTechnicalOpen] = useState(false)
   const dragStartRef = useRef({ clientX: 0, clientY: 0, offX: 0, offY: 0 })
+
+  useEffect(() => {
+    setTechnicalOpen(false)
+  }, [technicalDetails?.modelId])
 
   const reducedMotion = () =>
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -175,7 +201,7 @@ export function InspectionHud({
         bottom: 20,
         right: 20,
         zIndex: 1000,
-        maxWidth: 260,
+        maxWidth: 300,
         px: 1.75,
         py: 1.5,
         borderRadius: 1.5,
@@ -289,6 +315,57 @@ export function InspectionHud({
               </Typography>
             </li>
           ))}
+        </Box>
+      )}
+
+      {technicalDetails && (
+        <Box sx={{ mt: 1 }}>
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => setTechnicalOpen((o) => !o)}
+            aria-expanded={technicalOpen}
+            sx={{ minWidth: 0, px: 0, py: 0.25, textTransform: 'none', fontSize: '0.75rem' }}
+          >
+            {technicalOpen ? '▼' : '▶'} Technical details
+          </Button>
+          <Collapse in={technicalOpen}>
+            <Box
+              sx={{
+                mt: 0.75,
+                p: 1,
+                borderRadius: 1,
+                bgcolor: 'action.hover',
+                maxHeight: 200,
+                overflow: 'auto',
+              }}
+            >
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5 }}>
+                <strong>Model ID</strong>{' '}
+                <Tooltip title={technicalDetails.modelId}>
+                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>{shortId(technicalDetails.modelId)}</span>
+                </Tooltip>
+              </Typography>
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5, mt: 0.5 }}>
+                <strong>Catalog project</strong>{' '}
+                {technicalDetails.projectId ? (
+                  <Tooltip title={technicalDetails.projectId}>
+                    <span style={{ fontFamily: 'ui-monospace, monospace' }}>
+                      {shortId(technicalDetails.projectId)}
+                    </span>
+                  </Tooltip>
+                ) : (
+                  'Legacy'
+                )}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5, mt: 0.5 }}>
+                <strong>Driver band indices</strong>{' '}
+                {technicalDetails.driverBandIndices != null && technicalDetails.driverBandIndices.length > 0
+                  ? `[${technicalDetails.driverBandIndices.join(', ')}]`
+                  : '—'}
+              </Typography>
+            </Box>
+          </Collapse>
         </Box>
       )}
 

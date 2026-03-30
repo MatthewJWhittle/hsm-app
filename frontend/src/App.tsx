@@ -2,7 +2,7 @@ import './App.css'
 import MapComponent from './components/Map'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { MapControlPanel } from './components/map/MapControlPanel'
+import { MapControlPanel, type ProjectSummary } from './components/map/MapControlPanel'
 import { InspectionHud } from './components/InspectionHud'
 import type { Model } from './types/model'
 import type { CatalogProject } from './types/project'
@@ -116,6 +116,24 @@ function App() {
     [selectedProjectId, models],
   )
 
+  const projectSummary = useMemo((): ProjectSummary => {
+    if (!selectedProjectId) return null
+    if (selectedProjectId === LEGACY_PROJECT_ID) {
+      return {
+        isLegacy: true,
+        visibility: 'public',
+        hasEnvironmentalCog: false,
+      }
+    }
+    const p = projects.find((x) => x.id === selectedProjectId)
+    if (!p) return null
+    return {
+      isLegacy: false,
+      visibility: p.visibility,
+      hasEnvironmentalCog: Boolean(p.driver_cog_path),
+    }
+  }, [selectedProjectId, projects])
+
   const clearInspection = useCallback(() => {
     inspectAbortRef.current?.abort()
     inspectAbortRef.current = null
@@ -204,6 +222,7 @@ function App() {
           opacity={opacity}
           onModelChange={onModelChange}
           onOpacityChange={setOpacity}
+          projectSummary={projectSummary}
         />
         {loadError && (
           <div
@@ -232,6 +251,11 @@ function App() {
             inspection={inspection}
             loading={inspectLoading}
             error={inspectError}
+            technicalDetails={{
+              modelId: selectedModel.id,
+              projectId: selectedModel.project_id,
+              driverBandIndices: selectedModel.driver_band_indices,
+            }}
           />
         )}
         <MapComponent
