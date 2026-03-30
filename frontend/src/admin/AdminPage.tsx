@@ -154,13 +154,13 @@ export function AdminPage() {
   }, [projects, modelProjectId])
 
   const openEdit = (m: Model) => {
-    const first = projects.find((p) => p.status === 'active')
     setEditModel(m)
     setEditSpecies(m.species)
     setEditActivity(m.activity)
     setEditName(m.model_name ?? '')
     setEditVersion(m.model_version ?? '')
-    setEditProjectId(m.project_id ?? first?.id ?? '')
+    // Do not default to a project: legacy models have no project_id; showing one was misleading.
+    setEditProjectId(m.project_id ?? '')
     setEditFile(null)
     setEditError(null)
     setEditOpen(true)
@@ -788,6 +788,9 @@ export function AdminPage() {
                     label="Catalog project"
                     onChange={(e) => setEditProjectId(e.target.value)}
                   >
+                    <MenuItem value="">
+                      <em>Legacy (no project)</em>
+                    </MenuItem>
                     {activeProjects.map((p) => (
                       <MenuItem key={p.id} value={p.id}>
                         {p.name}
