@@ -1,5 +1,6 @@
 import './App.css'
 import MapComponent from './components/Map'
+import { Box } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { MapControlPanel, type ProjectSummary } from './components/map/MapControlPanel'
@@ -224,45 +225,58 @@ function App() {
           onOpacityChange={setOpacity}
           projectSummary={projectSummary}
         />
-        {loadError && (
-          <div
-            role="alert"
-            style={{
-              position: 'absolute',
-              top: 20,
-              right: 20,
-              zIndex: 1001,
-              background: 'rgba(255, 230, 230, 0.95)',
-              padding: '12px 16px',
-              borderRadius: 8,
-              maxWidth: 360,
-              fontSize: 14,
-            }}
-          >
-            {loadError}
-          </div>
-        )}
-        {hudOpen && selectedModel && !loadError && (
-          <InspectionHud
-            onClose={closeHud}
-            modelLabel={`${selectedModel.species} — ${selectedModel.activity}`}
-            lng={inspectCoords?.lng ?? null}
-            lat={inspectCoords?.lat ?? null}
-            inspection={inspection}
-            loading={inspectLoading}
-            error={inspectError}
-            technicalDetails={{
-              modelId: selectedModel.id,
-              projectId: selectedModel.project_id,
-              driverBandIndices: selectedModel.driver_band_indices,
-            }}
-          />
-        )}
-        <MapComponent
-          opacity={opacity / 100}
-          model={selectedModel}
-          onInspect={selectedModel && !loadError ? handleInspect : undefined}
-        />
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {loadError && (
+            <div
+              role="alert"
+              style={{
+                position: 'absolute',
+                top: 20,
+                right: 20,
+                zIndex: 1001,
+                background: 'rgba(255, 230, 230, 0.95)',
+                padding: '12px 16px',
+                borderRadius: 8,
+                maxWidth: 360,
+                fontSize: 14,
+              }}
+            >
+              {loadError}
+            </div>
+          )}
+          {hudOpen && selectedModel && !loadError && (
+            <InspectionHud
+              onClose={closeHud}
+              modelLabel={`${selectedModel.species} — ${selectedModel.activity}`}
+              lng={inspectCoords?.lng ?? null}
+              lat={inspectCoords?.lat ?? null}
+              inspection={inspection}
+              loading={inspectLoading}
+              error={inspectError}
+              technicalDetails={{
+                modelId: selectedModel.id,
+                projectId: selectedModel.project_id,
+                driverBandIndices: selectedModel.driver_band_indices,
+              }}
+            />
+          )}
+          <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
+            <MapComponent
+              opacity={opacity / 100}
+              model={selectedModel}
+              onInspect={selectedModel && !loadError ? handleInspect : undefined}
+            />
+          </Box>
+        </Box>
       </div>
     </div>
   )
