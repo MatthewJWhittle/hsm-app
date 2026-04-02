@@ -67,12 +67,13 @@ export function MapControlPanel({
           Map
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, lineHeight: 1.45 }}>
-          Choose a suitability layer. Catalog project details appear below once you select a layer.
+          Choose what to show on the map. You can search by species or activity. Project information appears below after
+          you pick a layer.
         </Typography>
 
         <Box sx={{ mb: 2, flex: 1 }}>
           <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
-            Suitability model
+            Layer
           </Typography>
           <Typography
             id="map-section-model-help"
@@ -80,7 +81,8 @@ export function MapControlPanel({
             color="text.secondary"
             sx={{ display: 'block', mt: 0.25, mb: 1, lineHeight: 1.45 }}
           >
-            Search or pick the species/activity layer (not the shared environmental COG).
+            Each option is a habitat suitability map for a species and activity. The coloured layer is the prediction
+            raster, not raw survey points.
           </Typography>
 
           <Autocomplete
@@ -93,7 +95,7 @@ export function MapControlPanel({
             getOptionLabel={(m) => modelLabel(m)}
             isOptionEqualToValue={(a, b) => a.id === b.id}
             disabled={models.length === 0}
-            noOptionsText="No matching models"
+            noOptionsText="No matching layers"
             filterOptions={(opts, state) => {
               const q = state.inputValue.trim().toLowerCase()
               if (!q) return opts
@@ -107,8 +109,8 @@ export function MapControlPanel({
             renderInput={(params) => (
               <TextField
                 {...params}
-                label="Suitability model"
-                placeholder="Search…"
+                label="Species and activity"
+                placeholder="Search layers…"
                 aria-describedby="map-section-model-help"
               />
             )}
@@ -118,7 +120,7 @@ export function MapControlPanel({
           {selectedModel && (
             <>
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
-                Catalog project
+                Project
               </Typography>
               <Typography
                 id="map-section-catalog-help"
@@ -127,8 +129,8 @@ export function MapControlPanel({
                 sx={{ display: 'block', mt: 0.25, mb: 1, lineHeight: 1.45 }}
               >
                 {projectSummary?.isLegacy
-                  ? 'Legacy models are not linked to a shared environmental stack.'
-                  : 'Shared environmental stack (multi-band COG). Optional in admin until uploaded.'}
+                  ? 'This layer stands alone—it isn’t grouped with a shared project dataset.'
+                  : 'Layers in the same project can share background environmental data (for example climate or terrain). Your team adds that file in Admin if needed.'}
               </Typography>
 
               {projectSummary && !projectSummary.isLegacy && (
@@ -141,7 +143,11 @@ export function MapControlPanel({
                   />
                   <Chip
                     size="small"
-                    label={projectSummary.hasEnvironmentalCog ? 'Env. COG on file' : 'Env. COG not uploaded'}
+                    label={
+                      projectSummary.hasEnvironmentalCog
+                        ? 'Shared environmental data on file'
+                        : 'No shared environmental file yet'
+                    }
                     color={projectSummary.hasEnvironmentalCog ? 'success' : 'default'}
                     variant="outlined"
                   />
@@ -156,7 +162,7 @@ export function MapControlPanel({
         </Box>
 
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45, opacity: 0.9, mt: 'auto', pt: 1 }}>
-          Map: Web Mercator (EPSG:3857). Rasters must match this CRS.
+          Uses the usual web map layout (Web Mercator). Uploaded layers need to match that format.
         </Typography>
       </Box>
     </Drawer>

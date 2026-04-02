@@ -193,7 +193,7 @@ export function InspectionHud({
       ref={paperRef}
       elevation={3}
       role="dialog"
-      aria-label="Suitability at point"
+      aria-label="Habitat suitability at this point"
       aria-live="polite"
       aria-busy={loading}
       sx={{
@@ -235,7 +235,7 @@ export function InspectionHud({
           pt: 0.5,
           borderRadius: 1,
         }}
-        title="Drag to move"
+        title="Drag panel"
       >
         <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3, flex: 1, pt: 0.25 }}>
           {modelLabel}
@@ -257,7 +257,7 @@ export function InspectionHud({
         <Typography
           variant="body2"
           component="p"
-          title="Click to select all, then copy"
+          title="Click to select coordinates, then copy"
           sx={{
             mb: 0.75,
             px: 1,
@@ -327,7 +327,7 @@ export function InspectionHud({
             aria-expanded={technicalOpen}
             sx={{ minWidth: 0, px: 0, py: 0.25, textTransform: 'none', fontSize: '0.75rem' }}
           >
-            {technicalOpen ? '▼' : '▶'} Technical details
+            {technicalOpen ? '▼' : '▶'} Details for support
           </Button>
           <Collapse in={technicalOpen}>
             <Box
@@ -341,13 +341,13 @@ export function InspectionHud({
               }}
             >
               <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5 }}>
-                <strong>Model ID</strong>{' '}
+                <strong>Layer ID</strong>{' '}
                 <Tooltip title={technicalDetails.modelId}>
                   <span style={{ fontFamily: 'ui-monospace, monospace' }}>{shortId(technicalDetails.modelId)}</span>
                 </Tooltip>
               </Typography>
               <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5, mt: 0.5 }}>
-                <strong>Catalog project</strong>{' '}
+                <strong>Project</strong>{' '}
                 {technicalDetails.projectId ? (
                   <Tooltip title={technicalDetails.projectId}>
                     <span style={{ fontFamily: 'ui-monospace, monospace' }}>
@@ -355,11 +355,11 @@ export function InspectionHud({
                     </span>
                   </Tooltip>
                 ) : (
-                  'Legacy'
+                  'None (stand-alone layer)'
                 )}
               </Typography>
               <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5, mt: 0.5 }}>
-                <strong>Driver band indices</strong>{' '}
+                <strong>Environmental bands used</strong>{' '}
                 {technicalDetails.driverBandIndices != null && technicalDetails.driverBandIndices.length > 0
                   ? `[${technicalDetails.driverBandIndices.join(', ')}]`
                   : '—'}
@@ -374,7 +374,7 @@ export function InspectionHud({
         color="text.secondary"
         sx={{ display: 'block', mt: 1.25, lineHeight: 1.45, opacity: 0.85 }}
       >
-        Modelled suitability only—not confirmed presence.
+        Modelled prediction—not a record of species on the ground.
       </Typography>
     </Paper>
   )

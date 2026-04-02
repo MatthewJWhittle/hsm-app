@@ -60,7 +60,7 @@ export function FloatingMapTools({
           }}
         >
           <Stack direction="row" alignItems="stretch" spacing={0}>
-            <Tooltip title={open ? 'Hide opacity' : 'Layer opacity'} placement="right">
+            <Tooltip title={open ? 'Hide transparency' : 'Layer transparency'} placement="right">
               <IconButton
                 size="small"
                 onClick={() => setOpen((v) => !v)}
@@ -81,7 +81,7 @@ export function FloatingMapTools({
               <Box
                 id="map-tools-opacity-panel"
                 role="region"
-                aria-label="Suitability layer opacity"
+                aria-label="Layer transparency"
                 sx={{
                   py: 1,
                   pr: 2,
@@ -95,13 +95,13 @@ export function FloatingMapTools({
                 }}
               >
                 <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5 }}>
-                  Suitability opacity
+                  Layer transparency
                 </Typography>
                 <Slider
                   size="small"
                   value={opacity}
                   onChange={handleOpacityChange}
-                  aria-label="Suitability layer opacity"
+                  aria-label="Layer transparency"
                   valueLabelDisplay="auto"
                   min={0}
                   max={100}

@@ -8,15 +8,9 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
-  FormControl,
-  FormHelperText,
   IconButton,
-  InputLabel,
   LinearProgress,
-  MenuItem,
   Paper,
-  Select,
   Skeleton,
   Stack,
   Tab,
@@ -40,7 +34,7 @@ import { Link } from 'react-router-dom'
 import '../App.css'
 
 import { createModel, updateModel } from '../api/adminModels'
-import { createProject } from '../api/adminProjects'
+import { createProject, updateProject } from '../api/adminProjects'
 import { fetchModelCatalog } from '../api/catalog'
 import { fetchProjectCatalog } from '../api/projects'
 import { useAuth } from '../auth/useAuth'
@@ -48,22 +42,9 @@ import { Navbar } from '../components/Navbar'
 import type { Model } from '../types/model'
 import type { CatalogProject } from '../types/project'
 
-/** One-line hints under each field (keep short to avoid a “wall of text”). */
-const FIELD_HELP = {
-  species: 'How this layer is labeled in the catalog and on the map.',
-  activity: 'With species, identifies this entry (e.g. roosting, foraging).',
-  modelName: 'Optional extra title beyond species and activity.',
-  modelVersion: 'Optional label for this revision (e.g. date or version).',
-} as const
-
-const COG_REQUIREMENTS_INFO =
-  'Suitability file: valid Cloud Optimized GeoTIFF (COG), Web Mercator (EPSG:3857). The server validates format, CRS, and upload size.'
-
-const DRIVER_COG_INFO =
-  'Optional on create: shared environmental stack (multi-band COG, EPSG:3857), same validation as suitability uploads. You can add or replace it later when editing the project.'
-
-const COG_REPLACE_HINT =
-  'Optional. Same rules as a new upload; leave empty to keep the current file.'
+import { COG_REQUIREMENTS_INFO } from './catalogFormConstants'
+import { MapLayerFormFields } from './MapLayerFormFields'
+import { ProjectFormFields } from './ProjectFormFields'
 
 function shortId(id: string, head = 8): string {
   if (id.length <= head + 2) return id
@@ -115,6 +96,7 @@ export function AdminPage() {
   const [projFile, setProjFile] = useState<File | null>(null)
   const [projError, setProjError] = useState<string | null>(null)
   const [projCreating, setProjCreating] = useState(false)
+  const [projectCreateOpen, setProjectCreateOpen] = useState(false)
 
   const [modelProjectId, setModelProjectId] = useState('')
   const [species, setSpecies] = useState('')
@@ -125,6 +107,7 @@ export function AdminPage() {
   const [file, setFile] = useState<File | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [layerCreateOpen, setLayerCreateOpen] = useState(false)
 
   const [editOpen, setEditOpen] = useState(false)
   const [editModel, setEditModel] = useState<Model | null>(null)
@@ -134,8 +117,20 @@ export function AdminPage() {
   const [editVersion, setEditVersion] = useState('')
   const [editProjectId, setEditProjectId] = useState('')
   const [editFile, setEditFile] = useState<File | null>(null)
+  const [editDriverBandIndices, setEditDriverBandIndices] = useState('')
   const [editError, setEditError] = useState<string | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
+
+  const [projectEditOpen, setProjectEditOpen] = useState(false)
+  const [editingProject, setEditingProject] = useState<CatalogProject | null>(null)
+  const [editProjName, setEditProjName] = useState('')
+  const [editProjDesc, setEditProjDesc] = useState('')
+  const [editProjVisibility, setEditProjVisibility] = useState<'public' | 'private'>('public')
+  const [editProjAllowedUids, setEditProjAllowedUids] = useState('')
+  const [editProjStatus, setEditProjStatus] = useState<'active' | 'archived'>('active')
+  const [editProjFile, setEditProjFile] = useState<File | null>(null)
+  const [editProjError, setEditProjError] = useState<string | null>(null)
+  const [savingProjectEdit, setSavingProjectEdit] = useState(false)
 
   const projectById = useMemo(() => {
     const m = new Map<string, string>()
@@ -182,7 +177,7 @@ export function AdminPage() {
       setListError(null)
       setLastRefreshedAt(new Date())
     } catch {
-      setListError('Could not load catalog.')
+      setListError('Couldn’t load projects and layers. Check your connection and try again.')
     } finally {
       setListRefreshing(false)
     }
@@ -205,11 +200,61 @@ export function AdminPage() {
     setEditActivity(m.activity)
     setEditName(m.model_name ?? '')
     setEditVersion(m.model_version ?? '')
-    // Do not default to a project: legacy models have no project_id; showing one was misleading.
     setEditProjectId(m.project_id ?? '')
+    setEditDriverBandIndices(
+      m.driver_band_indices && m.driver_band_indices.length > 0
+        ? JSON.stringify(m.driver_band_indices)
+        : '',
+    )
     setEditFile(null)
     setEditError(null)
     setEditOpen(true)
+  }
+
+  const openProjectEdit = (p: CatalogProject) => {
+    setEditingProject(p)
+    setEditProjName(p.name)
+    setEditProjDesc(p.description ?? '')
+    setEditProjVisibility(p.visibility)
+    setEditProjAllowedUids(p.allowed_uids?.length ? p.allowed_uids.join(', ') : '')
+    setEditProjStatus(p.status)
+    setEditProjFile(null)
+    setEditProjError(null)
+    setProjectEditOpen(true)
+  }
+
+  const handleSaveProjectEdit = async () => {
+    if (!editingProject) return
+    setEditProjError(null)
+    const token = await getIdToken(true)
+    if (!token) {
+      setEditProjError('Not signed in.')
+      return
+    }
+    if (!editProjName.trim()) {
+      setEditProjError('Project name is required.')
+      return
+    }
+    setSavingProjectEdit(true)
+    try {
+      await updateProject({
+        token,
+        projectId: editingProject.id,
+        name: editProjName.trim(),
+        description: editProjDesc.trim() || null,
+        status: editProjStatus,
+        visibility: editProjVisibility,
+        allowedUids: editProjAllowedUids,
+        file: editProjFile ?? undefined,
+      })
+      setProjectEditOpen(false)
+      setEditingProject(null)
+      await refreshList()
+    } catch (err) {
+      setEditProjError(err instanceof Error ? err.message : 'Update failed')
+    } finally {
+      setSavingProjectEdit(false)
+    }
   }
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -235,6 +280,7 @@ export function AdminPage() {
       setProjVisibility('public')
       setProjAllowedUids('')
       setProjFile(null)
+      setProjectCreateOpen(false)
       await refreshList()
     } catch (err) {
       setProjError(err instanceof Error ? err.message : 'Create project failed')
@@ -247,11 +293,11 @@ export function AdminPage() {
     e.preventDefault()
     setCreateError(null)
     if (!modelProjectId) {
-      setCreateError('Select a catalog project.')
+      setCreateError('Select a project.')
       return
     }
     if (!file) {
-      setCreateError('Choose a suitability COG file.')
+      setCreateError('Choose a suitability map file.')
       return
     }
     const token = await getIdToken(true)
@@ -279,6 +325,7 @@ export function AdminPage() {
       setModelVersion('')
       setDriverBandIndices('')
       setFile(null)
+      setLayerCreateOpen(false)
       await refreshList()
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Create failed')
@@ -306,6 +353,7 @@ export function AdminPage() {
         modelVersion: editVersion || null,
         file: editFile,
         projectId: editProjectId || undefined,
+        driverBandIndicesJson: editDriverBandIndices.trim() || '',
       })
       setEditOpen(false)
       await refreshList()
@@ -338,7 +386,7 @@ export function AdminPage() {
         <Navbar />
         <div className="app-scroll-region">
           <Container sx={{ py: 3 }}>
-            <Alert severity="info">Sign in to access admin.</Alert>
+            <Alert severity="info">Sign in to manage the map catalog.</Alert>
           </Container>
         </div>
       </div>
@@ -352,7 +400,7 @@ export function AdminPage() {
         <div className="app-scroll-region">
           <Container sx={{ py: 3 }}>
             <Alert severity="warning">
-              Admin access requires the <code>admin</code> custom claim on your account.
+              Your account doesn’t have permission to edit the catalog. Ask your administrator for access.
             </Alert>
           </Container>
         </div>
@@ -385,11 +433,11 @@ export function AdminPage() {
           >
             <Box sx={{ flex: 1, minWidth: 0 }}>
               <Typography variant="h4" component="h1" fontWeight={700} sx={{ letterSpacing: '-0.02em' }}>
-                Catalog admin
+                Map catalog
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 560 }}>
-                Create <strong>catalog projects</strong> first (shared environmental COG), then attach{' '}
-                <strong>suitability models</strong> for the map. Changes apply to the live catalog.
+                Add <strong>projects</strong> to group layers and optional shared environmental data, then add{' '}
+                <strong>map layers</strong> (suitability rasters). Published changes appear on the public map.
               </Typography>
             </Box>
             <Stack
@@ -402,18 +450,18 @@ export function AdminPage() {
             >
               <Typography variant="caption" color="text.secondary" sx={{ width: '100%', textAlign: { sm: 'right' } }}>
                 {lastRefreshedAt
-                  ? `Catalog loaded ${lastRefreshedAt.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}`
+                  ? `List updated ${lastRefreshedAt.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}`
                   : listRefreshing
-                    ? 'Loading catalog…'
+                    ? 'Loading…'
                     : ''}
               </Typography>
-              <Tooltip title="Reload catalog from API">
+              <Tooltip title="Reload list">
                 <span>
                   <IconButton
                     size="small"
                     onClick={() => void refreshList()}
                     disabled={listRefreshing}
-                    aria-label="Refresh catalog"
+                    aria-label="Refresh list"
                   >
                     <RefreshIcon fontSize="small" />
                   </IconButton>
@@ -445,7 +493,7 @@ export function AdminPage() {
             {listRefreshing && (
               <LinearProgress
                 sx={{ position: 'absolute', top: 0, left: 0, right: 0, zIndex: 2 }}
-                aria-label="Loading catalog"
+                aria-label="Loading projects and layers"
               />
             )}
             <Tabs
@@ -468,7 +516,7 @@ export function AdminPage() {
               <Tab
                 icon={<LayersOutlinedIcon fontSize="small" />}
                 iconPosition="start"
-                label={`Models (${models.length})`}
+                label={`Layers (${models.length})`}
                 id="admin-tab-1"
                 aria-controls="admin-tabpanel-1"
               />
@@ -477,97 +525,17 @@ export function AdminPage() {
             <Box sx={{ px: { xs: 2, sm: 3 } }}>
               <TabPanel value={tab} index={0}>
                 <Stack spacing={3}>
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-                      New catalog project
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      A catalog project groups suitability models and may include one shared environmental (multi-band) COG.
-                    </Typography>
-                    <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: formMaxWidth }}>
-                      {DRIVER_COG_INFO}
-                    </Alert>
-                    <Box component="form" onSubmit={(e) => void handleCreateProject(e)}>
-                      <Stack spacing={2} sx={{ maxWidth: formMaxWidth }}>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                          <TextField
-                            required
-                            label="Project name"
-                            value={projName}
-                            onChange={(e) => setProjName(e.target.value)}
-                            size="small"
-                            fullWidth
-                          />
-                          <FormControl size="small" sx={{ minWidth: { sm: 200 } }} fullWidth>
-                            <InputLabel>Visibility</InputLabel>
-                            <Select
-                              value={projVisibility}
-                              label="Visibility"
-                              onChange={(e) =>
-                                setProjVisibility(e.target.value as 'public' | 'private')
-                              }
-                            >
-                              <MenuItem value="public">Public</MenuItem>
-                              <MenuItem value="private">Private</MenuItem>
-                            </Select>
-                          </FormControl>
-                        </Stack>
-                        <TextField
-                          label="Description"
-                          value={projDesc}
-                          onChange={(e) => setProjDesc(e.target.value)}
-                          size="small"
-                          fullWidth
-                        />
-                        <TextField
-                          label="Allowed user ids (private)"
-                          helperText="Comma-separated Firebase uids, or JSON array"
-                          value={projAllowedUids}
-                          onChange={(e) => setProjAllowedUids(e.target.value)}
-                          size="small"
-                          fullWidth
-                        />
-                        {projVisibility === 'private' && !projAllowedUids.trim() && (
-                          <Alert severity="warning" sx={{ py: 0.5 }}>
-                            Private projects should list at least one Firebase uid, or map users may not see this project.
-                          </Alert>
-                        )}
-                        <Box>
-                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
-                            Environmental COG (optional)
-                          </Typography>
-                          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
-                            <Button variant="outlined" component="label" size="small">
-                              Choose file
-                              <input
-                                type="file"
-                                accept=".tif,.tiff,image/tiff"
-                                hidden
-                                onChange={(e) => setProjFile(e.target.files?.[0] ?? null)}
-                              />
-                            </Button>
-                            <Typography variant="body2" color="text.secondary" noWrap sx={{ maxWidth: 280 }}>
-                              {projFile ? projFile.name : 'No file selected'}
-                            </Typography>
-                          </Stack>
-                        </Box>
-                      </Stack>
-                      {projError && (
-                        <Alert severity="error" sx={{ mt: 2, maxWidth: formMaxWidth }}>
-                          {projError}
-                        </Alert>
-                      )}
-                      <Button type="submit" variant="contained" sx={{ mt: 2 }} disabled={projCreating}>
-                        {projCreating ? 'Creating…' : 'Create catalog project'}
-                      </Button>
-                    </Box>
-                  </Box>
-
-                  <Divider />
+                  <Button
+                    variant="contained"
+                    onClick={() => setProjectCreateOpen(true)}
+                    sx={{ alignSelf: 'flex-start' }}
+                  >
+                    New project
+                  </Button>
 
                   <Box>
                     <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-                      All catalog projects
+                      All projects
                     </Typography>
                     <TextField
                       size="small"
@@ -576,7 +544,7 @@ export function AdminPage() {
                       value={projectTableFilter}
                       onChange={(e) => setProjectTableFilter(e.target.value)}
                       sx={{ mb: 1, maxWidth: 400 }}
-                      aria-label="Filter catalog projects table"
+                      aria-label="Filter projects table"
                     />
                     <TableContainer
                       component={Paper}
@@ -586,38 +554,46 @@ export function AdminPage() {
                         maxHeight: 360,
                       }}
                     >
-                      <Table size="small" stickyHeader aria-label="Catalog projects">
+                      <Table size="small" stickyHeader aria-label="Projects">
                         <TableHead>
                           <TableRow>
-                            <TableCell>Catalog project</TableCell>
-                            <TableCell width={120}>Env. COG</TableCell>
+                            <TableCell>Project</TableCell>
+                            <TableCell width={120}>Environmental file</TableCell>
                             <TableCell width={110}>Visibility</TableCell>
                             <TableCell width={100}>Status</TableCell>
                             <TableCell width={140}>Updated</TableCell>
+                            <TableCell align="right" width={88}>
+                              Actions
+                            </TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
                           {listRefreshing && projects.length === 0 ? (
                             Array.from({ length: 5 }).map((_, i) => (
                               <TableRow key={i}>
-                                <TableCell colSpan={5}>
+                                <TableCell colSpan={6}>
                                   <Skeleton variant="text" width="80%" height={28} />
                                 </TableCell>
                               </TableRow>
                             ))
                           ) : filteredProjectsTable.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={5}>
+                              <TableCell colSpan={6}>
                                 <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                                   {projects.length === 0
-                                    ? 'No catalog projects yet. Create one above.'
+                                    ? 'No projects yet. Click New project to add one.'
                                     : 'No projects match this filter.'}
                                 </Typography>
                               </TableCell>
                             </TableRow>
                           ) : (
                             filteredProjectsTable.map((p) => (
-                              <TableRow key={p.id} hover>
+                              <TableRow
+                                key={p.id}
+                                hover
+                                onClick={() => openProjectEdit(p)}
+                                sx={{ cursor: 'pointer' }}
+                              >
                                 <TableCell>
                                   <Typography variant="body2" fontWeight={600}>
                                     {p.name}
@@ -662,6 +638,17 @@ export function AdminPage() {
                                     {formatAdminDate(p.updated_at ?? p.created_at)}
                                   </Typography>
                                 </TableCell>
+                                <TableCell align="right">
+                                  <Button
+                                    size="small"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      openProjectEdit(p)
+                                    }}
+                                  >
+                                    Edit
+                                  </Button>
+                                </TableCell>
                               </TableRow>
                             ))
                           )}
@@ -674,140 +661,26 @@ export function AdminPage() {
 
               <TabPanel value={tab} index={1}>
                 <Stack spacing={3}>
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-                      New suitability model
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      Each row is one suitability COG tied to a catalog project (species / activity).
-                    </Typography>
-                    {!canAddModel && (
-                      <Alert severity="warning" sx={{ mb: 2, maxWidth: formMaxWidth }}>
-                        Create at least one active project in the <strong>Projects</strong> tab first.
-                      </Alert>
-                    )}
-                    <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: formMaxWidth }}>
-                      {COG_REQUIREMENTS_INFO}
-                    </Alert>
-                    <Box
-                      component="form"
-                      onSubmit={handleCreate}
-                      sx={{
-                        opacity: canAddModel ? 1 : 0.55,
-                        pointerEvents: canAddModel ? 'auto' : 'none',
-                      }}
-                    >
-                      <Stack spacing={2} sx={{ maxWidth: formMaxWidth }}>
-                        <FormControl required size="small" fullWidth disabled={!canAddModel}>
-                          <InputLabel>Catalog project</InputLabel>
-                          <Select
-                            value={modelProjectId}
-                            label="Catalog project"
-                            onChange={(e) => setModelProjectId(e.target.value)}
-                          >
-                            {activeProjects.map((p) => (
-                              <MenuItem key={p.id} value={p.id}>
-                                {p.name}
-                              </MenuItem>
-                            ))}
-                          </Select>
-                        </FormControl>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                          <TextField
-                            required
-                            label="Species"
-                            helperText={FIELD_HELP.species}
-                            value={species}
-                            onChange={(e) => setSpecies(e.target.value)}
-                            size="small"
-                            fullWidth
-                          />
-                          <TextField
-                            required
-                            label="Activity"
-                            helperText={FIELD_HELP.activity}
-                            value={activity}
-                            onChange={(e) => setActivity(e.target.value)}
-                            size="small"
-                            fullWidth
-                          />
-                        </Stack>
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                          <TextField
-                            label="Model name"
-                            helperText={FIELD_HELP.modelName}
-                            value={modelName}
-                            onChange={(e) => setModelName(e.target.value)}
-                            size="small"
-                            fullWidth
-                          />
-                          <TextField
-                            label="Model version"
-                            helperText={FIELD_HELP.modelVersion}
-                            value={modelVersion}
-                            onChange={(e) => setModelVersion(e.target.value)}
-                            size="small"
-                            fullWidth
-                          />
-                        </Stack>
-                        <TextField
-                          label="Driver band indices (JSON array)"
-                          helperText="Optional. E.g. [0,1,2] for bands from the project environmental COG."
-                          value={driverBandIndices}
-                          onChange={(e) => setDriverBandIndices(e.target.value)}
-                          size="small"
-                          fullWidth
-                        />
-                        <Box>
-                          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
-                            Suitability COG (required)
-                          </Typography>
-                          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
-                            <Button variant="outlined" component="label" size="small">
-                              Choose file
-                              <input
-                                type="file"
-                                accept=".tif,.tiff,image/tiff"
-                                hidden
-                                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                              />
-                            </Button>
-                            <Typography variant="body2" color="text.secondary" noWrap sx={{ maxWidth: 280 }}>
-                              {file ? file.name : 'No file selected'}
-                            </Typography>
-                          </Stack>
-                        </Box>
-                      </Stack>
-                      {createError && (
-                        <Alert severity="error" sx={{ mt: 2, maxWidth: formMaxWidth }}>
-                          {createError}
-                        </Alert>
-                      )}
-                      <Button
-                        type="submit"
-                        variant="contained"
-                        sx={{ mt: 2 }}
-                        disabled={creating || !canAddModel}
-                      >
-                        {creating ? 'Creating…' : 'Create suitability model'}
-                      </Button>
-                    </Box>
-                  </Box>
-
-                  <Divider />
+                  <Button
+                    variant="contained"
+                    onClick={() => setLayerCreateOpen(true)}
+                    sx={{ alignSelf: 'flex-start' }}
+                  >
+                    New layer
+                  </Button>
 
                   <Box>
                     <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-                      All suitability models
+                      All map layers
                     </Typography>
                     <TextField
                       size="small"
                       fullWidth
-                      placeholder="Filter by species, activity, project, id…"
+                      placeholder="Filter by species, activity, project…"
                       value={modelTableFilter}
                       onChange={(e) => setModelTableFilter(e.target.value)}
                       sx={{ mb: 1, maxWidth: 400 }}
-                      aria-label="Filter suitability models table"
+                      aria-label="Filter map layers table"
                     />
                     <TableContainer
                       component={Paper}
@@ -817,11 +690,11 @@ export function AdminPage() {
                         maxHeight: 480,
                       }}
                     >
-                      <Table size="small" stickyHeader aria-label="Suitability models">
+                      <Table size="small" stickyHeader aria-label="Map layers">
                         <TableHead>
                           <TableRow>
                             <TableCell width={100}>ID</TableCell>
-                            <TableCell width={160}>Catalog project</TableCell>
+                            <TableCell width={160}>Project</TableCell>
                             <TableCell>Species</TableCell>
                             <TableCell>Activity</TableCell>
                             <TableCell>Name / version</TableCell>
@@ -844,8 +717,8 @@ export function AdminPage() {
                               <TableCell colSpan={6}>
                                 <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                                   {models.length === 0
-                                    ? 'No suitability models yet. Add one above once a catalog project exists.'
-                                    : 'No models match this filter.'}
+                                    ? 'No layers yet. Create a project first, then click New layer to add one.'
+                                    : 'No layers match this filter.'}
                                 </Typography>
                               </TableCell>
                             </TableRow>
@@ -853,9 +726,9 @@ export function AdminPage() {
                             filteredModelsTable.map((m) => {
                               const projectLabel = m.project_id
                                 ? (projectById.get(m.project_id) ?? shortId(m.project_id))
-                                : 'Legacy'
+                                : 'Stand-alone'
                               return (
-                                <TableRow key={m.id} hover>
+                                <TableRow key={m.id} hover onClick={() => openEdit(m)} sx={{ cursor: 'pointer' }}>
                                   <TableCell>
                                     <Tooltip title={m.id}>
                                       <Typography
@@ -874,7 +747,7 @@ export function AdminPage() {
                                         {projectLabel}
                                       </Typography>
                                     ) : (
-                                      <Chip label="Legacy" size="small" variant="outlined" />
+                                      <Chip label="Stand-alone" size="small" variant="outlined" />
                                     )}
                                   </TableCell>
                                   <TableCell>{m.species}</TableCell>
@@ -883,7 +756,13 @@ export function AdminPage() {
                                     {[m.model_name, m.model_version].filter(Boolean).join(' · ') || '—'}
                                   </TableCell>
                                   <TableCell align="right">
-                                    <Button size="small" onClick={() => openEdit(m)}>
+                                    <Button
+                                      size="small"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        openEdit(m)
+                                      }}
+                                    >
                                       Edit
                                     </Button>
                                   </TableCell>
@@ -901,83 +780,231 @@ export function AdminPage() {
           </Paper>
 
           <Dialog
+            open={projectCreateOpen}
+            onClose={() => {
+              if (projCreating) return
+              setProjectCreateOpen(false)
+              setProjError(null)
+            }}
+            fullWidth
+            maxWidth="sm"
+            PaperProps={{ sx: { borderRadius: 2 } }}
+          >
+            <DialogTitle sx={{ fontWeight: 700 }}>New project</DialogTitle>
+            <DialogContent>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, mt: 0.5 }}>
+                A project groups related map layers. You can attach one optional shared environmental raster used by those
+                layers.
+              </Typography>
+              <Box component="form" id="admin-new-project-form" onSubmit={(e) => void handleCreateProject(e)}>
+                <ProjectFormFields
+                  mode="create"
+                  maxWidth={formMaxWidth}
+                  name={projName}
+                  description={projDesc}
+                  visibility={projVisibility}
+                  allowedUids={projAllowedUids}
+                  onNameChange={setProjName}
+                  onDescriptionChange={setProjDesc}
+                  onVisibilityChange={setProjVisibility}
+                  onAllowedUidsChange={setProjAllowedUids}
+                  pendingFile={projFile}
+                  onFileChange={setProjFile}
+                />
+                {projError && (
+                  <Alert severity="error" sx={{ mt: 2, maxWidth: formMaxWidth }}>
+                    {projError}
+                  </Alert>
+                )}
+              </Box>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+              <Button
+                onClick={() => {
+                  if (projCreating) return
+                  setProjectCreateOpen(false)
+                  setProjError(null)
+                }}
+                disabled={projCreating}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="admin-new-project-form"
+                variant="contained"
+                disabled={projCreating}
+              >
+                {projCreating ? 'Creating…' : 'Create project'}
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          <Dialog
+            open={layerCreateOpen}
+            onClose={() => {
+              if (creating) return
+              setLayerCreateOpen(false)
+              setCreateError(null)
+            }}
+            fullWidth
+            maxWidth="sm"
+            PaperProps={{ sx: { borderRadius: 2 } }}
+          >
+            <DialogTitle sx={{ fontWeight: 700 }}>New map layer</DialogTitle>
+            <DialogContent>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, mt: 0.5 }}>
+                One layer is one suitability raster for a species and activity, linked to a project.
+              </Typography>
+              {!canAddModel && (
+                <Alert severity="warning" sx={{ mb: 2, maxWidth: formMaxWidth }}>
+                  Create at least one active project in the <strong>Projects</strong> tab first.
+                </Alert>
+              )}
+              <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: formMaxWidth }}>
+                {COG_REQUIREMENTS_INFO}
+              </Alert>
+              <Box component="form" id="admin-new-layer-form" onSubmit={handleCreate}>
+                <MapLayerFormFields
+                  mode="create"
+                  maxWidth={formMaxWidth}
+                  projectId={modelProjectId}
+                  onProjectChange={setModelProjectId}
+                  activeProjects={activeProjects}
+                  allowStandAloneProject={false}
+                  species={species}
+                  activity={activity}
+                  modelName={modelName}
+                  modelVersion={modelVersion}
+                  driverBandIndices={driverBandIndices}
+                  onSpeciesChange={setSpecies}
+                  onActivityChange={setActivity}
+                  onModelNameChange={setModelName}
+                  onModelVersionChange={setModelVersion}
+                  onDriverBandIndicesChange={setDriverBandIndices}
+                  pendingFile={file}
+                  onFileChange={setFile}
+                  disabled={!canAddModel}
+                />
+                {createError && (
+                  <Alert severity="error" sx={{ mt: 2, maxWidth: formMaxWidth }}>
+                    {createError}
+                  </Alert>
+                )}
+              </Box>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+              <Button
+                onClick={() => {
+                  if (creating) return
+                  setLayerCreateOpen(false)
+                  setCreateError(null)
+                }}
+                disabled={creating}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="admin-new-layer-form"
+                variant="contained"
+                disabled={creating || !canAddModel}
+              >
+                {creating ? 'Creating…' : 'Create layer'}
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          <Dialog
+            open={projectEditOpen}
+            onClose={() => {
+              setProjectEditOpen(false)
+              setEditingProject(null)
+            }}
+            fullWidth
+            maxWidth="sm"
+            PaperProps={{ sx: { borderRadius: 2 } }}
+          >
+            <DialogTitle sx={{ fontWeight: 700 }}>Edit project</DialogTitle>
+            <DialogContent>
+              <Box sx={{ mt: 0.5 }}>
+                <ProjectFormFields
+                  mode="edit"
+                  maxWidth={formMaxWidth}
+                  name={editProjName}
+                  description={editProjDesc}
+                  visibility={editProjVisibility}
+                  allowedUids={editProjAllowedUids}
+                  status={editProjStatus}
+                  onNameChange={setEditProjName}
+                  onDescriptionChange={setEditProjDesc}
+                  onVisibilityChange={setEditProjVisibility}
+                  onAllowedUidsChange={setEditProjAllowedUids}
+                  onStatusChange={setEditProjStatus}
+                  pendingFile={editProjFile}
+                  onFileChange={setEditProjFile}
+                  projectId={editingProject?.id}
+                  existingDriverPath={editingProject?.driver_cog_path ?? null}
+                />
+                {editProjError && (
+                  <Alert severity="error" sx={{ mt: 2 }}>
+                    {editProjError}
+                  </Alert>
+                )}
+              </Box>
+            </DialogContent>
+            <DialogActions sx={{ px: 3, pb: 2 }}>
+              <Button
+                onClick={() => {
+                  setProjectEditOpen(false)
+                  setEditingProject(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button variant="contained" onClick={() => void handleSaveProjectEdit()} disabled={savingProjectEdit}>
+                {savingProjectEdit ? 'Saving…' : 'Save'}
+              </Button>
+            </DialogActions>
+          </Dialog>
+
+          <Dialog
             open={editOpen}
             onClose={() => setEditOpen(false)}
             fullWidth
             maxWidth="sm"
             PaperProps={{ sx: { borderRadius: 2 } }}
           >
-            <DialogTitle sx={{ fontWeight: 700 }}>Edit suitability model</DialogTitle>
+            <DialogTitle sx={{ fontWeight: 700 }}>Edit map layer</DialogTitle>
             <DialogContent>
-              <Stack spacing={2} sx={{ mt: 1 }}>
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Catalog project</InputLabel>
-                  <Select
-                    value={editProjectId}
-                    label="Catalog project"
-                    onChange={(e) => setEditProjectId(e.target.value)}
-                  >
-                    <MenuItem value="">
-                      <em>Legacy (no project)</em>
-                    </MenuItem>
-                    {activeProjects.map((p) => (
-                      <MenuItem key={p.id} value={p.id}>
-                        {p.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-                <TextField
-                  label="Species"
-                  helperText={FIELD_HELP.species}
-                  value={editSpecies}
-                  onChange={(e) => setEditSpecies(e.target.value)}
-                  size="small"
-                  fullWidth
+              <Box sx={{ mt: 0.5 }}>
+                <MapLayerFormFields
+                  mode="edit"
+                  maxWidth={formMaxWidth}
+                  projectId={editProjectId}
+                  onProjectChange={setEditProjectId}
+                  activeProjects={activeProjects}
+                  allowStandAloneProject
+                  species={editSpecies}
+                  activity={editActivity}
+                  modelName={editName}
+                  modelVersion={editVersion}
+                  driverBandIndices={editDriverBandIndices}
+                  onSpeciesChange={setEditSpecies}
+                  onActivityChange={setEditActivity}
+                  onModelNameChange={setEditName}
+                  onModelVersionChange={setEditVersion}
+                  onDriverBandIndicesChange={setEditDriverBandIndices}
+                  pendingFile={editFile}
+                  onFileChange={setEditFile}
+                  layerId={editModel?.id}
                 />
-                <TextField
-                  label="Activity"
-                  helperText={FIELD_HELP.activity}
-                  value={editActivity}
-                  onChange={(e) => setEditActivity(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <TextField
-                  label="Model name"
-                  helperText={FIELD_HELP.modelName}
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <TextField
-                  label="Model version"
-                  helperText={FIELD_HELP.modelVersion}
-                  value={editVersion}
-                  onChange={(e) => setEditVersion(e.target.value)}
-                  size="small"
-                  fullWidth
-                />
-                <Box>
-                  <Button variant="outlined" component="label" size="small">
-                    Replace COG (optional)
-                    <input
-                      type="file"
-                      accept=".tif,.tiff,image/tiff"
-                      hidden
-                      onChange={(e) => setEditFile(e.target.files?.[0] ?? null)}
-                    />
-                  </Button>
-                  {editFile && (
-                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                      {editFile.name}
-                    </Typography>
-                  )}
-                  <FormHelperText sx={{ mx: 0, mt: 0.5 }}>{COG_REPLACE_HINT}</FormHelperText>
-                </Box>
-                {editError && <Alert severity="error">{editError}</Alert>}
-              </Stack>
+                {editError && (
+                  <Alert severity="error" sx={{ mt: 2 }}>
+                    {editError}
+                  </Alert>
+                )}
+              </Box>
             </DialogContent>
             <DialogActions sx={{ px: 3, pb: 2 }}>
               <Button onClick={() => setEditOpen(false)}>Cancel</Button>

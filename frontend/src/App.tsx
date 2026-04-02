@@ -26,7 +26,7 @@ function buildProjectOptions(
     .map((p) => ({ id: p.id, name: p.name }))
   const hasLegacy = models.some((m) => !m.project_id)
   if (hasLegacy) {
-    opts.push({ id: LEGACY_PROJECT_ID, name: 'Legacy (no project)' })
+    opts.push({ id: LEGACY_PROJECT_ID, name: 'Stand-alone layers' })
   }
   return opts
 }
@@ -80,7 +80,7 @@ function App() {
         if (!cancelled) {
           setProjects([])
           setModels([])
-          setLoadError('Could not load catalog. Is the API running?')
+          setLoadError('Couldn’t load map layers. Check your connection, or try again in a moment.')
         }
       } finally {
         if (!cancelled) setCatalogReady(true)
@@ -108,7 +108,7 @@ function App() {
 
   const selectedProjectLabel = useMemo(() => {
     if (!selectedModel) return ''
-    if (!selectedModel.project_id) return 'Legacy (no project)'
+    if (!selectedModel.project_id) return 'Stand-alone layer'
     const p = projects.find((x) => x.id === selectedModel.project_id)
     return p?.name ?? selectedModel.project_id
   }, [selectedModel, projects])
