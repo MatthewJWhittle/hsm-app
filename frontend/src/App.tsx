@@ -122,21 +122,26 @@ function App() {
     let modelId = ''
     let derivedProjectId = ''
 
-    if (mu && models.some((m) => m.id === mu)) {
-      const m = models.find((x) => x.id === mu)!
-      modelId = m.id
-      derivedProjectId = projectIdForModel(m)
-    } else if (pu && opts.some((o) => o.id === pu)) {
-      const filtered = modelsForProject(pu, models)
-      const first = filtered[0]
-      if (first) {
+    if (mu) {
+      const m = models.find((x) => x.id === mu)
+      if (m) {
+        modelId = m.id
+        derivedProjectId = projectIdForModel(m)
+      }
+    }
+    if (!modelId) {
+      if (pu && opts.some((o) => o.id === pu)) {
+        const filtered = modelsForProject(pu, models)
+        const first = filtered[0]
+        if (first) {
+          modelId = first.id
+          derivedProjectId = projectIdForModel(first)
+        }
+      } else if (models.length > 0) {
+        const first = models[0]
         modelId = first.id
         derivedProjectId = projectIdForModel(first)
       }
-    } else if (models.length > 0) {
-      const first = models[0]
-      modelId = first.id
-      derivedProjectId = projectIdForModel(first)
     }
 
     setSelectedModelId(modelId)

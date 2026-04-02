@@ -160,6 +160,15 @@ export function AdminPage() {
     })
   }, [models, modelTableFilter])
 
+  const openLayerCreateDialog = useCallback(() => {
+    setLayerCreateOpen(true)
+    setModelProjectId((prev) => {
+      if (prev) return prev
+      const first = projects.find((p) => p.status === 'active')
+      return first?.id ?? ''
+    })
+  }, [projects])
+
   const refreshList = useCallback(async () => {
     setListRefreshing(true)
     const token = await getIdToken(true)
@@ -188,11 +197,10 @@ export function AdminPage() {
   }, [refreshList])
 
   useEffect(() => {
-    if (!modelProjectId && projects.length > 0) {
-      const first = projects.find((p) => p.status === 'active')
-      if (first) setModelProjectId(first.id)
-    }
-  }, [projects, modelProjectId])
+    if (!layerCreateOpen || modelProjectId) return
+    const first = projects.find((p) => p.status === 'active')
+    if (first) setModelProjectId(first.id)
+  }, [layerCreateOpen, modelProjectId, projects])
 
   const openEdit = (m: Model) => {
     setEditModel(m)
@@ -663,7 +671,7 @@ export function AdminPage() {
                 <Stack spacing={3}>
                   <Button
                     variant="contained"
-                    onClick={() => setLayerCreateOpen(true)}
+                    onClick={openLayerCreateDialog}
                     sx={{ alignSelf: 'flex-start' }}
                   >
                     New layer
