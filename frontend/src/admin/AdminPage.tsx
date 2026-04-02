@@ -1,40 +1,7 @@
-import {
-  Alert,
-  Box,
-  Button,
-  Checkbox,
-  Chip,
-  Container,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  IconButton,
-  InputLabel,
-  LinearProgress,
-  MenuItem,
-  Paper,
-  Select,
-  Skeleton,
-  Stack,
-  Tab,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Tabs,
-  TextField,
-  Tooltip,
-  Typography,
-} from '@mui/material'
+import { Alert, Box, Container, LinearProgress, Paper, Tab, Tabs, Typography } from '@mui/material'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
-import RefreshIcon from '@mui/icons-material/Refresh'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 
 import '../App.css'
 
@@ -47,41 +14,16 @@ import { Navbar } from '../components/Navbar'
 import type { Model } from '../types/model'
 import type { CatalogProject } from '../types/project'
 
-import { COG_REQUIREMENTS_INFO } from './catalogFormConstants'
-import { MapLayerFormFields } from './MapLayerFormFields'
-import { ProjectFormFields } from './ProjectFormFields'
+import { AdminCatalogHeader } from './AdminCatalogHeader'
+import { AdminTabPanel } from './AdminTabPanel'
+import { LayerCreateDialog } from './LayerCreateDialog'
+import { LayerEditDialog } from './LayerEditDialog'
+import { LayersCatalogTab } from './LayersCatalogTab'
+import { ProjectCreateDialog } from './ProjectCreateDialog'
+import { ProjectEditDialog } from './ProjectEditDialog'
+import { ProjectsCatalogTab } from './ProjectsCatalogTab'
 
-function shortId(id: string, head = 8): string {
-  if (id.length <= head + 2) return id
-  return `${id.slice(0, head)}…`
-}
-
-function formatAdminDate(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  try {
-    const d = new Date(iso)
-    if (Number.isNaN(d.getTime())) return '—'
-    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
-  } catch {
-    return '—'
-  }
-}
-
-function TabPanel(props: { children?: React.ReactNode; index: number; value: number }) {
-  const { children, value, index, ...other } = props
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`admin-tabpanel-${index}`}
-      aria-labelledby={`admin-tab-${index}`}
-      {...other}
-    >
-      {/* Keep mounted so form state survives tab switches */}
-      <Box sx={{ py: { xs: 2, sm: 2.5 } }}>{children}</Box>
-    </div>
-  )
-}
+const FORM_MAX_WIDTH = 640
 
 export function AdminPage() {
   const { user, loading, isAdmin, getIdToken } = useAuth()
@@ -462,8 +404,6 @@ export function AdminPage() {
   const activeProjects = projects.filter((p) => p.status === 'active')
   const canAddModel = activeProjects.length > 0
 
-  const formMaxWidth = 640
-
   if (loading) {
     return (
       <div className="app-container app-container--scroll">
@@ -513,60 +453,11 @@ export function AdminPage() {
         }}
       >
         <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 }, pb: 5 }}>
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 2,
-              mb: 2,
-              borderRadius: 2,
-              display: 'flex',
-              flexDirection: { xs: 'column', sm: 'row' },
-              alignItems: { xs: 'stretch', sm: 'flex-start' },
-              justifyContent: 'space-between',
-              gap: 2,
-            }}
-          >
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="h4" component="h1" fontWeight={700} sx={{ letterSpacing: '-0.02em' }}>
-                Map catalog
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 560 }}>
-                Add <strong>projects</strong> to group layers and optional shared environmental data, then add{' '}
-                <strong>map layers</strong> (suitability rasters). Published changes appear on the public map.
-              </Typography>
-            </Box>
-            <Stack
-              direction="row"
-              alignItems="center"
-              spacing={1}
-              flexWrap="wrap"
-              justifyContent={{ xs: 'flex-start', sm: 'flex-end' }}
-              sx={{ flexShrink: 0 }}
-            >
-              <Typography variant="caption" color="text.secondary" sx={{ width: '100%', textAlign: { sm: 'right' } }}>
-                {lastRefreshedAt
-                  ? `List updated ${lastRefreshedAt.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}`
-                  : listRefreshing
-                    ? 'Loading…'
-                    : ''}
-              </Typography>
-              <Tooltip title="Reload list">
-                <span>
-                  <IconButton
-                    size="small"
-                    onClick={() => void refreshList()}
-                    disabled={listRefreshing}
-                    aria-label="Refresh list"
-                  >
-                    <RefreshIcon fontSize="small" />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Button component={Link} to="/" variant="outlined" size="medium">
-                Back to map
-              </Button>
-            </Stack>
-          </Paper>
+          <AdminCatalogHeader
+            lastRefreshedAt={lastRefreshedAt}
+            listRefreshing={listRefreshing}
+            onRefresh={refreshList}
+          />
 
           {listError && (
             <Alert severity="error" sx={{ mb: 2 }}>
@@ -618,596 +509,148 @@ export function AdminPage() {
             </Tabs>
 
             <Box sx={{ px: { xs: 2, sm: 3 } }}>
-              <TabPanel value={tab} index={0}>
-                <Stack spacing={3}>
-                  <Button
-                    variant="contained"
-                    onClick={() => setProjectCreateOpen(true)}
-                    sx={{ alignSelf: 'flex-start' }}
-                  >
-                    New project
-                  </Button>
+              <AdminTabPanel value={tab} index={0}>
+                <ProjectsCatalogTab
+                  projects={projects}
+                  filteredProjects={filteredProjectsTable}
+                  projectTableFilter={projectTableFilter}
+                  onProjectTableFilterChange={setProjectTableFilter}
+                  listRefreshing={listRefreshing}
+                  onNewProject={() => setProjectCreateOpen(true)}
+                  onOpenProjectEdit={openProjectEdit}
+                />
+              </AdminTabPanel>
 
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-                      All projects
-                    </Typography>
-                    <TextField
-                      size="small"
-                      fullWidth
-                      placeholder="Filter by name, id, or description…"
-                      value={projectTableFilter}
-                      onChange={(e) => setProjectTableFilter(e.target.value)}
-                      sx={{ mb: 1, maxWidth: 400 }}
-                      aria-label="Filter projects table"
-                    />
-                    <TableContainer
-                      component={Paper}
-                      variant="outlined"
-                      sx={{
-                        borderRadius: 1,
-                        maxHeight: 360,
-                      }}
-                    >
-                      <Table size="small" stickyHeader aria-label="Projects">
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>Project</TableCell>
-                            <TableCell width={120}>Environmental file</TableCell>
-                            <TableCell width={110}>Visibility</TableCell>
-                            <TableCell width={100}>Status</TableCell>
-                            <TableCell width={140}>Updated</TableCell>
-                            <TableCell align="right" width={88}>
-                              Actions
-                            </TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {listRefreshing && projects.length === 0 ? (
-                            Array.from({ length: 5 }).map((_, i) => (
-                              <TableRow key={i}>
-                                <TableCell colSpan={6}>
-                                  <Skeleton variant="text" width="80%" height={28} />
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          ) : filteredProjectsTable.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={6}>
-                                <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                                  {projects.length === 0
-                                    ? 'No projects yet. Click New project to add one.'
-                                    : 'No projects match this filter.'}
-                                </Typography>
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            filteredProjectsTable.map((p) => (
-                              <TableRow
-                                key={p.id}
-                                hover
-                                onClick={() => openProjectEdit(p)}
-                                sx={{ cursor: 'pointer' }}
-                              >
-                                <TableCell>
-                                  <Typography variant="body2" fontWeight={600}>
-                                    {p.name}
-                                  </Typography>
-                                  <Tooltip title={p.id}>
-                                    <Typography
-                                      variant="caption"
-                                      color="text.secondary"
-                                      fontFamily="monospace"
-                                      component="span"
-                                      sx={{ display: 'block' }}
-                                    >
-                                      {shortId(p.id)}
-                                    </Typography>
-                                  </Tooltip>
-                                </TableCell>
-                                <TableCell>
-                                  {p.driver_cog_path ? (
-                                    <Chip label="On file" size="small" color="success" variant="outlined" />
-                                  ) : (
-                                    <Chip label="None" size="small" variant="outlined" />
-                                  )}
-                                </TableCell>
-                                <TableCell>
-                                  <Chip
-                                    label={p.visibility}
-                                    size="small"
-                                    color={p.visibility === 'public' ? 'primary' : 'default'}
-                                    variant="outlined"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Chip
-                                    label={p.status}
-                                    size="small"
-                                    color={p.status === 'active' ? 'success' : 'default'}
-                                    variant="outlined"
-                                  />
-                                </TableCell>
-                                <TableCell>
-                                  <Typography variant="caption" color="text.secondary">
-                                    {formatAdminDate(p.updated_at ?? p.created_at)}
-                                  </Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                  <Button
-                                    size="small"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      openProjectEdit(p)
-                                    }}
-                                  >
-                                    Edit
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                  </Box>
-                </Stack>
-              </TabPanel>
-
-              <TabPanel value={tab} index={1}>
-                <Stack spacing={3}>
-                  <Button
-                    variant="contained"
-                    onClick={openLayerCreateDialog}
-                    sx={{ alignSelf: 'flex-start' }}
-                  >
-                    New layer
-                  </Button>
-
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
-                      All map layers
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1, maxWidth: 560 }}>
-                      Select one or more layers with the checkboxes, then choose a project and click Assign to project.
-                    </Typography>
-                    <TextField
-                      size="small"
-                      fullWidth
-                      placeholder="Filter by species, activity, project…"
-                      value={modelTableFilter}
-                      onChange={(e) => setModelTableFilter(e.target.value)}
-                      sx={{ mb: 1, maxWidth: 400 }}
-                      aria-label="Filter map layers table"
-                    />
-                    {selectedModelIds.length > 0 && (
-                      <Paper
-                        variant="outlined"
-                        sx={{
-                          p: 1.5,
-                          mb: 1,
-                          borderRadius: 1,
-                          position: 'relative',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        {bulkAssigning && (
-                          <LinearProgress
-                            sx={{ position: 'absolute', top: 0, left: 0, right: 0 }}
-                            aria-label="Assigning layers to project"
-                          />
-                        )}
-                        <Stack
-                          direction={{ xs: 'column', sm: 'row' }}
-                          spacing={1.5}
-                          alignItems={{ sm: 'center' }}
-                          flexWrap="wrap"
-                          useFlexGap
-                          sx={{ pt: bulkAssigning ? 0.5 : 0 }}
-                        >
-                          <Typography variant="body2" fontWeight={600}>
-                            {selectedModelIds.length} layer{selectedModelIds.length === 1 ? '' : 's'} selected
-                          </Typography>
-                          <FormControl size="small" sx={{ minWidth: 220 }} disabled={bulkAssigning || !canAddModel}>
-                            <InputLabel id="bulk-assign-project-label">Assign to project</InputLabel>
-                            <Select
-                              labelId="bulk-assign-project-label"
-                              label="Assign to project"
-                              value={bulkAssignProjectId}
-                              onChange={(e) => setBulkAssignProjectId(e.target.value)}
-                            >
-                              {activeProjects.map((p) => (
-                                <MenuItem key={p.id} value={p.id}>
-                                  {p.name}
-                                </MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
-                          <Button
-                            variant="contained"
-                            size="small"
-                            disabled={
-                              bulkAssigning || !bulkAssignProjectId || selectedModelIds.length === 0 || !canAddModel
-                            }
-                            onClick={() => void handleBulkAssignToProject()}
-                          >
-                            {bulkAssigning ? 'Assigning…' : 'Assign to project'}
-                          </Button>
-                          <Button
-                            variant="text"
-                            size="small"
-                            disabled={bulkAssigning}
-                            onClick={() => {
-                              setSelectedModelIds([])
-                              setBulkAssignError(null)
-                            }}
-                          >
-                            Clear selection
-                          </Button>
-                        </Stack>
-                        {!canAddModel && (
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                            Create an active project in the Projects tab first.
-                          </Typography>
-                        )}
-                        {bulkAssignError && (
-                          <Alert severity="error" sx={{ mt: 1.5, mb: 0 }}>
-                            {bulkAssignError}
-                          </Alert>
-                        )}
-                      </Paper>
-                    )}
-                    <TableContainer
-                      component={Paper}
-                      variant="outlined"
-                      sx={{
-                        borderRadius: 1,
-                        maxHeight: 480,
-                      }}
-                    >
-                      <Table size="small" stickyHeader aria-label="Map layers">
-                        <TableHead>
-                          <TableRow>
-                            <TableCell padding="checkbox" sx={{ width: 48 }}>
-                              <Checkbox
-                                size="small"
-                                indeterminate={someFilteredSelected && !allFilteredSelected}
-                                checked={allFilteredSelected}
-                                onChange={toggleSelectAllFiltered}
-                                disabled={listRefreshing || filteredModelsTable.length === 0}
-                                inputProps={{
-                                  'aria-label': 'Select all layers in this list',
-                                }}
-                              />
-                            </TableCell>
-                            <TableCell width={100}>ID</TableCell>
-                            <TableCell width={160}>Project</TableCell>
-                            <TableCell>Species</TableCell>
-                            <TableCell>Activity</TableCell>
-                            <TableCell>Name / version</TableCell>
-                            <TableCell align="right" width={88}>
-                              Actions
-                            </TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {listRefreshing && models.length === 0 ? (
-                            Array.from({ length: 6 }).map((_, i) => (
-                              <TableRow key={i}>
-                                <TableCell colSpan={7}>
-                                  <Skeleton variant="text" width="70%" height={28} />
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          ) : filteredModelsTable.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={7}>
-                                <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
-                                  {models.length === 0
-                                    ? 'No layers yet. Create a project first, then click New layer to add one.'
-                                    : 'No layers match this filter.'}
-                                </Typography>
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            filteredModelsTable.map((m) => {
-                              const projectLabel = m.project_id
-                                ? (projectById.get(m.project_id) ?? shortId(m.project_id))
-                                : 'Stand-alone'
-                              return (
-                                <TableRow key={m.id} hover onClick={() => openEdit(m)} sx={{ cursor: 'pointer' }}>
-                                  <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
-                                    <Checkbox
-                                      size="small"
-                                      checked={selectedModelIds.includes(m.id)}
-                                      onChange={() => toggleModelSelected(m.id)}
-                                      inputProps={{ 'aria-label': `Select layer ${m.species} — ${m.activity}` }}
-                                    />
-                                  </TableCell>
-                                  <TableCell>
-                                    <Tooltip title={m.id}>
-                                      <Typography
-                                        variant="body2"
-                                        fontFamily="monospace"
-                                        fontSize={12}
-                                        sx={{ cursor: 'default' }}
-                                      >
-                                        {shortId(m.id)}
-                                      </Typography>
-                                    </Tooltip>
-                                  </TableCell>
-                                  <TableCell>
-                                    {m.project_id ? (
-                                      <Typography variant="body2" noWrap title={projectLabel}>
-                                        {projectLabel}
-                                      </Typography>
-                                    ) : (
-                                      <Chip label="Stand-alone" size="small" variant="outlined" />
-                                    )}
-                                  </TableCell>
-                                  <TableCell>{m.species}</TableCell>
-                                  <TableCell>{m.activity}</TableCell>
-                                  <TableCell>
-                                    {[m.model_name, m.model_version].filter(Boolean).join(' · ') || '—'}
-                                  </TableCell>
-                                  <TableCell align="right">
-                                    <Button
-                                      size="small"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        openEdit(m)
-                                      }}
-                                    >
-                                      Edit
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
-                              )
-                            })
-                          )}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
-                  </Box>
-                </Stack>
-              </TabPanel>
+              <AdminTabPanel value={tab} index={1}>
+                <LayersCatalogTab
+                  models={models}
+                  filteredModels={filteredModelsTable}
+                  projectById={projectById}
+                  modelTableFilter={modelTableFilter}
+                  onModelTableFilterChange={setModelTableFilter}
+                  listRefreshing={listRefreshing}
+                  onNewLayer={openLayerCreateDialog}
+                  onOpenEdit={openEdit}
+                  selectedModelIds={selectedModelIds}
+                  bulkAssignProjectId={bulkAssignProjectId}
+                  onBulkAssignProjectIdChange={setBulkAssignProjectId}
+                  bulkAssigning={bulkAssigning}
+                  bulkAssignError={bulkAssignError}
+                  onBulkAssign={handleBulkAssignToProject}
+                  onClearSelection={() => {
+                    setSelectedModelIds([])
+                    setBulkAssignError(null)
+                  }}
+                  toggleModelSelected={toggleModelSelected}
+                  toggleSelectAllFiltered={toggleSelectAllFiltered}
+                  allFilteredSelected={allFilteredSelected}
+                  someFilteredSelected={someFilteredSelected}
+                  activeProjects={activeProjects}
+                  canAddModel={canAddModel}
+                />
+              </AdminTabPanel>
             </Box>
           </Paper>
 
-          <Dialog
+          <ProjectCreateDialog
             open={projectCreateOpen}
             onClose={() => {
-              if (projCreating) return
               setProjectCreateOpen(false)
               setProjError(null)
             }}
-            fullWidth
-            maxWidth="sm"
-            PaperProps={{ sx: { borderRadius: 2 } }}
-          >
-            <DialogTitle sx={{ fontWeight: 700 }}>New project</DialogTitle>
-            <DialogContent>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, mt: 0.5 }}>
-                A project groups related map layers. You can attach one optional shared environmental raster used by those
-                layers.
-              </Typography>
-              <Box component="form" id="admin-new-project-form" onSubmit={(e) => void handleCreateProject(e)}>
-                <ProjectFormFields
-                  mode="create"
-                  maxWidth={formMaxWidth}
-                  name={projName}
-                  description={projDesc}
-                  visibility={projVisibility}
-                  allowedUids={projAllowedUids}
-                  onNameChange={setProjName}
-                  onDescriptionChange={setProjDesc}
-                  onVisibilityChange={setProjVisibility}
-                  onAllowedUidsChange={setProjAllowedUids}
-                  pendingFile={projFile}
-                  onFileChange={setProjFile}
-                />
-                {projError && (
-                  <Alert severity="error" sx={{ mt: 2, maxWidth: formMaxWidth }}>
-                    {projError}
-                  </Alert>
-                )}
-              </Box>
-            </DialogContent>
-            <DialogActions sx={{ px: 3, pb: 2 }}>
-              <Button
-                onClick={() => {
-                  if (projCreating) return
-                  setProjectCreateOpen(false)
-                  setProjError(null)
-                }}
-                disabled={projCreating}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                form="admin-new-project-form"
-                variant="contained"
-                disabled={projCreating}
-              >
-                {projCreating ? 'Creating…' : 'Create project'}
-              </Button>
-            </DialogActions>
-          </Dialog>
+            formMaxWidth={FORM_MAX_WIDTH}
+            projCreating={projCreating}
+            projError={projError}
+            onSubmit={handleCreateProject}
+            projName={projName}
+            projDesc={projDesc}
+            projVisibility={projVisibility}
+            projAllowedUids={projAllowedUids}
+            projFile={projFile}
+            onProjNameChange={setProjName}
+            onProjDescChange={setProjDesc}
+            onProjVisibilityChange={setProjVisibility}
+            onProjAllowedUidsChange={setProjAllowedUids}
+            onProjFileChange={setProjFile}
+          />
 
-          <Dialog
+          <LayerCreateDialog
             open={layerCreateOpen}
             onClose={() => {
-              if (creating) return
               setLayerCreateOpen(false)
               setCreateError(null)
             }}
-            fullWidth
-            maxWidth="sm"
-            PaperProps={{ sx: { borderRadius: 2 } }}
-          >
-            <DialogTitle sx={{ fontWeight: 700 }}>New map layer</DialogTitle>
-            <DialogContent>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2, mt: 0.5 }}>
-                One layer is one suitability raster for a species and activity, linked to a project.
-              </Typography>
-              {!canAddModel && (
-                <Alert severity="warning" sx={{ mb: 2, maxWidth: formMaxWidth }}>
-                  Create at least one active project in the <strong>Projects</strong> tab first.
-                </Alert>
-              )}
-              <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: formMaxWidth }}>
-                {COG_REQUIREMENTS_INFO}
-              </Alert>
-              <Box component="form" id="admin-new-layer-form" onSubmit={handleCreate}>
-                <MapLayerFormFields
-                  mode="create"
-                  maxWidth={formMaxWidth}
-                  projectId={modelProjectId}
-                  onProjectChange={setModelProjectId}
-                  activeProjects={activeProjects}
-                  allowStandAloneProject={false}
-                  species={species}
-                  activity={activity}
-                  modelName={modelName}
-                  modelVersion={modelVersion}
-                  driverBandIndices={driverBandIndices}
-                  onSpeciesChange={setSpecies}
-                  onActivityChange={setActivity}
-                  onModelNameChange={setModelName}
-                  onModelVersionChange={setModelVersion}
-                  onDriverBandIndicesChange={setDriverBandIndices}
-                  pendingFile={file}
-                  onFileChange={setFile}
-                  disabled={!canAddModel}
-                />
-                {createError && (
-                  <Alert severity="error" sx={{ mt: 2, maxWidth: formMaxWidth }}>
-                    {createError}
-                  </Alert>
-                )}
-              </Box>
-            </DialogContent>
-            <DialogActions sx={{ px: 3, pb: 2 }}>
-              <Button
-                onClick={() => {
-                  if (creating) return
-                  setLayerCreateOpen(false)
-                  setCreateError(null)
-                }}
-                disabled={creating}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                form="admin-new-layer-form"
-                variant="contained"
-                disabled={creating || !canAddModel}
-              >
-                {creating ? 'Creating…' : 'Create layer'}
-              </Button>
-            </DialogActions>
-          </Dialog>
+            formMaxWidth={FORM_MAX_WIDTH}
+            canAddModel={canAddModel}
+            creating={creating}
+            createError={createError}
+            onSubmit={handleCreate}
+            modelProjectId={modelProjectId}
+            onModelProjectIdChange={setModelProjectId}
+            activeProjects={activeProjects}
+            species={species}
+            activity={activity}
+            modelName={modelName}
+            modelVersion={modelVersion}
+            driverBandIndices={driverBandIndices}
+            file={file}
+            onSpeciesChange={setSpecies}
+            onActivityChange={setActivity}
+            onModelNameChange={setModelName}
+            onModelVersionChange={setModelVersion}
+            onDriverBandIndicesChange={setDriverBandIndices}
+            onFileChange={setFile}
+          />
 
-          <Dialog
+          <ProjectEditDialog
             open={projectEditOpen}
             onClose={() => {
               setProjectEditOpen(false)
               setEditingProject(null)
             }}
-            fullWidth
-            maxWidth="sm"
-            PaperProps={{ sx: { borderRadius: 2 } }}
-          >
-            <DialogTitle sx={{ fontWeight: 700 }}>Edit project</DialogTitle>
-            <DialogContent>
-              <Box sx={{ mt: 0.5 }}>
-                <ProjectFormFields
-                  mode="edit"
-                  maxWidth={formMaxWidth}
-                  name={editProjName}
-                  description={editProjDesc}
-                  visibility={editProjVisibility}
-                  allowedUids={editProjAllowedUids}
-                  status={editProjStatus}
-                  onNameChange={setEditProjName}
-                  onDescriptionChange={setEditProjDesc}
-                  onVisibilityChange={setEditProjVisibility}
-                  onAllowedUidsChange={setEditProjAllowedUids}
-                  onStatusChange={setEditProjStatus}
-                  pendingFile={editProjFile}
-                  onFileChange={setEditProjFile}
-                  projectId={editingProject?.id}
-                  existingDriverPath={editingProject?.driver_cog_path ?? null}
-                />
-                {editProjError && (
-                  <Alert severity="error" sx={{ mt: 2 }}>
-                    {editProjError}
-                  </Alert>
-                )}
-              </Box>
-            </DialogContent>
-            <DialogActions sx={{ px: 3, pb: 2 }}>
-              <Button
-                onClick={() => {
-                  setProjectEditOpen(false)
-                  setEditingProject(null)
-                }}
-              >
-                Cancel
-              </Button>
-              <Button variant="contained" onClick={() => void handleSaveProjectEdit()} disabled={savingProjectEdit}>
-                {savingProjectEdit ? 'Saving…' : 'Save'}
-              </Button>
-            </DialogActions>
-          </Dialog>
+            formMaxWidth={FORM_MAX_WIDTH}
+            editingProject={editingProject}
+            editProjName={editProjName}
+            editProjDesc={editProjDesc}
+            editProjVisibility={editProjVisibility}
+            editProjAllowedUids={editProjAllowedUids}
+            editProjStatus={editProjStatus}
+            editProjFile={editProjFile}
+            onEditProjNameChange={setEditProjName}
+            onEditProjDescChange={setEditProjDesc}
+            onEditProjVisibilityChange={setEditProjVisibility}
+            onEditProjAllowedUidsChange={setEditProjAllowedUids}
+            onEditProjStatusChange={setEditProjStatus}
+            onEditProjFileChange={setEditProjFile}
+            editProjError={editProjError}
+            savingProjectEdit={savingProjectEdit}
+            onSave={handleSaveProjectEdit}
+          />
 
-          <Dialog
+          <LayerEditDialog
             open={editOpen}
             onClose={() => setEditOpen(false)}
-            fullWidth
-            maxWidth="sm"
-            PaperProps={{ sx: { borderRadius: 2 } }}
-          >
-            <DialogTitle sx={{ fontWeight: 700 }}>Edit map layer</DialogTitle>
-            <DialogContent>
-              <Box sx={{ mt: 0.5 }}>
-                <MapLayerFormFields
-                  mode="edit"
-                  maxWidth={formMaxWidth}
-                  projectId={editProjectId}
-                  onProjectChange={setEditProjectId}
-                  activeProjects={activeProjects}
-                  allowStandAloneProject
-                  species={editSpecies}
-                  activity={editActivity}
-                  modelName={editName}
-                  modelVersion={editVersion}
-                  driverBandIndices={editDriverBandIndices}
-                  onSpeciesChange={setEditSpecies}
-                  onActivityChange={setEditActivity}
-                  onModelNameChange={setEditName}
-                  onModelVersionChange={setEditVersion}
-                  onDriverBandIndicesChange={setEditDriverBandIndices}
-                  pendingFile={editFile}
-                  onFileChange={setEditFile}
-                  layerId={editModel?.id}
-                />
-                {editError && (
-                  <Alert severity="error" sx={{ mt: 2 }}>
-                    {editError}
-                  </Alert>
-                )}
-              </Box>
-            </DialogContent>
-            <DialogActions sx={{ px: 3, pb: 2 }}>
-              <Button onClick={() => setEditOpen(false)}>Cancel</Button>
-              <Button variant="contained" onClick={() => void handleSaveEdit()} disabled={savingEdit}>
-                {savingEdit ? 'Saving…' : 'Save'}
-              </Button>
-            </DialogActions>
-          </Dialog>
+            formMaxWidth={FORM_MAX_WIDTH}
+            editModel={editModel}
+            activeProjects={activeProjects}
+            editProjectId={editProjectId}
+            onEditProjectIdChange={setEditProjectId}
+            editSpecies={editSpecies}
+            editActivity={editActivity}
+            editName={editName}
+            editVersion={editVersion}
+            editDriverBandIndices={editDriverBandIndices}
+            editFile={editFile}
+            onEditSpeciesChange={setEditSpecies}
+            onEditActivityChange={setEditActivity}
+            onEditNameChange={setEditName}
+            onEditVersionChange={setEditVersion}
+            onEditDriverBandIndicesChange={setEditDriverBandIndices}
+            onEditFileChange={setEditFile}
+            editError={editError}
+            savingEdit={savingEdit}
+            onSave={handleSaveEdit}
+          />
         </Container>
       </Box>
     </div>
