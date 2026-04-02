@@ -2,15 +2,20 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   Container,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
   IconButton,
+  InputLabel,
   LinearProgress,
+  MenuItem,
   Paper,
+  Select,
   Skeleton,
   Stack,
   Tab,
@@ -88,6 +93,10 @@ export function AdminPage() {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null)
   const [projectTableFilter, setProjectTableFilter] = useState('')
   const [modelTableFilter, setModelTableFilter] = useState('')
+  const [selectedModelIds, setSelectedModelIds] = useState<string[]>([])
+  const [bulkAssignProjectId, setBulkAssignProjectId] = useState('')
+  const [bulkAssigning, setBulkAssigning] = useState(false)
+  const [bulkAssignError, setBulkAssignError] = useState<string | null>(null)
 
   const [projName, setProjName] = useState('')
   const [projDesc, setProjDesc] = useState('')
@@ -160,6 +169,8 @@ export function AdminPage() {
     })
   }, [models, modelTableFilter])
 
+  const filteredModelIds = useMemo(() => filteredModelsTable.map((m) => m.id), [filteredModelsTable])
+
   const openLayerCreateDialog = useCallback(() => {
     setLayerCreateOpen(true)
     setModelProjectId((prev) => {
@@ -201,6 +212,82 @@ export function AdminPage() {
     const first = projects.find((p) => p.status === 'active')
     if (first) setModelProjectId(first.id)
   }, [layerCreateOpen, modelProjectId, projects])
+
+  useEffect(() => {
+    if (selectedModelIds.length === 0) {
+      setBulkAssignProjectId('')
+      return
+    }
+    setBulkAssignProjectId((prev) => {
+      if (prev) return prev
+      const first = projects.find((p) => p.status === 'active')
+      return first?.id ?? ''
+    })
+  }, [selectedModelIds.length, projects])
+
+  useEffect(() => {
+    if (tab !== 1) {
+      setSelectedModelIds([])
+      setBulkAssignError(null)
+    }
+  }, [tab])
+
+  const toggleModelSelected = useCallback((id: string) => {
+    setSelectedModelIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }, [])
+
+  const toggleSelectAllFiltered = useCallback(() => {
+    setSelectedModelIds((prev) => {
+      const allOn =
+        filteredModelIds.length > 0 && filteredModelIds.every((fid) => prev.includes(fid))
+      if (allOn) {
+        return prev.filter((id) => !filteredModelIds.includes(id))
+      }
+      return [...new Set([...prev, ...filteredModelIds])]
+    })
+  }, [filteredModelIds])
+
+  const allFilteredSelected = useMemo(
+    () =>
+      filteredModelIds.length > 0 && filteredModelIds.every((id) => selectedModelIds.includes(id)),
+    [filteredModelIds, selectedModelIds],
+  )
+  const someFilteredSelected = useMemo(
+    () => filteredModelIds.some((id) => selectedModelIds.includes(id)),
+    [filteredModelIds, selectedModelIds],
+  )
+
+  const handleBulkAssignToProject = async () => {
+    if (selectedModelIds.length === 0 || !bulkAssignProjectId) return
+    setBulkAssignError(null)
+    const token = await getIdToken(true)
+    if (!token) {
+      setBulkAssignError('Not signed in.')
+      return
+    }
+    setBulkAssigning(true)
+    try {
+      const want = new Set(selectedModelIds)
+      const toUpdate = models.filter((m) => want.has(m.id))
+      for (const m of toUpdate) {
+        await updateModel({
+          token,
+          modelId: m.id,
+          species: m.species,
+          activity: m.activity,
+          modelName: m.model_name ?? null,
+          modelVersion: m.model_version ?? null,
+          projectId: bulkAssignProjectId,
+        })
+      }
+      setSelectedModelIds([])
+      await refreshList()
+    } catch (err) {
+      setBulkAssignError(err instanceof Error ? err.message : 'Assign failed')
+    } finally {
+      setBulkAssigning(false)
+    }
+  }
 
   const openEdit = (m: Model) => {
     setEditModel(m)
@@ -681,6 +768,9 @@ export function AdminPage() {
                     <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1 }}>
                       All map layers
                     </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 1, maxWidth: 560 }}>
+                      Select one or more layers with the checkboxes, then choose a project and click Assign to project.
+                    </Typography>
                     <TextField
                       size="small"
                       fullWidth
@@ -690,6 +780,83 @@ export function AdminPage() {
                       sx={{ mb: 1, maxWidth: 400 }}
                       aria-label="Filter map layers table"
                     />
+                    {selectedModelIds.length > 0 && (
+                      <Paper
+                        variant="outlined"
+                        sx={{
+                          p: 1.5,
+                          mb: 1,
+                          borderRadius: 1,
+                          position: 'relative',
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {bulkAssigning && (
+                          <LinearProgress
+                            sx={{ position: 'absolute', top: 0, left: 0, right: 0 }}
+                            aria-label="Assigning layers to project"
+                          />
+                        )}
+                        <Stack
+                          direction={{ xs: 'column', sm: 'row' }}
+                          spacing={1.5}
+                          alignItems={{ sm: 'center' }}
+                          flexWrap="wrap"
+                          useFlexGap
+                          sx={{ pt: bulkAssigning ? 0.5 : 0 }}
+                        >
+                          <Typography variant="body2" fontWeight={600}>
+                            {selectedModelIds.length} layer{selectedModelIds.length === 1 ? '' : 's'} selected
+                          </Typography>
+                          <FormControl size="small" sx={{ minWidth: 220 }} disabled={bulkAssigning || !canAddModel}>
+                            <InputLabel id="bulk-assign-project-label">Assign to project</InputLabel>
+                            <Select
+                              labelId="bulk-assign-project-label"
+                              label="Assign to project"
+                              value={bulkAssignProjectId}
+                              onChange={(e) => setBulkAssignProjectId(e.target.value)}
+                            >
+                              {activeProjects.map((p) => (
+                                <MenuItem key={p.id} value={p.id}>
+                                  {p.name}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <Button
+                            variant="contained"
+                            size="small"
+                            disabled={
+                              bulkAssigning || !bulkAssignProjectId || selectedModelIds.length === 0 || !canAddModel
+                            }
+                            onClick={() => void handleBulkAssignToProject()}
+                          >
+                            {bulkAssigning ? 'Assigning…' : 'Assign to project'}
+                          </Button>
+                          <Button
+                            variant="text"
+                            size="small"
+                            disabled={bulkAssigning}
+                            onClick={() => {
+                              setSelectedModelIds([])
+                              setBulkAssignError(null)
+                            }}
+                          >
+                            Clear selection
+                          </Button>
+                        </Stack>
+                        {!canAddModel && (
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                            Create an active project in the Projects tab first.
+                          </Typography>
+                        )}
+                        {bulkAssignError && (
+                          <Alert severity="error" sx={{ mt: 1.5, mb: 0 }}>
+                            {bulkAssignError}
+                          </Alert>
+                        )}
+                      </Paper>
+                    )}
                     <TableContainer
                       component={Paper}
                       variant="outlined"
@@ -701,6 +868,18 @@ export function AdminPage() {
                       <Table size="small" stickyHeader aria-label="Map layers">
                         <TableHead>
                           <TableRow>
+                            <TableCell padding="checkbox" sx={{ width: 48 }}>
+                              <Checkbox
+                                size="small"
+                                indeterminate={someFilteredSelected && !allFilteredSelected}
+                                checked={allFilteredSelected}
+                                onChange={toggleSelectAllFiltered}
+                                disabled={listRefreshing || filteredModelsTable.length === 0}
+                                inputProps={{
+                                  'aria-label': 'Select all layers in this list',
+                                }}
+                              />
+                            </TableCell>
                             <TableCell width={100}>ID</TableCell>
                             <TableCell width={160}>Project</TableCell>
                             <TableCell>Species</TableCell>
@@ -715,14 +894,14 @@ export function AdminPage() {
                           {listRefreshing && models.length === 0 ? (
                             Array.from({ length: 6 }).map((_, i) => (
                               <TableRow key={i}>
-                                <TableCell colSpan={6}>
+                                <TableCell colSpan={7}>
                                   <Skeleton variant="text" width="70%" height={28} />
                                 </TableCell>
                               </TableRow>
                             ))
                           ) : filteredModelsTable.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={6}>
+                              <TableCell colSpan={7}>
                                 <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                                   {models.length === 0
                                     ? 'No layers yet. Create a project first, then click New layer to add one.'
@@ -737,6 +916,14 @@ export function AdminPage() {
                                 : 'Stand-alone'
                               return (
                                 <TableRow key={m.id} hover onClick={() => openEdit(m)} sx={{ cursor: 'pointer' }}>
+                                  <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                                    <Checkbox
+                                      size="small"
+                                      checked={selectedModelIds.includes(m.id)}
+                                      onChange={() => toggleModelSelected(m.id)}
+                                      inputProps={{ 'aria-label': `Select layer ${m.species} — ${m.activity}` }}
+                                    />
+                                  </TableCell>
                                   <TableCell>
                                     <Tooltip title={m.id}>
                                       <Typography
