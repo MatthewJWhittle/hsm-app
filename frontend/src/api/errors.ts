@@ -22,3 +22,13 @@ export function parseApiError(payload: unknown): string {
   }
   return 'Request failed'
 }
+
+/** Read JSON from a failed `fetch` response and turn it into a user-facing message. */
+export async function readFetchErrorDetail(r: Response): Promise<string> {
+  try {
+    const raw: unknown = await r.json()
+    return parseApiError(raw)
+  } catch {
+    return r.statusText || String(r.status)
+  }
+}

@@ -12,6 +12,7 @@ from backend_api.settings import Settings
 logger = logging.getLogger(__name__)
 
 SUITABILITY_FILENAME = "suitability_cog.tif"
+ENVIRONMENTAL_DRIVER_FILENAME = "environmental_cog.tif"
 
 
 class ObjectStorage(Protocol):
@@ -24,6 +25,9 @@ class ObjectStorage(Protocol):
         ``suitability_cog_path`` may be relative to ``artifact_root`` or absolute
         (see ``resolve_cog_path`` in point_sampling).
         """
+
+    def write_project_driver_cog(self, project_id: str, content: bytes) -> tuple[str, str]:
+        """Persist shared environmental COG for a catalog project; return ``(artifact_root, path)``."""
 
 
 class LocalObjectStorage:
@@ -41,6 +45,15 @@ class LocalObjectStorage:
         artifact_root = str(dest_dir)
         # Relative filename matches docs/data-models.md (folder-per-model + fixed name).
         return artifact_root, SUITABILITY_FILENAME
+
+    def write_project_driver_cog(self, project_id: str, content: bytes) -> tuple[str, str]:
+        safe_id = _safe_segment(project_id)
+        dest_dir = self._root / "projects" / safe_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = dest_dir / ENVIRONMENTAL_DRIVER_FILENAME
+        dest_path.write_bytes(content)
+        artifact_root = str(dest_dir)
+        return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
 
 
 class GcsObjectStorage:
@@ -60,6 +73,14 @@ class GcsObjectStorage:
         blob.upload_from_string(content, content_type="image/tiff")
         artifact_root = f"gs://{self._bucket.name}/{self._prefix}models/{safe_id}"
         return artifact_root, SUITABILITY_FILENAME
+
+    def write_project_driver_cog(self, project_id: str, content: bytes) -> tuple[str, str]:
+        safe_id = _safe_segment(project_id)
+        blob_name = f"{self._prefix}projects/{safe_id}/{ENVIRONMENTAL_DRIVER_FILENAME}"
+        blob = self._bucket.blob(blob_name)
+        blob.upload_from_string(content, content_type="image/tiff")
+        artifact_root = f"gs://{self._bucket.name}/{self._prefix}projects/{safe_id}"
+        return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
 
 
 def normalize_gcs_prefix(prefix: str) -> str:

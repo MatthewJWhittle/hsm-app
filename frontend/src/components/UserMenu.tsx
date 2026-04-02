@@ -41,7 +41,7 @@ export function UserMenu() {
   if (!firebaseWebConfigOk()) {
     return (
       <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 280 }}>
-        Set Firebase web config (see frontend/.env.example)
+        Sign-in isn’t configured for this app build.
       </Typography>
     )
   }
@@ -49,7 +49,7 @@ export function UserMenu() {
   if (loading) {
     return (
       <Typography variant="body2" color="text.secondary">
-        …
+        Loading…
       </Typography>
     )
   }
@@ -187,7 +187,7 @@ export function UserMenu() {
             <ListItemIcon>
               <AdminPanelSettingsOutlinedIcon fontSize="small" />
             </ListItemIcon>
-            <ListItemText>Admin</ListItemText>
+            <ListItemText>Map catalog</ListItemText>
           </MenuItem>
         )}
         <Divider />

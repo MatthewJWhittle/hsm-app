@@ -1,15 +1,52 @@
 import './App.css'
 import MapComponent from './components/Map'
+import { Box } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MapControlPanel } from './components/map/MapControlPanel'
+import { useSearchParams } from 'react-router-dom'
+import { FloatingMapTools } from './components/map/FloatingMapTools'
+import { MapControlPanel, type ProjectSummary } from './components/map/MapControlPanel'
 import { InspectionHud } from './components/InspectionHud'
 import type { Model } from './types/model'
+import type { CatalogProject } from './types/project'
 import type { PointInspection } from './types/pointInspection'
 import { fetchModelCatalog } from './api/catalog'
+import { fetchProjectCatalog } from './api/projects'
 import { fetchPointInspection } from './api/inspectPoint'
 import { Navbar } from './components/Navbar'
+import { useAuth } from './auth/useAuth'
+
+const LEGACY_PROJECT_ID = '__legacy__'
+
+function buildProjectOptions(
+  projects: CatalogProject[],
+  models: Model[],
+): { id: string; name: string }[] {
+  const opts = projects
+    .filter((p) => p.status === 'active')
+    .map((p) => ({ id: p.id, name: p.name }))
+  const hasLegacy = models.some((m) => !m.project_id)
+  if (hasLegacy) {
+    opts.push({ id: LEGACY_PROJECT_ID, name: 'Stand-alone layers' })
+  }
+  return opts
+}
+
+function modelsForProject(projectId: string, models: Model[]): Model[] {
+  if (projectId === LEGACY_PROJECT_ID) {
+    return models.filter((m) => !m.project_id)
+  }
+  return models.filter((m) => m.project_id === projectId)
+}
+
+function projectIdForModel(m: Model): string {
+  return m.project_id ?? LEGACY_PROJECT_ID
+}
 
 function App() {
+  const { user, getIdToken } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const [projects, setProjects] = useState<CatalogProject[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedModelId, setSelectedModelId] = useState('')
@@ -22,19 +59,114 @@ function App() {
   const [inspectError, setInspectError] = useState<string | null>(null)
   const [hudOpen, setHudOpen] = useState(false)
   const inspectAbortRef = useRef<AbortController | null>(null)
+  const [catalogReady, setCatalogReady] = useState(false)
 
   useEffect(() => {
-    fetchModelCatalog()
-      .then((list) => {
-        setModels(list)
+    let cancelled = false
+    setCatalogReady(false)
+    ;(async () => {
+      try {
+        const token = user ? await getIdToken(true).catch(() => null) : null
+        if (cancelled) return
+        const [plist, mlist] = await Promise.all([
+          fetchProjectCatalog({ token }),
+          fetchModelCatalog({ token }),
+        ])
+        if (cancelled) return
+        setProjects(plist)
+        setModels(mlist)
         setLoadError(null)
-        setSelectedModelId((prev) => prev || list[0]?.id || '')
-      })
-      .catch(() => {
-        setModels([])
-        setLoadError('Could not load model catalog. Is the API running?')
-      })
-  }, [])
+      } catch {
+        if (!cancelled) {
+          setProjects([])
+          setModels([])
+          setLoadError('Couldn’t load map layers. Check your connection, or try again in a moment.')
+        }
+      } finally {
+        if (!cancelled) setCatalogReady(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user, getIdToken])
+
+  const projectOptions = useMemo(
+    () => buildProjectOptions(projects, models),
+    [projects, models],
+  )
+
+  const selectedModel = useMemo(
+    () => models.find((m) => m.id === selectedModelId) ?? null,
+    [models, selectedModelId],
+  )
+
+  const selectedProjectId = useMemo(() => {
+    if (!selectedModel) return ''
+    return projectIdForModel(selectedModel)
+  }, [selectedModel])
+
+  const selectedProjectLabel = useMemo(() => {
+    if (!selectedModel) return ''
+    if (!selectedModel.project_id) return 'Stand-alone layer'
+    const p = projects.find((x) => x.id === selectedModel.project_id)
+    return p?.name ?? selectedModel.project_id
+  }, [selectedModel, projects])
+
+  useEffect(() => {
+    if (!catalogReady) return
+    const pu = searchParams.get('project')
+    const mu = searchParams.get('model')
+    const opts = projectOptions
+
+    let modelId = ''
+    let derivedProjectId = ''
+
+    if (mu) {
+      const m = models.find((x) => x.id === mu)
+      if (m) {
+        modelId = m.id
+        derivedProjectId = projectIdForModel(m)
+      }
+    }
+    if (!modelId) {
+      if (pu && opts.some((o) => o.id === pu)) {
+        const filtered = modelsForProject(pu, models)
+        const first = filtered[0]
+        if (first) {
+          modelId = first.id
+          derivedProjectId = projectIdForModel(first)
+        }
+      } else if (models.length > 0) {
+        const first = models[0]
+        modelId = first.id
+        derivedProjectId = projectIdForModel(first)
+      }
+    }
+
+    setSelectedModelId(modelId)
+    if (modelId && derivedProjectId && (pu !== derivedProjectId || mu !== modelId)) {
+      setSearchParams({ project: derivedProjectId, model: modelId }, { replace: true })
+    }
+  }, [catalogReady, searchParams, projectOptions, models, setSearchParams])
+
+  const projectSummary = useMemo((): ProjectSummary => {
+    if (!selectedProjectId) return null
+    if (selectedProjectId === LEGACY_PROJECT_ID) {
+      return {
+        isLegacy: true,
+        visibility: 'public',
+        hasEnvironmentalCog: false,
+      }
+    }
+    const p = projects.find((x) => x.id === selectedProjectId)
+    if (!p) return null
+    return {
+      isLegacy: false,
+      visibility: p.visibility,
+      hasEnvironmentalCog: Boolean(p.driver_cog_path),
+    }
+  }, [selectedProjectId, projects])
 
   const clearInspection = useCallback(() => {
     inspectAbortRef.current?.abort()
@@ -50,21 +182,21 @@ function App() {
     (modelId: string) => {
       clearInspection()
       setSelectedModelId(modelId)
+      const m = models.find((x) => x.id === modelId)
+      if (m) {
+        const pid = projectIdForModel(m)
+        setSearchParams({ project: pid, model: modelId }, { replace: true })
+      }
     },
-    [clearInspection],
+    [clearInspection, models, setSearchParams],
   )
 
   const closeHud = useCallback(() => {
     clearInspection()
   }, [clearInspection])
 
-  const selectedModel = useMemo(
-    () => models.find((m) => m.id === selectedModelId) ?? null,
-    [models, selectedModelId],
-  )
-
   const handleInspect = useCallback(
-    (lng: number, lat: number) => {
+    async (lng: number, lat: number) => {
       if (!selectedModel) return
       inspectAbortRef.current?.abort()
       const ac = new AbortController()
@@ -75,7 +207,9 @@ function App() {
       setInspectLoading(true)
       setInspectError(null)
 
-      fetchPointInspection(selectedModel.id, lng, lat, ac.signal)
+      const token = user ? await getIdToken(true).catch(() => null) : null
+
+      fetchPointInspection(selectedModel.id, lng, lat, ac.signal, { token })
         .then(setInspection)
         .catch((e: unknown) => {
           if (e instanceof Error && e.name === 'AbortError') return
@@ -89,7 +223,7 @@ function App() {
           }
         })
     },
-    [selectedModel],
+    [selectedModel, user, getIdToken],
   )
 
   return (
@@ -99,44 +233,67 @@ function App() {
         <MapControlPanel
           models={models}
           selectedModelId={selectedModelId}
-          opacity={opacity}
           onModelChange={onModelChange}
-          onOpacityChange={setOpacity}
+          projectSummary={projectSummary}
+          selectedProjectLabel={selectedProjectLabel}
         />
-        {loadError && (
-          <div
-            role="alert"
-            style={{
-              position: 'absolute',
-              top: 20,
-              right: 20,
-              zIndex: 1001,
-              background: 'rgba(255, 230, 230, 0.95)',
-              padding: '12px 16px',
-              borderRadius: 8,
-              maxWidth: 360,
-              fontSize: 14,
-            }}
-          >
-            {loadError}
-          </div>
-        )}
-        {hudOpen && selectedModel && !loadError && (
-          <InspectionHud
-            onClose={closeHud}
-            modelLabel={`${selectedModel.species} — ${selectedModel.activity}`}
-            lng={inspectCoords?.lng ?? null}
-            lat={inspectCoords?.lat ?? null}
-            inspection={inspection}
-            loading={inspectLoading}
-            error={inspectError}
-          />
-        )}
-        <MapComponent
-          opacity={opacity / 100}
-          model={selectedModel}
-          onInspect={selectedModel && !loadError ? handleInspect : undefined}
-        />
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            position: 'relative',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          {loadError && (
+            <div
+              role="alert"
+              style={{
+                position: 'absolute',
+                top: 20,
+                right: 20,
+                zIndex: 1001,
+                background: 'rgba(255, 230, 230, 0.95)',
+                padding: '12px 16px',
+                borderRadius: 8,
+                maxWidth: 360,
+                fontSize: 14,
+              }}
+            >
+              {loadError}
+            </div>
+          )}
+          {hudOpen && selectedModel && !loadError && (
+            <InspectionHud
+              onClose={closeHud}
+              modelLabel={`${selectedModel.species} — ${selectedModel.activity}`}
+              lng={inspectCoords?.lng ?? null}
+              lat={inspectCoords?.lat ?? null}
+              inspection={inspection}
+              loading={inspectLoading}
+              error={inspectError}
+              technicalDetails={{
+                modelId: selectedModel.id,
+                projectId: selectedModel.project_id,
+                driverBandIndices: selectedModel.driver_band_indices,
+              }}
+            />
+          )}
+          <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
+            <MapComponent
+              opacity={opacity / 100}
+              model={selectedModel}
+              onInspect={selectedModel && !loadError ? handleInspect : undefined}
+            />
+            <FloatingMapTools
+              opacity={opacity}
+              onOpacityChange={setOpacity}
+              disabled={!selectedModel || Boolean(loadError)}
+            />
+          </Box>
+        </Box>
       </div>
     </div>
   )

@@ -9,6 +9,10 @@ class Model(BaseModel):
     """One selectable catalog entry (species + activity + COG paths)."""
 
     id: str = Field(..., description="Stable identifier (slug-safe)")
+    project_id: str | None = Field(
+        None,
+        description="Parent catalog project id; omit only for legacy rows pre-migration",
+    )
     species: str
     activity: str
     artifact_root: str = Field(
@@ -21,6 +25,10 @@ class Model(BaseModel):
     )
     model_name: str | None = None
     model_version: str | None = None
+    driver_band_indices: list[int] | None = Field(
+        None,
+        description="0-based band indices into the project's shared environmental COG",
+    )
     driver_config: dict[str, Any] | None = None
 
     model_config = {"extra": "allow"}

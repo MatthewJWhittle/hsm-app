@@ -8,14 +8,17 @@ export async function fetchPointInspection(
   lng: number,
   lat: number,
   signal?: AbortSignal,
+  opts?: { token?: string | null },
 ): Promise<PointInspection> {
   const params = new URLSearchParams({
     lng: String(lng),
     lat: String(lat),
   })
+  const headers: Record<string, string> = {}
+  if (opts?.token) headers.Authorization = `Bearer ${opts.token}`
   const r = await fetch(
     `${apiBase()}/models/${encodeURIComponent(modelId)}/point?${params}`,
-    { signal },
+    { signal, headers },
   )
   const text = await r.text()
   let body: unknown

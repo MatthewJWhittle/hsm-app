@@ -59,3 +59,11 @@ The following remain **valid for the data model and future work** but are **not*
 
 - **`driver_config` in the admin UI** — The API may accept `driver_config` on `POST`/`PUT` for scripts or direct calls; the **`/admin` UI does not** need a JSON field in this milestone. Rich driver editing can follow when point-level drivers are wired.
 - **Registering a model by referencing an existing GCS path** (without uploading a file through the API) — **Deferred.** The first delivery is **multipart file upload** only; “catalog by reference” can be a later increment if still needed.
+
+---
+
+## 7. Catalog projects and visibility ([issue #14](https://github.com/MatthewJWhittle/hsm-app/issues/14))
+
+- **Firestore:** **`projects`** collection for catalog projects; **`models`** remain a **top-level** collection with **`project_id`** as a foreign key (no nested model subcollections).
+- **Visibility:** **`public`** projects are listed for everyone; **`private`** projects are listed only for **admins**, **uids** in **`allowed_uids`**, and callers with a valid **Bearer** token whose **uid** is in that list. **`GET /projects`** and **`GET /models`** apply the same visibility rules (backend filtering).
+- **Admin UI:** Create/edit projects (environmental COG upload) and create/edit models **scoped to a project**; optional **`driver_band_indices`** on models for typed band subsets into the shared stack.
