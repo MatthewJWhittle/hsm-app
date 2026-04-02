@@ -38,6 +38,10 @@ function modelsForProject(projectId: string, models: Model[]): Model[] {
   return models.filter((m) => m.project_id === projectId)
 }
 
+function projectIdForModel(m: Model): string {
+  return m.project_id ?? LEGACY_PROJECT_ID
+}
+
 function App() {
   const { user, getIdToken } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -45,7 +49,6 @@ function App() {
   const [projects, setProjects] = useState<CatalogProject[]>([])
   const [models, setModels] = useState<Model[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [selectedProjectId, setSelectedProjectId] = useState('')
   const [selectedModelId, setSelectedModelId] = useState('')
   const [opacity, setOpacity] = useState(70)
   const [inspectCoords, setInspectCoords] = useState<{ lng: number; lat: number } | null>(
@@ -93,30 +96,54 @@ function App() {
     [projects, models],
   )
 
+  const selectedModel = useMemo(
+    () => models.find((m) => m.id === selectedModelId) ?? null,
+    [models, selectedModelId],
+  )
+
+  const selectedProjectId = useMemo(() => {
+    if (!selectedModel) return ''
+    return projectIdForModel(selectedModel)
+  }, [selectedModel])
+
+  const selectedProjectLabel = useMemo(() => {
+    if (!selectedModel) return ''
+    if (!selectedModel.project_id) return 'Legacy (no project)'
+    const p = projects.find((x) => x.id === selectedModel.project_id)
+    return p?.name ?? selectedModel.project_id
+  }, [selectedModel, projects])
+
   useEffect(() => {
     if (!catalogReady) return
-    const opts = projectOptions
     const pu = searchParams.get('project')
     const mu = searchParams.get('model')
-    const defaultProject = opts[0]?.id ?? ''
-    const projectId =
-      pu && opts.some((o) => o.id === pu) ? pu : defaultProject
-    const filtered = modelsForProject(projectId, models)
-    const defaultModel = filtered[0]?.id ?? ''
-    const modelId =
-      mu && filtered.some((m) => m.id === mu) ? mu : defaultModel
+    const opts = projectOptions
 
-    setSelectedProjectId(projectId)
+    let modelId = ''
+    let derivedProjectId = ''
+
+    if (mu && models.some((m) => m.id === mu)) {
+      const m = models.find((x) => x.id === mu)!
+      modelId = m.id
+      derivedProjectId = projectIdForModel(m)
+    } else if (pu && opts.some((o) => o.id === pu)) {
+      const filtered = modelsForProject(pu, models)
+      const first = filtered[0]
+      if (first) {
+        modelId = first.id
+        derivedProjectId = projectIdForModel(first)
+      }
+    } else if (models.length > 0) {
+      const first = models[0]
+      modelId = first.id
+      derivedProjectId = projectIdForModel(first)
+    }
+
     setSelectedModelId(modelId)
-    if (projectId && modelId && (pu !== projectId || mu !== modelId)) {
-      setSearchParams({ project: projectId, model: modelId }, { replace: true })
+    if (modelId && derivedProjectId && (pu !== derivedProjectId || mu !== modelId)) {
+      setSearchParams({ project: derivedProjectId, model: modelId }, { replace: true })
     }
   }, [catalogReady, searchParams, projectOptions, models, setSearchParams])
-
-  const filteredModels = useMemo(
-    () => modelsForProject(selectedProjectId, models),
-    [selectedProjectId, models],
-  )
 
   const projectSummary = useMemo((): ProjectSummary => {
     if (!selectedProjectId) return null
@@ -146,39 +173,22 @@ function App() {
     setHudOpen(false)
   }, [])
 
-  const onProjectChange = useCallback(
-    (projectId: string) => {
+  const onModelChange = useCallback(
+    (modelId: string) => {
       clearInspection()
-      setSelectedProjectId(projectId)
-      const next = modelsForProject(projectId, models)
-      const nextId = next[0]?.id ?? ''
-      setSelectedModelId(nextId)
-      if (projectId && nextId) {
-        setSearchParams({ project: projectId, model: nextId }, { replace: true })
+      setSelectedModelId(modelId)
+      const m = models.find((x) => x.id === modelId)
+      if (m) {
+        const pid = projectIdForModel(m)
+        setSearchParams({ project: pid, model: modelId }, { replace: true })
       }
     },
     [clearInspection, models, setSearchParams],
   )
 
-  const onModelChange = useCallback(
-    (modelId: string) => {
-      clearInspection()
-      setSelectedModelId(modelId)
-      if (selectedProjectId && modelId) {
-        setSearchParams({ project: selectedProjectId, model: modelId }, { replace: true })
-      }
-    },
-    [clearInspection, selectedProjectId, setSearchParams],
-  )
-
   const closeHud = useCallback(() => {
     clearInspection()
   }, [clearInspection])
-
-  const selectedModel = useMemo(
-    () => models.find((m) => m.id === selectedModelId) ?? null,
-    [models, selectedModelId],
-  )
 
   const handleInspect = useCallback(
     async (lng: number, lat: number) => {
@@ -216,13 +226,11 @@ function App() {
       <Navbar />
       <div className="app-main">
         <MapControlPanel
-          projectOptions={projectOptions}
-          selectedProjectId={selectedProjectId}
-          onProjectChange={onProjectChange}
-          models={filteredModels}
+          models={models}
           selectedModelId={selectedModelId}
           onModelChange={onModelChange}
           projectSummary={projectSummary}
+          selectedProjectLabel={selectedProjectLabel}
         />
         <Box
           sx={{
