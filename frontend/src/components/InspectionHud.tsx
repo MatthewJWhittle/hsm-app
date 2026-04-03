@@ -10,6 +10,7 @@ import {
 import { alpha, useTheme } from '@mui/material/styles'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { INTERPRETATION_HUD_REMINDER } from '../copy/interpretation'
+import { clampSuitability01, SUITABILITY_VIRIDIS_GRADIENT_CSS } from '../map/suitabilityScale'
 import type { PointInspection as PointInspectionData } from '../types/pointInspection'
 
 export interface InspectionTechnicalDetails {
@@ -70,6 +71,44 @@ function SuitabilityReadout({
         </Typography>
       ) : null}
     </Typography>
+  )
+}
+
+function SuitabilityScaleMarker({ value, stale }: { value: number; stale: boolean }) {
+  const pct = clampSuitability01(value) * 100
+  return (
+    <Box sx={{ mt: 0.75, opacity: stale ? 0.38 : 1, transition: 'opacity 0.2s ease' }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+        On this layer’s 0–1 scale
+      </Typography>
+      <Box
+        role="img"
+        aria-label={`Sample at about ${pct.toFixed(0)} percent along the low-to-high scale for this layer`}
+        sx={{
+          position: 'relative',
+          height: 6,
+          borderRadius: 0.5,
+          overflow: 'hidden',
+          border: 1,
+          borderColor: 'divider',
+        }}
+      >
+        <Box sx={{ position: 'absolute', inset: 0, background: SUITABILITY_VIRIDIS_GRADIENT_CSS }} />
+        <Box
+          aria-hidden
+          sx={{
+            position: 'absolute',
+            left: `${pct}%`,
+            top: 0,
+            bottom: 0,
+            width: 2,
+            ml: '-1px',
+            bgcolor: 'background.paper',
+            boxShadow: (t) => `0 0 0 1px ${t.palette.divider}`,
+          }}
+        />
+      </Box>
+    </Box>
   )
 }
 
@@ -298,7 +337,10 @@ export function InspectionHud({
       )}
 
       {inspection && (loading || (!loading && !error)) && (
-        <SuitabilityReadout inspection={inspection} stale={loading} />
+        <Box>
+          <SuitabilityReadout inspection={inspection} stale={loading} />
+          <SuitabilityScaleMarker value={inspection.value} stale={loading} />
+        </Box>
       )}
 
       {!loading && error && (

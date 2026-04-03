@@ -1,15 +1,6 @@
 import OpacityIcon from '@mui/icons-material/Opacity'
-import {
-  Box,
-  ClickAwayListener,
-  Collapse,
-  IconButton,
-  Paper,
-  Slider,
-  Stack,
-  Tooltip,
-  Typography,
-} from '@mui/material'
+import { Box, ClickAwayListener, Collapse, IconButton, Paper, Slider, Stack, Tooltip, Typography } from '@mui/material'
+import type { SxProps, Theme } from '@mui/material/styles'
 import { useCallback, useState } from 'react'
 
 interface FloatingMapToolsProps {
@@ -17,12 +8,15 @@ interface FloatingMapToolsProps {
   onOpacityChange: (value: number) => void
   /** When true, opacity has no visible effect (no layer). */
   disabled?: boolean
+  /** Outer wrapper styles; parent can position the stack (default: no absolute — use with map overlay wrapper). */
+  sx?: SxProps<Theme>
 }
 
 export function FloatingMapTools({
   opacity,
   onOpacityChange,
   disabled = false,
+  sx,
 }: FloatingMapToolsProps) {
   const [open, setOpen] = useState(false)
 
@@ -40,11 +34,8 @@ export function FloatingMapTools({
   return (
     <Box
       sx={{
-        position: 'absolute',
-        bottom: 20,
-        left: 20,
-        zIndex: 999,
         pointerEvents: 'auto',
+        ...sx,
       }}
     >
       <ClickAwayListener onClickAway={handleClickAway}>

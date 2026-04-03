@@ -8,6 +8,7 @@ import { FloatingMapTools } from './components/map/FloatingMapTools'
 import { MapControlPanel, type ProjectSummary } from './components/map/MapControlPanel'
 import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
+import { SuitabilityLegend } from './components/map/SuitabilityLegend'
 import { InspectionHud } from './components/InspectionHud'
 import type { Model } from './types/model'
 import type { CatalogProject } from './types/project'
@@ -294,11 +295,34 @@ function App() {
               model={selectedModel}
               onInspect={selectedModel && !loadError ? handleInspect : undefined}
             />
-            <FloatingMapTools
-              opacity={opacity}
-              onOpacityChange={setOpacity}
-              disabled={!selectedModel || Boolean(loadError)}
-            />
+            {selectedModel && !loadError && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 20,
+                  right: 20,
+                  zIndex: 999,
+                  pointerEvents: 'auto',
+                }}
+              >
+                <SuitabilityLegend />
+              </Box>
+            )}
+            <Box
+              sx={{
+                position: 'absolute',
+                bottom: 20,
+                left: 20,
+                zIndex: 999,
+                pointerEvents: 'auto',
+              }}
+            >
+              <FloatingMapTools
+                opacity={opacity}
+                onOpacityChange={setOpacity}
+                disabled={!selectedModel || Boolean(loadError)}
+              />
+            </Box>
             <FloatingMapInterpretation onOpen={() => setMapInfoOpen(true)} />
           </Box>
         </Box>
