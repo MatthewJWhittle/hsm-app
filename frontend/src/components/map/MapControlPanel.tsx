@@ -1,14 +1,18 @@
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import {
   Autocomplete,
   Box,
-  Chip,
   Drawer,
+  IconButton,
+  Paper,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { useMemo } from 'react'
 import type { Model } from '../../types/model'
+import { layerDisplayName } from '../../utils/layerDisplay'
 
 /** Left map sidebar width (GIS-style controls; keeps map focal area clear). */
 export const MAP_SIDEBAR_WIDTH_PX = 320
@@ -24,25 +28,23 @@ interface MapControlPanelProps {
   models: Model[]
   selectedModelId: string
   onModelChange: (modelId: string) => void
-  projectSummary: ProjectSummary
-  selectedProjectLabel: string
-}
-
-function modelLabel(m: Model): string {
-  return `${m.species} — ${m.activity}`
+  onOpenMapInfoDialog: () => void
+  onOpenLayerDetailsDialog: () => void
 }
 
 export function MapControlPanel({
   models,
   selectedModelId,
   onModelChange,
-  projectSummary,
-  selectedProjectLabel,
+  onOpenMapInfoDialog,
+  onOpenLayerDetailsDialog,
 }: MapControlPanelProps) {
   const selectedModel = useMemo(
     () => models.find((m) => m.id === selectedModelId) ?? null,
     [models, selectedModelId],
   )
+
+  const selectedTitle = selectedModel ? layerDisplayName(selectedModel) : ''
 
   return (
     <Drawer
@@ -63,26 +65,50 @@ export function MapControlPanel({
       }}
     >
       <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
-        <Typography variant="h6" component="h2" gutterBottom sx={{ fontWeight: 700 }}>
-          Map
-        </Typography>
+        <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={0.5} sx={{ mb: 1 }}>
+          <Typography variant="h6" component="h2" sx={{ fontWeight: 700, flex: 1, minWidth: 0 }}>
+            Map
+          </Typography>
+          <Tooltip title="About this map">
+            <IconButton
+              size="small"
+              onClick={onOpenMapInfoDialog}
+              aria-label="About this map"
+              sx={{ mt: -0.5 }}
+            >
+              <InfoOutlinedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Stack>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, lineHeight: 1.45 }}>
-          Choose what to show on the map. You can search by species or activity. Project information appears below after
-          you pick a layer.
+          Explore modelled habitat suitability by species and activity.
         </Typography>
 
-        <Box sx={{ mb: 2, flex: 1 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
-            Layer
-          </Typography>
+        <Paper variant="outlined" sx={{ p: 1.5, mb: 1, flex: 1, borderRadius: 1, bgcolor: 'background.paper' }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 0.75 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
+              Layer
+            </Typography>
+            <Tooltip title={selectedModel ? 'Layer details (version, project)' : 'Select a layer first'}>
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={onOpenLayerDetailsDialog}
+                  disabled={!selectedModel}
+                  aria-label="Layer details: version and project"
+                >
+                  <InfoOutlinedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Stack>
           <Typography
             id="map-section-model-help"
             variant="caption"
             color="text.secondary"
-            sx={{ display: 'block', mt: 0.25, mb: 1, lineHeight: 1.45 }}
+            sx={{ display: 'block', mb: 1.25, lineHeight: 1.45 }}
           >
-            Each option is a habitat suitability map for a species and activity. The coloured layer is the prediction
-            raster, not raw survey points.
+            Habitat suitability layer (modelled raster, not raw survey points).
           </Typography>
 
           <Autocomplete
@@ -92,7 +118,7 @@ export function MapControlPanel({
             onChange={(_, newValue) => {
               onModelChange(newValue?.id ?? '')
             }}
-            getOptionLabel={(m) => modelLabel(m)}
+            getOptionLabel={(m) => layerDisplayName(m)}
             isOptionEqualToValue={(a, b) => a.id === b.id}
             disabled={models.length === 0}
             noOptionsText="No matching layers"
@@ -103,67 +129,30 @@ export function MapControlPanel({
                 (m) =>
                   m.species.toLowerCase().includes(q) ||
                   m.activity.toLowerCase().includes(q) ||
-                  modelLabel(m).toLowerCase().includes(q),
+                  layerDisplayName(m).toLowerCase().includes(q),
               )
             }}
+            renderOption={(props, m) => (
+              <li {...props} key={m.id} title={layerDisplayName(m)}>
+                <Typography variant="body2" sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }} title={layerDisplayName(m)}>
+                  {layerDisplayName(m)}
+                </Typography>
+              </li>
+            )}
             renderInput={(params) => (
               <TextField
                 {...params}
                 label="Species and activity"
                 placeholder="Search layers…"
                 aria-describedby="map-section-model-help"
+                inputProps={{
+                  ...params.inputProps,
+                  title: selectedTitle,
+                }}
               />
             )}
-            sx={{ mb: 2 }}
           />
-
-          {selectedModel && (
-            <>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
-                Project
-              </Typography>
-              <Typography
-                id="map-section-catalog-help"
-                variant="caption"
-                color="text.secondary"
-                sx={{ display: 'block', mt: 0.25, mb: 1, lineHeight: 1.45 }}
-              >
-                {projectSummary?.isLegacy
-                  ? 'This layer stands alone—it isn’t grouped with a shared project dataset.'
-                  : 'Layers in the same project can share background environmental data (for example climate or terrain). Your team adds that file in Admin if needed.'}
-              </Typography>
-
-              {projectSummary && !projectSummary.isLegacy && (
-                <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mb: 1 }}>
-                  <Chip
-                    size="small"
-                    label={projectSummary.visibility === 'private' ? 'Private' : 'Public'}
-                    color={projectSummary.visibility === 'private' ? 'warning' : 'default'}
-                    variant="outlined"
-                  />
-                  <Chip
-                    size="small"
-                    label={
-                      projectSummary.hasEnvironmentalCog
-                        ? 'Shared environmental data on file'
-                        : 'No shared environmental file yet'
-                    }
-                    color={projectSummary.hasEnvironmentalCog ? 'success' : 'default'}
-                    variant="outlined"
-                  />
-                </Stack>
-              )}
-
-              <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                {selectedProjectLabel || '—'}
-              </Typography>
-            </>
-          )}
-        </Box>
-
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45, opacity: 0.9, mt: 'auto', pt: 1 }}>
-          Uses the usual web map layout (Web Mercator). Uploaded layers need to match that format.
-        </Typography>
+        </Paper>
       </Box>
     </Drawer>
   )

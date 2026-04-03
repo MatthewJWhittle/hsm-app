@@ -9,6 +9,7 @@ import {
 } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { INTERPRETATION_HUD_REMINDER } from '../copy/interpretation'
 import type { PointInspection as PointInspectionData } from '../types/pointInspection'
 
 export interface InspectionTechnicalDetails {
@@ -327,7 +328,7 @@ export function InspectionHud({
             aria-expanded={technicalOpen}
             sx={{ minWidth: 0, px: 0, py: 0.25, textTransform: 'none', fontSize: '0.75rem' }}
           >
-            {technicalOpen ? '▼' : '▶'} Details for support
+            {technicalOpen ? '▼' : '▶'} View technical details
           </Button>
           <Collapse in={technicalOpen}>
             <Box
@@ -374,7 +375,7 @@ export function InspectionHud({
         color="text.secondary"
         sx={{ display: 'block', mt: 1.25, lineHeight: 1.45, opacity: 0.85 }}
       >
-        Modelled prediction—not a record of species on the ground.
+        {INTERPRETATION_HUD_REMINDER}
       </Typography>
     </Paper>
   )
