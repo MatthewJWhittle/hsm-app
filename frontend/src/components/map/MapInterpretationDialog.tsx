@@ -4,7 +4,7 @@ import {
   INTERPRETATION_CRS_NOTE,
   INTERPRETATION_DECISION_SUPPORT,
   INTERPRETATION_DRIVERS_POINTER,
-  INTERPRETATION_GUARDLINE_SHORT,
+  INTERPRETATION_GUARDRAIL_SHORT,
   MAP_INFO_DIALOG_TITLE,
 } from '../../copy/interpretation'
 
@@ -32,7 +32,7 @@ export function MapInterpretationDialog({ open, onClose }: MapInterpretationDial
       </DialogTitle>
       <DialogContent dividers sx={{ pt: 1 }}>
         <Typography variant="body2" color="text.primary" sx={{ lineHeight: 1.5, fontWeight: 600, mb: 1.5 }}>
-          {INTERPRETATION_GUARDLINE_SHORT}
+          {INTERPRETATION_GUARDRAIL_SHORT}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.55, mb: 1.5 }}>
           {INTERPRETATION_DECISION_SUPPORT}

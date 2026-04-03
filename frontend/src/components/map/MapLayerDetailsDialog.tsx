@@ -9,7 +9,11 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import { formatModelCatalogLabel, LAYER_DETAILS_DIALOG_TITLE } from '../../copy/interpretation'
+import {
+  formatModelCatalogLabel,
+  LAYER_DETAILS_DIALOG_TITLE,
+  LAYER_DETAILS_PROJECT_METADATA_UNAVAILABLE,
+} from '../../copy/interpretation'
 import type { Model } from '../../types/model'
 import { layerDisplayName } from '../../utils/layerDisplay'
 import type { ProjectSummary } from './MapControlPanel'
@@ -30,6 +34,16 @@ export function MapLayerDetailsDialog({
   selectedProjectLabel,
 }: MapLayerDetailsDialogProps) {
   const show = Boolean(open && model)
+
+  const projectContextCopy =
+    model &&
+    (projectSummary?.isLegacy
+      ? 'This layer stands alone—it isn’t grouped with a shared project dataset.'
+      : projectSummary && !projectSummary.isLegacy
+        ? 'Layers in the same project can share background environmental data (for example climate or terrain). Your team adds that file in Admin if needed.'
+        : model.project_id
+          ? LAYER_DETAILS_PROJECT_METADATA_UNAVAILABLE
+          : 'This layer stands alone—it isn’t grouped with a shared project dataset.')
 
   return (
     <Dialog
@@ -67,9 +81,7 @@ export function MapLayerDetailsDialog({
               Project
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.55, mb: 1 }}>
-              {projectSummary?.isLegacy
-                ? 'This layer stands alone—it isn’t grouped with a shared project dataset.'
-                : 'Layers in the same project can share background environmental data (for example climate or terrain). Your team adds that file in Admin if needed.'}
+              {projectContextCopy}
             </Typography>
 
             {projectSummary && !projectSummary.isLegacy && (

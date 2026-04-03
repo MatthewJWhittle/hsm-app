@@ -17,6 +17,7 @@ import { fetchProjectCatalog } from './api/projects'
 import { fetchPointInspection } from './api/inspectPoint'
 import { Navbar } from './components/Navbar'
 import { useAuth } from './auth/useAuth'
+import { layerDisplayName } from './utils/layerDisplay'
 
 const LEGACY_PROJECT_ID = '__legacy__'
 
@@ -274,7 +275,7 @@ function App() {
           {hudOpen && selectedModel && !loadError && (
             <InspectionHud
               onClose={closeHud}
-              modelLabel={`${selectedModel.species} — ${selectedModel.activity}`}
+              modelLabel={layerDisplayName(selectedModel)}
               lng={inspectCoords?.lng ?? null}
               lat={inspectCoords?.lat ?? null}
               inspection={inspection}

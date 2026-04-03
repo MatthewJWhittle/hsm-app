@@ -1,7 +1,7 @@
 import type { Model } from '../types/model'
 
 /** Primary guardrail — use in Alert / high-visibility surfaces (issue #19). */
-export const INTERPRETATION_GUARDLINE_SHORT =
+export const INTERPRETATION_GUARDRAIL_SHORT =
   'This map shows modelled relative suitability, not confirmed presence or absence.'
 
 /** Secondary line under the guardrail (map sidebar). */
@@ -25,6 +25,10 @@ export const MAP_INFO_DIALOG_TITLE = 'About this map'
 
 /** Dialog title — catalog model, project, and layer metadata. */
 export const LAYER_DETAILS_DIALOG_TITLE = 'Layer details'
+
+/** When the model references a project missing from the loaded catalog (issue #19 / PR review). */
+export const LAYER_DETAILS_PROJECT_METADATA_UNAVAILABLE =
+  'Project metadata isn’t available in the catalog for this layer right now. The map may still show the layer correctly.'
 
 /**
  * Display line for catalog model name/version (matches admin list pattern).

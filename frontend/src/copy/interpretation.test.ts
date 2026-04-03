@@ -5,8 +5,9 @@ import {
   INTERPRETATION_DECISION_SUPPORT,
   INTERPRETATION_DRIVERS_POINTER,
   LAYER_DETAILS_DIALOG_TITLE,
+  LAYER_DETAILS_PROJECT_METADATA_UNAVAILABLE,
   MAP_INFO_DIALOG_TITLE,
-  INTERPRETATION_GUARDLINE_SHORT,
+  INTERPRETATION_GUARDRAIL_SHORT,
   INTERPRETATION_HUD_REMINDER,
 } from './interpretation'
 
@@ -28,13 +29,14 @@ describe('formatModelCatalogLabel', () => {
 
 describe('interpretation copy', () => {
   it('includes stable phrases for product review (issue #19)', () => {
-    expect(INTERPRETATION_GUARDLINE_SHORT).toMatch(/relative suitability/i)
-    expect(INTERPRETATION_GUARDLINE_SHORT).toMatch(/presence|absent/i)
+    expect(INTERPRETATION_GUARDRAIL_SHORT).toMatch(/relative suitability/i)
+    expect(INTERPRETATION_GUARDRAIL_SHORT).toMatch(/presence|absent/i)
     expect(INTERPRETATION_DECISION_SUPPORT).toMatch(/expert judgement|judgment/i)
     expect(INTERPRETATION_DRIVERS_POINTER).toMatch(/click the map/i)
     expect(INTERPRETATION_HUD_REMINDER).toMatch(/relative suitability|presence|absent/i)
     expect(INTERPRETATION_CRS_NOTE).toMatch(/Web Mercator/i)
     expect(MAP_INFO_DIALOG_TITLE.length).toBeGreaterThan(0)
     expect(LAYER_DETAILS_DIALOG_TITLE.length).toBeGreaterThan(0)
+    expect(LAYER_DETAILS_PROJECT_METADATA_UNAVAILABLE).toMatch(/catalog/i)
   })
 })
