@@ -295,20 +295,28 @@ function App() {
               model={selectedModel}
               onInspect={selectedModel && !loadError ? handleInspect : undefined}
             />
+            {selectedModel && !loadError && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 20,
+                  right: 20,
+                  zIndex: 999,
+                  pointerEvents: 'auto',
+                }}
+              >
+                <SuitabilityLegend />
+              </Box>
+            )}
             <Box
               sx={{
                 position: 'absolute',
                 bottom: 20,
                 left: 20,
                 zIndex: 999,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 1,
-                alignItems: 'flex-start',
                 pointerEvents: 'auto',
               }}
             >
-              {selectedModel && !loadError && <SuitabilityLegend />}
               <FloatingMapTools
                 opacity={opacity}
                 onOpacityChange={setOpacity}
