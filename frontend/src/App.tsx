@@ -3,8 +3,11 @@ import MapComponent from './components/Map'
 import { Box } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { FloatingMapInterpretation } from './components/map/FloatingMapInterpretation'
 import { FloatingMapTools } from './components/map/FloatingMapTools'
 import { MapControlPanel, type ProjectSummary } from './components/map/MapControlPanel'
+import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
+import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
 import { InspectionHud } from './components/InspectionHud'
 import type { Model } from './types/model'
 import type { CatalogProject } from './types/project'
@@ -60,6 +63,8 @@ function App() {
   const [hudOpen, setHudOpen] = useState(false)
   const inspectAbortRef = useRef<AbortController | null>(null)
   const [catalogReady, setCatalogReady] = useState(false)
+  const [mapInfoOpen, setMapInfoOpen] = useState(false)
+  const [layerDetailsOpen, setLayerDetailsOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -181,6 +186,7 @@ function App() {
   const onModelChange = useCallback(
     (modelId: string) => {
       clearInspection()
+      if (!modelId) setLayerDetailsOpen(false)
       setSelectedModelId(modelId)
       const m = models.find((x) => x.id === modelId)
       if (m) {
@@ -234,8 +240,8 @@ function App() {
           models={models}
           selectedModelId={selectedModelId}
           onModelChange={onModelChange}
-          projectSummary={projectSummary}
-          selectedProjectLabel={selectedProjectLabel}
+          onOpenMapInfoDialog={() => setMapInfoOpen(true)}
+          onOpenLayerDetailsDialog={() => setLayerDetailsOpen(true)}
         />
         <Box
           sx={{
@@ -292,8 +298,17 @@ function App() {
               onOpacityChange={setOpacity}
               disabled={!selectedModel || Boolean(loadError)}
             />
+            <FloatingMapInterpretation onOpen={() => setMapInfoOpen(true)} />
           </Box>
         </Box>
+        <MapInterpretationDialog open={mapInfoOpen} onClose={() => setMapInfoOpen(false)} />
+        <MapLayerDetailsDialog
+          open={layerDetailsOpen}
+          onClose={() => setLayerDetailsOpen(false)}
+          model={selectedModel}
+          projectSummary={projectSummary}
+          selectedProjectLabel={selectedProjectLabel}
+        />
       </div>
     </div>
   )

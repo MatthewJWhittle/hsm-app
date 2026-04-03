@@ -1,21 +1,30 @@
 import type { Model } from '../types/model'
 
-/** Section title for map interpretation (issue #19 / application-spec). */
-export const INTERPRETATION_SECTION_TITLE = 'What this map shows'
+/** Primary guardrail — use in Alert / high-visibility surfaces (issue #19). */
+export const INTERPRETATION_GUARDLINE_SHORT =
+  'This map shows modelled relative suitability, not confirmed presence or absence.'
 
-/**
- * Short, plain-language caveats aligned with docs/product-principles.md
- * (decision support, relative output, visible limitations).
- */
-export const INTERPRETATION_RELATIVE_SUITABILITY =
-  'The layer shows relative suitability from the model, not proof that a species is present or absent. A high value does not confirm presence; a low value does not confirm absence.'
-
+/** Secondary line under the guardrail (map sidebar). */
 export const INTERPRETATION_DECISION_SUPPORT =
-  'Use this map to support planning and discussion alongside field survey and expert judgement—it does not replace them.'
+  'Use it alongside field survey and expert judgement—not as a substitute.'
 
-/** Where to find local driver context (point inspection in App). */
+/** Where to find local score and drivers (point inspection). */
 export const INTERPRETATION_DRIVERS_POINTER =
-  'Click the map to see what drives suitability at that location and to review technical details for the selected layer.'
+  'Click the map for a local score, drivers when available, and technical details.'
+
+/** Short reminder in the point-inspection HUD (repeat key caution). */
+export const INTERPRETATION_HUD_REMINDER =
+  'Modelled relative suitability—not confirmed presence or absence on the ground.'
+
+/** CRS / layout note (dialog and help). */
+export const INTERPRETATION_CRS_NOTE =
+  'Uses the usual web map layout (Web Mercator). Uploaded layers need to match that format.'
+
+/** Dialog title — general map / app interpretation (not layer-specific). */
+export const MAP_INFO_DIALOG_TITLE = 'About this map'
+
+/** Dialog title — catalog model, project, and layer metadata. */
+export const LAYER_DETAILS_DIALOG_TITLE = 'Layer details'
 
 /**
  * Display line for catalog model name/version (matches admin list pattern).
