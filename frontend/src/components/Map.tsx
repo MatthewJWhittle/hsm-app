@@ -1,6 +1,7 @@
 import Map, { Layer, Source } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useMemo, useRef } from 'react'
+import { COLORMAP_NAME, SUITABILITY_RESCALE_MAX, SUITABILITY_RESCALE_MIN } from '../map/suitabilityScale'
 import type { Model } from '../types/model'
 import { resolveSuitabilityPath } from '../utils/cogPath'
 import { titilerBase } from '../utils/apiBase'
@@ -26,8 +27,8 @@ function MapComponent({
     const urlParam = `file:///${pathForFileUrl}`
     const searchParams = new URLSearchParams({
       url: urlParam,
-      colormap_name: 'viridis',
-      rescale: '0,1',
+      colormap_name: COLORMAP_NAME,
+      rescale: `${SUITABILITY_RESCALE_MIN},${SUITABILITY_RESCALE_MAX}`,
     })
     const base = titilerBase().replace(/\/$/, '')
     return `${base}/cog/tiles/WebMercatorQuad/{z}/{x}/{y}?${searchParams.toString()}`
