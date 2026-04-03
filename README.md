@@ -160,6 +160,13 @@ Sign out and back in (or use **Sign in** again) so the client gets a **fresh ID 
 
 **Firebase Hosting deploys** the Vite production build at **`frontend/dist`** (build with `cd frontend && npm run build`). GitHub Actions run the same build before `firebase deploy`.
 
+### Testing
+
+- **Backend:** `cd backend && uv sync --group dev && uv run pytest`
+- **Frontend:** `cd frontend && npm run test` (use `npm run test:watch` during development)
+
+On every pull request and push to `main`, [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs pytest and the frontend test + lint + build suite ([issue #18](https://github.com/MatthewJWhittle/hsm-app/issues/18)).
+
 ## Development
 
 ### Catalog backend and issue #4
