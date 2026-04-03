@@ -316,14 +316,14 @@ When several valid options exist, choose the one that is:
 * Validation: **manual type guards** in `src/api/` (no Zod in tree today; add if validation grows)
 * Routing: **react-router-dom** — `/` map app, `/admin` catalog admin ([`src/main.tsx`](src/main.tsx), [`src/admin/AdminPage.tsx`](src/admin/AdminPage.tsx))
 * Styling: **MUI 7 + Emotion** (`@mui/material`, `@emotion/react`, `@emotion/styled`), plus `src/index.css` / `src/App.css`
-* Testing: **not wired yet** — track [issue #7](https://github.com/MatthewJWhittle/hsm-app/issues/7) (Vitest + Testing Library + `npm test`)
+* Testing: **Vitest** — `npm run test` / `npm run test:watch`; CI in [.github/workflows/ci.yml](https://github.com/MatthewJWhittle/hsm-app/blob/main/.github/workflows/ci.yml) ([issue #18](https://github.com/MatthewJWhittle/hsm-app/issues/18))
 
 ### Conventions
 
 * Export style: **mixed** — `App` and `Map` default-exported (Vite/React convention); prefer **named exports** for new components and `src/api/*`
 * Component file naming: **`PascalCase.tsx`** for components
 * Hook naming: `useX`
-* Test naming: **`*.test.tsx`** next to source (once test runner exists)
+* Test naming: **`*.test.ts`** / **`*.test.tsx`** next to source
 * Shared types location: **`src/types/`**
 * API client location: **`src/api/`** (`catalog.ts`, `inspectPoint.ts`, parsers, `errors.ts`)
 * Shared UI location: **`src/components/`** (feature subfolders e.g. `map/`)
@@ -331,7 +331,7 @@ When several valid options exist, choose the one that is:
 ### Commands
 
 * Lint: `npm run lint`
-* Test: *not configured* — [#7](https://github.com/MatthewJWhittle/hsm-app/issues/7)
+* Test: `npm run test` (watch: `npm run test:watch`) — tracked in [#18](https://github.com/MatthewJWhittle/hsm-app/issues/18)
 * Build: `npm run build` (runs `tsc -b` then Vite)
 * Typecheck: `npm run build` (project references) or `npx tsc -b --noEmit` from `frontend/`
 
