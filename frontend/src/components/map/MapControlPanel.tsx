@@ -3,11 +3,19 @@ import {
   Box,
   Chip,
   Drawer,
+  Paper,
   Stack,
   TextField,
   Typography,
 } from '@mui/material'
 import { useMemo } from 'react'
+import {
+  formatModelCatalogLabel,
+  INTERPRETATION_DECISION_SUPPORT,
+  INTERPRETATION_DRIVERS_POINTER,
+  INTERPRETATION_RELATIVE_SUITABILITY,
+  INTERPRETATION_SECTION_TITLE,
+} from '../../copy/interpretation'
 import type { Model } from '../../types/model'
 
 /** Left map sidebar width (GIS-style controls; keeps map focal area clear). */
@@ -117,8 +125,47 @@ export function MapControlPanel({
             sx={{ mb: 2 }}
           />
 
+          <Paper
+            variant="outlined"
+            sx={{
+              p: 1.5,
+              mb: 2,
+              bgcolor: 'action.hover',
+              borderColor: 'divider',
+            }}
+          >
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              component="h3"
+              sx={{ fontWeight: 600, letterSpacing: '0.04em', display: 'block', mb: 1 }}
+            >
+              {INTERPRETATION_SECTION_TITLE}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45, mb: 1 }}>
+              {INTERPRETATION_RELATIVE_SUITABILITY}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45, mb: 1 }}>
+              {INTERPRETATION_DECISION_SUPPORT}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.45 }}>
+              {INTERPRETATION_DRIVERS_POINTER}
+            </Typography>
+          </Paper>
+
           {selectedModel && (
             <>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
+                Model name and version
+              </Typography>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ display: 'block', mt: 0.25, mb: 2, lineHeight: 1.45 }}
+              >
+                {formatModelCatalogLabel(selectedModel)}
+              </Typography>
+
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
                 Project
               </Typography>
