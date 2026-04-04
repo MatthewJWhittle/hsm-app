@@ -24,7 +24,6 @@ from backend_api.catalog_service import CatalogService
 from backend_api.catalog_write import upsert_model
 from backend_api.cog_validation import CogValidationError
 from backend_api.deps.catalog import (
-    get_catalog_service,
     get_model_or_404,
     get_object_storage,
     require_catalog_ready,
@@ -34,7 +33,12 @@ from backend_api.deps.visibility_models import (
     get_model_visible_or_404,
 )
 from backend_api.deps.settings_dep import get_settings
-from backend_api.point_sampling import PointSamplingError, inspect_point
+from backend_api.point_sampling import (
+    PointSamplingError,
+    RasterNotFoundError,
+    inspect_point,
+    validate_driver_band_indices_for_model,
+)
 from backend_api.schemas import Model, PointInspection
 from backend_api.schemas_admin import parse_driver_config_form
 from backend_api.routers.catalog_upload_utils import (
@@ -110,25 +114,28 @@ async def get_model_point(
         Query(..., ge=-90.0, le=90.0, description="Latitude (WGS84)"),
     ],
     m: Annotated[Model, Depends(get_model_visible_or_404)],
+    catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
 ):
     """
     Suitability value at a WGS84 point (band 1 of the model COG).
+
+    When the model has ``driver_band_indices`` and a resolvable environmental COG
+    (project stack or ``driver_config.driver_cog_path``), returns raw driver values
+    at the point in ``drivers`` (see docs/data-models.md). Driver membership is read
+    from the catalog model only, not from query parameters.
 
     Returns 422 if the point is outside the raster, nodata, or the file CRS is not EPSG:3857.
     """
 
     def _run() -> PointInspection:
-        return inspect_point(m, lng, lat)
+        return inspect_point(m, lng, lat, catalog=catalog)
 
     try:
         return await run_in_threadpool(_run)
     except PointSamplingError as e:
         raise HTTPException(status_code=422, detail=e.detail) from e
-    except FileNotFoundError as e:
-        raise HTTPException(
-            status_code=503,
-            detail="suitability raster not found on server",
-        ) from e
+    except RasterNotFoundError as e:
+        raise HTTPException(status_code=503, detail=e.detail) from e
 
 
 @router.post(
@@ -200,6 +207,14 @@ async def create_model(
         driver_band_indices=band_indices,
         driver_config=dc,
     )
+
+    def _validate_driver_bands() -> None:
+        validate_driver_band_indices_for_model(model, catalog)
+
+    try:
+        await run_in_threadpool(_validate_driver_bands)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
     def _persist() -> None:
         upsert_model(settings, model)
@@ -311,6 +326,14 @@ async def update_model(
         driver_band_indices=new_band_indices,
         driver_config=new_driver,
     )
+
+    def _validate_driver_bands() -> None:
+        validate_driver_band_indices_for_model(model, catalog)
+
+    try:
+        await run_in_threadpool(_validate_driver_bands)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
     def _persist() -> None:
         upsert_model(settings, model)

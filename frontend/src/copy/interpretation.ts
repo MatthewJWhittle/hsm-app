@@ -12,6 +12,10 @@ export const INTERPRETATION_DECISION_SUPPORT =
 export const INTERPRETATION_DRIVERS_POINTER =
   'Click the map for a local score, drivers when available, and technical details.'
 
+/** Point inspection — raw environmental bands (issue #13); not causal / SHAP attribution. */
+export const INTERPRETATION_DRIVERS_RAW =
+  'Environmental values at this click; they are inputs at this location, not a full causal explanation of suitability.'
+
 /** Short reminder in the point-inspection HUD (repeat key caution). */
 export const INTERPRETATION_HUD_REMINDER =
   'Modelled relative suitability—not confirmed presence or absence on the ground.'

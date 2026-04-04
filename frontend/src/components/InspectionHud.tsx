@@ -9,7 +9,7 @@ import {
 } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { INTERPRETATION_HUD_REMINDER } from '../copy/interpretation'
+import { INTERPRETATION_DRIVERS_RAW, INTERPRETATION_HUD_REMINDER } from '../copy/interpretation'
 import { clampSuitability01, SUITABILITY_VIRIDIS_GRADIENT_CSS } from '../map/suitabilityScale'
 import type { PointInspection as PointInspectionData } from '../types/pointInspection'
 
@@ -350,14 +350,20 @@ export function InspectionHud({
       )}
 
       {!loading && !error && inspection && (inspection.drivers?.length ?? 0) > 0 && (
-        <Box component="ul" sx={{ m: 0, pl: 2, mt: 0.75 }}>
-          {(inspection.drivers ?? []).map((d) => (
-            <li key={`${d.name}-${d.direction}`}>
-              <Typography variant="caption" color="text.secondary">
-                {d.label ?? d.name}: {d.direction}
-              </Typography>
-            </li>
-          ))}
+        <Box sx={{ mt: 0.75 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, lineHeight: 1.45 }}>
+            {INTERPRETATION_DRIVERS_RAW}
+          </Typography>
+          <Box component="ul" sx={{ m: 0, pl: 2 }}>
+            {(inspection.drivers ?? []).map((d, i) => (
+              <li key={`${d.name}-${i}`}>
+                <Typography variant="caption" color="text.secondary">
+                  {d.name}: {d.label ?? (d.magnitude != null ? d.magnitude.toFixed(4) : d.direction)}
+                  {d.direction !== 'neutral' ? ` (${d.direction})` : ''}
+                </Typography>
+              </li>
+            ))}
+          </Box>
         </Box>
       )}
 

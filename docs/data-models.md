@@ -20,10 +20,20 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 | `suitability_cog_path` | string | Path to the suitability COG (absolute or relative to `artifact_root`). Frontend/TiTiler use this for tiles. |
 | `model_name` | string? | Optional. Model or run name (MVP: basic metadata). |
 | `model_version` | string? | Optional. Model version or date. |
-| `driver_band_indices` | int[]? | Optional typed subset: **0-based band indices** into the parent project’s shared **environmental COG** (preferred for new data when projects are used). |
-| `driver_config` | object? | Optional. Links this model to driver/feature data: e.g. path to a multi-band COG or driver raster, plus the **subset of features (band names or feature ids) that this model uses**. Needed because each model depends on a specific set of features; the API must know which subset to read for point inspection. See “Driver and feature linkage” below. Prefer **`driver_band_indices`** when the stack is project-scoped. |
+| `driver_band_indices` | int[]? | Optional typed subset: **0-based band indices** into the environmental COG (project stack or per-model file below). |
+| `driver_config` | object? | Optional. **Server-persisted** JSON (set via admin `POST/PUT /models` or ingest), not supplied by map clients. See **driver_config keys** below. Links this model to driver/feature paths and display metadata. Prefer **`driver_band_indices`** when the stack is project-scoped. |
 
 **Extensibility:** Add optional fields as needed (e.g. `taxon_id`, `meta` blob). Backend and frontend should ignore unknown keys so schema can evolve.
+
+#### `driver_config` keys (point inspection)
+
+These fields are read by the backend when building `PointInspection.drivers` for `GET /models/{id}/point`. Same order as `driver_band_indices`.
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `driver_cog_path` | string? | Optional. When the model does **not** use a project environmental stack (or to override), path to a multi-band COG **relative to `artifact_root`**, or absolute filesystem path in local dev. If omitted and `project_id` is set, the project’s `driver_artifact_root` + `driver_cog_path` is used. |
+| `band_labels` or `band_names` | string[]? | Optional. Human-readable names for each index in `driver_band_indices` (same length). If omitted, API uses `band_{index}`. |
+| `band_units` | string[]? | Optional. Units per band (same length as indices) for display, e.g. `"m"`. |
 
 ### Catalog project (shared environmental stack)
 
