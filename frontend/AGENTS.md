@@ -365,3 +365,12 @@ If there is a conflict between:
 4. existing repo constraints required for correctness
 
 follow the more specific constraint, but keep changes minimal and explain any deviation.
+
+---
+
+## Full-stack context (drivers, models, inspection UI)
+
+Features that surface **suitability**, **drivers**, or **interpretation** should align with repo-wide guidance:
+
+* **[ML artifacts and serving principles](../docs/ml-artifacts-and-serving-principles.md)** — bundles, API semantics, progressive disclosure, honest copy vs backend capability.
+* **[Root AGENTS.md](../AGENTS.md)** — pointer to the same for backend- or docs-only agents.

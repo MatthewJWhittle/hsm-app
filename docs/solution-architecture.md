@@ -95,6 +95,7 @@ flowchart TB
 - **Responsibilities**: Return suitability value at a point; return “drivers” (main variables, increase/decrease) and, if available, a short plain-language summary.
 - **API**: `GET /models/{id}/point?lng=&lat=`. Response: PointInspection (value, unit?, drivers[]). See [Data models](data-models.md).
 - **Implementation**: Raster read at point plus driver raster or lookup, or small service keyed by (x, y, model_id). MVP prefers simple lookup or precomputed data.
+- **Engineering guidance**: Bundles, manifests, precomputation vs live inference, validation, and operational practices — [ML artifacts and serving principles](ml-artifacts-and-serving-principles.md).
 
 ### 3.4 Interpretation guidance and caveats
 
