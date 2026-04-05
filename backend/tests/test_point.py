@@ -363,7 +363,7 @@ def test_point_returns_shap_influence(tmp_path):
     with open(tmp_path / "mdl.pkl", "wb") as f:
         pickle.dump(clf, f)
     bg = pd.DataFrame(np.random.randn(20, 2), columns=["f0", "f1"])
-    bg.to_parquet(tmp_path / "bg.parquet")
+    bg.to_parquet(env_cog.parent / "explainability_background.parquet")
 
     project_id = "proj-a"
     project_documents = [
@@ -372,6 +372,7 @@ def test_point_returns_shap_influence(tmp_path):
             "name": "Test project",
             "driver_artifact_root": str(env_cog.parent),
             "driver_cog_path": "environmental_cog.tif",
+            "explainability_background_path": "explainability_background.parquet",
         }
     ]
     documents = [
@@ -386,7 +387,8 @@ def test_point_returns_shap_influence(tmp_path):
             "driver_config": {
                 "feature_names": ["f0", "f1"],
                 "explainability_model_path": "mdl.pkl",
-                "explainability_background_path": "bg.parquet",
+                "explainability_background_path": "explainability_background.parquet",
+                "explainability_background_artifact_root": str(env_cog.parent),
                 "band_labels": ["f0", "f1"],
             },
         }

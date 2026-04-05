@@ -20,7 +20,6 @@ type LayerEditDialogProps = {
   environmentalBandOptions: EnvironmentalBandDefinition[] | null
   editExplainabilityEnabled: boolean
   editExplainModelFile: File | null
-  editExplainBackgroundFile: File | null
   editExplainHasExistingArtifacts: boolean
   editFile: File | null
   onEditSpeciesChange: (v: string) => void
@@ -29,7 +28,6 @@ type LayerEditDialogProps = {
   onEditVersionChange: (v: string) => void
   onEditExplainabilityEnabledChange: (v: boolean) => void
   onEditExplainModelFileChange: (f: File | null) => void
-  onEditExplainBackgroundFileChange: (f: File | null) => void
   onEditFileChange: (f: File | null) => void
   editError: string | null
   savingEdit: boolean
@@ -53,7 +51,6 @@ export function LayerEditDialog({
   environmentalBandOptions,
   editExplainabilityEnabled,
   editExplainModelFile,
-  editExplainBackgroundFile,
   editExplainHasExistingArtifacts,
   editFile,
   onEditSpeciesChange,
@@ -62,7 +59,6 @@ export function LayerEditDialog({
   onEditVersionChange,
   onEditExplainabilityEnabledChange,
   onEditExplainModelFileChange,
-  onEditExplainBackgroundFileChange,
   onEditFileChange,
   editError,
   savingEdit,
@@ -100,9 +96,7 @@ export function LayerEditDialog({
             explainabilityEnabled={editExplainabilityEnabled}
             onExplainabilityEnabledChange={onEditExplainabilityEnabledChange}
             explainModelFile={editExplainModelFile}
-            explainBackgroundFile={editExplainBackgroundFile}
             onExplainModelFileChange={onEditExplainModelFileChange}
-            onExplainBackgroundFileChange={onEditExplainBackgroundFileChange}
             explainHasExistingArtifacts={editExplainHasExistingArtifacts}
             pendingFile={editFile}
             onFileChange={onEditFileChange}

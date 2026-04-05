@@ -44,9 +44,7 @@ export interface MapLayerFormFieldsProps {
   explainabilityEnabled: boolean
   onExplainabilityEnabledChange: (value: boolean) => void
   explainModelFile: File | null
-  explainBackgroundFile: File | null
   onExplainModelFileChange: (file: File | null) => void
-  onExplainBackgroundFileChange: (file: File | null) => void
   /** Edit: artefacts already saved under this layer’s folder */
   explainHasExistingArtifacts?: boolean
   pendingFile: File | null
@@ -78,9 +76,7 @@ export function MapLayerFormFields({
   explainabilityEnabled,
   onExplainabilityEnabledChange,
   explainModelFile,
-  explainBackgroundFile,
   onExplainModelFileChange,
-  onExplainBackgroundFileChange,
   explainHasExistingArtifacts = false,
   pendingFile,
   onFileChange,
@@ -210,8 +206,8 @@ export function MapLayerFormFields({
         <Stack spacing={2} sx={{ pl: { sm: 0.5 } }}>
           {isEdit && explainHasExistingArtifacts && (
             <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
-              Trained model and background sample are already stored for this layer. Upload new files below to
-              replace them.
+              A trained model is already stored for this layer. Upload a new .pkl below to replace it. The reference
+              sample comes from the project environmental COG.
             </Alert>
           )}
           <Box>
@@ -234,30 +230,9 @@ export function MapLayerFormFields({
             </Stack>
             <FormHelperText sx={{ mx: 0, mt: 0.5 }}>{EXPLAINABILITY_HELP.modelFile}</FormHelperText>
           </Box>
-          <Box>
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
-              Reference sample (.parquet)
-            </Typography>
-            <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
-              <Button variant="outlined" component="label" size="small" disabled={disabled}>
-                Choose file
-                <input
-                  type="file"
-                  accept=".parquet,application/octet-stream"
-                  hidden
-                  onChange={(e) => onExplainBackgroundFileChange(e.target.files?.[0] ?? null)}
-                />
-              </Button>
-              <Typography variant="body2" color="text.secondary" noWrap sx={{ maxWidth: 220 }}>
-                {explainBackgroundFile
-                  ? explainBackgroundFile.name
-                  : isEdit
-                    ? 'Keep existing or choose…'
-                    : 'Required on create'}
-              </Typography>
-            </Stack>
-            <FormHelperText sx={{ mx: 0, mt: 0.5 }}>{EXPLAINABILITY_HELP.backgroundFile}</FormHelperText>
-          </Box>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ pl: { sm: 0.5 } }}>
+            {EXPLAINABILITY_HELP.backgroundNote}
+          </Typography>
         </Stack>
       )}
       <Box>

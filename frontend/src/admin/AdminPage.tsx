@@ -6,7 +6,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import '../App.css'
 
 import { createModel, updateModel } from '../api/adminModels'
-import { createProject, updateProject } from '../api/adminProjects'
+import {
+  createProject,
+  patchProjectEnvironmentalBandDefinitions,
+  updateProject,
+} from '../api/adminProjects'
 import { fetchModelCatalog } from '../api/catalog'
 import { fetchProjectCatalog } from '../api/projects'
 import { useAuth } from '../auth/useAuth'
@@ -59,7 +63,6 @@ export function AdminPage() {
   const [selectedEnvBands, setSelectedEnvBands] = useState<EnvironmentalBandDefinition[]>([])
   const [explainEnabled, setExplainEnabled] = useState(false)
   const [explainModelFile, setExplainModelFile] = useState<File | null>(null)
-  const [explainBackgroundFile, setExplainBackgroundFile] = useState<File | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -76,7 +79,6 @@ export function AdminPage() {
   const [editSelectedEnvBands, setEditSelectedEnvBands] = useState<EnvironmentalBandDefinition[]>([])
   const [editExplainEnabled, setEditExplainEnabled] = useState(false)
   const [editExplainModelFile, setEditExplainModelFile] = useState<File | null>(null)
-  const [editExplainBackgroundFile, setEditExplainBackgroundFile] = useState<File | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
 
@@ -147,7 +149,6 @@ export function AdminPage() {
     setSelectedEnvBands([])
     setExplainEnabled(false)
     setExplainModelFile(null)
-    setExplainBackgroundFile(null)
     setModelProjectId((prev) => {
       if (prev) return prev
       const first = projects.find((p) => p.status === 'active')
@@ -279,7 +280,6 @@ export function AdminPage() {
     setEditSelectedEnvBands(bandsFromDriverIndices(m.driver_band_indices, defs))
     setEditExplainEnabled(explainabilityConfiguredInCatalog(m))
     setEditExplainModelFile(null)
-    setEditExplainBackgroundFile(null)
     setEditFile(null)
     setEditError(null)
     setEditOpen(true)
@@ -325,10 +325,18 @@ export function AdminPage() {
         visibility: editProjVisibility,
         allowedUids: editProjAllowedUids,
         file: editProjFile ?? undefined,
-        ...(editingProject.driver_cog_path || editProjFile
-          ? { environmentalBandDefinitionsJson: JSON.stringify(editProjBandDefs) }
-          : {}),
       })
+      if (
+        !editProjFile &&
+        editingProject.driver_cog_path &&
+        editProjBandDefs.length > 0
+      ) {
+        await patchProjectEnvironmentalBandDefinitions({
+          token,
+          projectId: editingProject.id,
+          definitions: editProjBandDefs,
+        })
+      }
       setProjectEditOpen(false)
       setEditingProject(null)
       await refreshList()
@@ -404,9 +412,9 @@ export function AdminPage() {
         )
         return
       }
-      if (!explainModelFile || !explainBackgroundFile) {
+      if (!explainModelFile) {
         setCreateError(
-          'Variable influence requires both a trained model (.pkl) and a reference sample (.parquet).',
+          'Variable influence requires a trained model (.pkl). The reference sample is generated from the project environmental COG.',
         )
         return
       }
@@ -426,7 +434,6 @@ export function AdminPage() {
           selectedEnvBands.length > 0 ? JSON.stringify(selectedEnvBands.map((b) => b.index)) : undefined,
         driverConfigJson: hasDriverConfig ? driverConfigJson : undefined,
         explainabilityModelFile: explainEnabled ? explainModelFile : undefined,
-        explainabilityBackgroundFile: explainEnabled ? explainBackgroundFile : undefined,
       })
       setSpecies('')
       setActivity('')
@@ -435,7 +442,6 @@ export function AdminPage() {
       setSelectedEnvBands([])
       setExplainEnabled(false)
       setExplainModelFile(null)
-      setExplainBackgroundFile(null)
       setFile(null)
       setLayerCreateOpen(false)
       await refreshList()
@@ -467,9 +473,9 @@ export function AdminPage() {
         return
       }
       const hadArtifacts = explainabilityConfiguredInCatalog(editModel)
-      if (!hadArtifacts && (!editExplainModelFile || !editExplainBackgroundFile)) {
+      if (!hadArtifacts && !editExplainModelFile) {
         setEditError(
-          'Upload both a trained model (.pkl) and a reference sample (.parquet), or save without variable influence.',
+          'Upload a trained model (.pkl), or save without variable influence. The reference sample comes from the project environmental COG.',
         )
         return
       }
@@ -492,7 +498,6 @@ export function AdminPage() {
             : '',
         driverConfigJson,
         explainabilityModelFile: editExplainModelFile ?? undefined,
-        explainabilityBackgroundFile: editExplainBackgroundFile ?? undefined,
       })
       setEditOpen(false)
       await refreshList()
@@ -699,7 +704,6 @@ export function AdminPage() {
             environmentalBandOptions={createLayerEnvOptions}
             explainabilityEnabled={explainEnabled}
             explainModelFile={explainModelFile}
-            explainBackgroundFile={explainBackgroundFile}
             file={file}
             onSpeciesChange={setSpecies}
             onActivityChange={setActivity}
@@ -707,7 +711,6 @@ export function AdminPage() {
             onModelVersionChange={setModelVersion}
             onExplainabilityEnabledChange={setExplainEnabled}
             onExplainModelFileChange={setExplainModelFile}
-            onExplainBackgroundFileChange={setExplainBackgroundFile}
             onFileChange={setFile}
           />
 
@@ -727,6 +730,7 @@ export function AdminPage() {
             editProjFile={editProjFile}
             environmentalBandDefinitions={editProjBandDefs}
             onEnvironmentalBandDefinitionsChange={setEditProjBandDefs}
+            environmentalBandEditableFields="label"
             onEditProjNameChange={setEditProjName}
             onEditProjDescChange={setEditProjDesc}
             onEditProjVisibilityChange={setEditProjVisibility}
@@ -755,7 +759,6 @@ export function AdminPage() {
             environmentalBandOptions={editLayerEnvOptions}
             editExplainabilityEnabled={editExplainEnabled}
             editExplainModelFile={editExplainModelFile}
-            editExplainBackgroundFile={editExplainBackgroundFile}
             editExplainHasExistingArtifacts={
               editModel ? explainabilityConfiguredInCatalog(editModel) : false
             }
@@ -766,7 +769,6 @@ export function AdminPage() {
             onEditVersionChange={setEditVersion}
             onEditExplainabilityEnabledChange={setEditExplainEnabled}
             onEditExplainModelFileChange={setEditExplainModelFile}
-            onEditExplainBackgroundFileChange={setEditExplainBackgroundFile}
             onEditFileChange={setEditFile}
             editError={editError}
             savingEdit={savingEdit}

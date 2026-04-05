@@ -25,7 +25,6 @@ type LayerCreateDialogProps = {
   environmentalBandOptions: EnvironmentalBandDefinition[] | null
   explainabilityEnabled: boolean
   explainModelFile: File | null
-  explainBackgroundFile: File | null
   file: File | null
   onSpeciesChange: (v: string) => void
   onActivityChange: (v: string) => void
@@ -33,7 +32,6 @@ type LayerCreateDialogProps = {
   onModelVersionChange: (v: string) => void
   onExplainabilityEnabledChange: (v: boolean) => void
   onExplainModelFileChange: (f: File | null) => void
-  onExplainBackgroundFileChange: (f: File | null) => void
   onFileChange: (f: File | null) => void
 }
 
@@ -57,7 +55,6 @@ export function LayerCreateDialog({
   environmentalBandOptions,
   explainabilityEnabled,
   explainModelFile,
-  explainBackgroundFile,
   file,
   onSpeciesChange,
   onActivityChange,
@@ -65,7 +62,6 @@ export function LayerCreateDialog({
   onModelVersionChange,
   onExplainabilityEnabledChange,
   onExplainModelFileChange,
-  onExplainBackgroundFileChange,
   onFileChange,
 }: LayerCreateDialogProps) {
   return (
@@ -114,9 +110,7 @@ export function LayerCreateDialog({
             explainabilityEnabled={explainabilityEnabled}
             onExplainabilityEnabledChange={onExplainabilityEnabledChange}
             explainModelFile={explainModelFile}
-            explainBackgroundFile={explainBackgroundFile}
             onExplainModelFileChange={onExplainModelFileChange}
-            onExplainBackgroundFileChange={onExplainBackgroundFileChange}
             pendingFile={file}
             onFileChange={onFileChange}
             disabled={!canAddModel}

@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import rasterio
-from rasterio.io import MemoryFile
+from rasterio.io import DatasetReader, MemoryFile
 
 from backend_api.schemas_project import EnvironmentalBandDefinition
 
@@ -23,12 +23,53 @@ def count_bands_in_path(path: str) -> int:
         return int(src.count)
 
 
+def definitions_from_rasterio_dataset(src: DatasetReader) -> list[EnvironmentalBandDefinition]:
+    """
+    Build one manifest row per band. Uses GDAL/rasterio per-band ``descriptions``
+    as ``name`` when set; otherwise ``band_0`` … ``band_{n-1}``.
+    """
+    count = int(src.count)
+    out: list[EnvironmentalBandDefinition] = []
+    for i in range(count):
+        raw = src.descriptions[i] if src.descriptions and i < len(src.descriptions) else None
+        name = (
+            str(raw).strip()
+            if raw is not None and str(raw).strip()
+            else f"band_{i}"
+        )
+        out.append(EnvironmentalBandDefinition(index=i, name=name, label=None))
+    return out
+
+
 def default_band_definitions(count: int) -> list[EnvironmentalBandDefinition]:
     """``band_0`` … ``band_{count-1}`` placeholders (admin can rename via PUT)."""
     return [
         EnvironmentalBandDefinition(index=i, name=f"band_{i}", label=None)
         for i in range(count)
     ]
+
+
+def default_band_definitions_from_path(path: str) -> list[EnvironmentalBandDefinition]:
+    """Same as :func:`definitions_from_rasterio_dataset` for an on-disk GeoTIFF/COG."""
+    with rasterio.open(path) as src:
+        return definitions_from_rasterio_dataset(src)
+
+
+def band_definitions_for_upload_bytes(
+    content: bytes, definitions_form: str | None
+) -> list[EnvironmentalBandDefinition]:
+    """
+    Resolve band definitions for a new upload: validate client JSON if present,
+    otherwise derive names from the file (band descriptions when set, else ``band_i``).
+    """
+    parsed = parse_band_definitions_json(definitions_form)
+    with MemoryFile(content) as mem:
+        with mem.open() as src:
+            count = int(src.count)
+            if parsed is not None:
+                validate_band_definitions_match_raster(count, parsed)
+                return parsed
+            return definitions_from_rasterio_dataset(src)
 
 
 def validate_band_definitions_match_raster(
@@ -74,6 +115,8 @@ def parse_band_definitions_json(raw: str | None) -> list[EnvironmentalBandDefini
     data = json.loads(raw.strip())
     if not isinstance(data, list):
         raise ValueError("environmental_band_definitions must be a JSON array")
+    if len(data) == 0:
+        return None
     try:
         return [EnvironmentalBandDefinition.model_validate(x) for x in data]
     except ValidationError as e:

@@ -18,6 +18,14 @@ logger = logging.getLogger(__name__)
 TOP_INFLUENCE_DRIVERS = 8
 
 
+def _background_storage_root(model: Model, dc: dict) -> str:
+    """Project shared background vs legacy per-model folder."""
+    r = dc.get("explainability_background_artifact_root")
+    if isinstance(r, str) and r.strip():
+        return r.strip()
+    return model.artifact_root
+
+
 def _resolve_artifact_file(artifact_root: str, rel: str) -> Path:
     """Resolve path under ``artifact_root``; reject path traversal."""
     rel = rel.strip()
@@ -67,7 +75,7 @@ def compute_shap_driver_variables(
         return []
 
     model_path = _resolve_artifact_file(model.artifact_root, mp)
-    bg_path = _resolve_artifact_file(model.artifact_root, bp)
+    bg_path = _resolve_artifact_file(_background_storage_root(model, dc), bp)
 
     if not model_path.is_file():
         raise PointSamplingError("explainability model file not found on server")
@@ -173,7 +181,7 @@ def validate_explainability_artifacts_for_model(model: Model) -> None:
     if not isinstance(mp, str) or not isinstance(bp, str):
         raise ValueError("explainability_model_path and explainability_background_path must be strings")
     mpath = _resolve_artifact_file(model.artifact_root, mp)
-    bpath = _resolve_artifact_file(model.artifact_root, bp)
+    bpath = _resolve_artifact_file(_background_storage_root(model, dc), bp)
     if not mpath.is_file():
         raise ValueError(f"explainability model file not found at {mp!r}")
     if not bpath.is_file():

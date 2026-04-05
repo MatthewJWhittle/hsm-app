@@ -15,6 +15,7 @@ type ProjectEditDialogProps = {
   editProjFile: File | null
   environmentalBandDefinitions: EnvironmentalBandDefinition[]
   onEnvironmentalBandDefinitionsChange: (v: EnvironmentalBandDefinition[]) => void
+  environmentalBandEditableFields?: 'label' | 'all'
   onEditProjNameChange: (v: string) => void
   onEditProjDescChange: (v: string) => void
   onEditProjVisibilityChange: (v: 'public' | 'private') => void
@@ -39,6 +40,7 @@ export function ProjectEditDialog({
   editProjFile,
   environmentalBandDefinitions,
   onEnvironmentalBandDefinitionsChange,
+  environmentalBandEditableFields = 'label',
   onEditProjNameChange,
   onEditProjDescChange,
   onEditProjVisibilityChange,
@@ -81,6 +83,7 @@ export function ProjectEditDialog({
             existingDriverPath={editingProject?.driver_cog_path ?? null}
             environmentalBandDefinitions={environmentalBandDefinitions}
             onEnvironmentalBandDefinitionsChange={onEnvironmentalBandDefinitionsChange}
+            environmentalBandEditableFields={environmentalBandEditableFields}
           />
           {editProjError && (
             <Alert severity="error" sx={{ mt: 2 }}>

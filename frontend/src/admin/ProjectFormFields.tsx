@@ -44,6 +44,8 @@ export interface ProjectFormFieldsProps {
   /** Edit: band names/labels for the environmental COG (one row per raster band). */
   environmentalBandDefinitions?: EnvironmentalBandDefinition[]
   onEnvironmentalBandDefinitionsChange?: (value: EnvironmentalBandDefinition[]) => void
+  /** Edit: ``label`` = display names only; ``all`` = name + label (stable names must match training). */
+  environmentalBandEditableFields?: 'label' | 'all'
 }
 
 export function ProjectFormFields({
@@ -65,13 +67,16 @@ export function ProjectFormFields({
   existingDriverPath,
   environmentalBandDefinitions = [],
   onEnvironmentalBandDefinitionsChange,
+  environmentalBandEditableFields = 'label',
 }: ProjectFormFieldsProps) {
   const isEdit = mode === 'edit'
   const hasCog = Boolean(existingDriverPath)
   const sortedBands = [...environmentalBandDefinitions].sort((a, b) => a.index - b.index)
+  const namesEditable = environmentalBandEditableFields === 'all'
 
   const updateBandRow = (bandIndex: number, field: 'name' | 'label', value: string) => {
     if (!onEnvironmentalBandDefinitionsChange) return
+    if (field === 'name' && !namesEditable) return
     const next = environmentalBandDefinitions.map((row) =>
       row.index === bandIndex ? { ...row, [field]: value } : row,
     )
@@ -191,14 +196,30 @@ export function ProjectFormFields({
           file above first.
         </Alert>
       )}
-      {isEdit && sortedBands.length > 0 && onEnvironmentalBandDefinitionsChange && (
+      {isEdit && sortedBands.length > 0 && (
         <Box>
           <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
             Environmental raster bands
           </Typography>
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-            Stable <strong>name</strong> values must match your training columns. Optional <strong>label</strong> is
-            shown in the map inspection panel.
+            {onEnvironmentalBandDefinitionsChange ? (
+              namesEditable ? (
+                <>
+                  Stable <strong>name</strong> values must match your training columns. Optional <strong>label</strong>{' '}
+                  is shown in the map inspection panel.
+                </>
+              ) : (
+                <>
+                  <strong>Name</strong> comes from the raster upload (or GDAL descriptions). Edit <strong>label</strong>{' '}
+                  for display names in the map inspection panel. Save the project to persist labels.
+                </>
+              )
+            ) : (
+              <>
+                Names come from the environmental raster when you upload or replace it (GDAL band descriptions when
+                present, otherwise <code>band_0</code> …). Reopen the dialog after save to refresh this list.
+              </>
+            )}
           </Typography>
           <Table size="small" sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
             <TableHead>
@@ -217,6 +238,7 @@ export function ProjectFormFields({
                       size="small"
                       fullWidth
                       value={row.name}
+                      disabled={!onEnvironmentalBandDefinitionsChange || !namesEditable}
                       onChange={(e) => updateBandRow(row.index, 'name', e.target.value)}
                     />
                   </TableCell>
@@ -226,6 +248,7 @@ export function ProjectFormFields({
                       fullWidth
                       placeholder="Display label"
                       value={row.label ?? ''}
+                      disabled={!onEnvironmentalBandDefinitionsChange}
                       onChange={(e) => updateBandRow(row.index, 'label', e.target.value)}
                     />
                   </TableCell>

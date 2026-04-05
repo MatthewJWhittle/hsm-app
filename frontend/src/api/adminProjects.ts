@@ -1,4 +1,4 @@
-import type { CatalogProject } from '../types/project'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import { apiBase } from '../utils/apiBase'
 import { readFetchErrorDetail } from './errors'
 import { parseProject } from './projects'
@@ -39,7 +39,6 @@ export async function updateProject(params: {
   visibility?: 'public' | 'private'
   allowedUids?: string | null
   file?: File | null
-  environmentalBandDefinitionsJson?: string | null
 }): Promise<CatalogProject> {
   const form = new FormData()
   if (params.name !== undefined) form.append('name', params.name)
@@ -48,9 +47,6 @@ export async function updateProject(params: {
   if (params.visibility !== undefined) form.append('visibility', params.visibility)
   if (params.allowedUids !== undefined) form.append('allowed_uids', params.allowedUids ?? '')
   if (params.file) form.append('file', params.file)
-  if (params.environmentalBandDefinitionsJson !== undefined && params.environmentalBandDefinitionsJson !== null) {
-    form.append('environmental_band_definitions', params.environmentalBandDefinitionsJson)
-  }
 
   const r = await fetch(`${apiBase()}/projects/${encodeURIComponent(params.projectId)}`, {
     method: 'PUT',
@@ -61,5 +57,29 @@ export async function updateProject(params: {
   const raw: unknown = await r.json()
   const p = parseProject(raw)
   if (p === null) throw new Error('Invalid update project response')
+  return p
+}
+
+/** Replace band manifest (indices 0..n-1). Validates against the project’s environmental COG band count. */
+export async function patchProjectEnvironmentalBandDefinitions(params: {
+  token: string
+  projectId: string
+  definitions: EnvironmentalBandDefinition[]
+}): Promise<CatalogProject> {
+  const r = await fetch(
+    `${apiBase()}/projects/${encodeURIComponent(params.projectId)}/environmental-band-definitions`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${params.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params.definitions),
+    },
+  )
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  const p = parseProject(raw)
+  if (p === null) throw new Error('Invalid PATCH environmental-band-definitions response')
   return p
 }

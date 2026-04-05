@@ -86,6 +86,15 @@ export function parseProject(value: unknown): CatalogProject | null {
       out.environmental_band_definitions = defs
     }
   }
+  if (value.explainability_background_path !== undefined) {
+    if (value.explainability_background_path === null) {
+      out.explainability_background_path = null
+    } else if (typeof value.explainability_background_path === 'string') {
+      out.explainability_background_path = value.explainability_background_path
+    } else {
+      return null
+    }
+  }
   return out
 }
 

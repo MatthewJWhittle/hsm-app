@@ -33,6 +33,9 @@ class ObjectStorage(Protocol):
     def write_project_driver_cog(self, project_id: str, content: bytes) -> tuple[str, str]:
         """Persist shared environmental COG for a catalog project; return ``(artifact_root, path)``."""
 
+    def write_project_artifact(self, project_id: str, relative_name: str, content: bytes) -> None:
+        """Write a non-COG file under ``projects/{project_id}/`` (e.g. explainability background Parquet)."""
+
     def write_model_artifact(self, model_id: str, relative_name: str, content: bytes) -> None:
         """Write a non-COG file under ``models/{model_id}/`` (e.g. sklearn pickle, parquet)."""
 
@@ -61,6 +64,13 @@ class LocalObjectStorage:
         dest_path.write_bytes(content)
         artifact_root = str(dest_dir)
         return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
+
+    def write_project_artifact(self, project_id: str, relative_name: str, content: bytes) -> None:
+        _validate_artifact_relative_name(relative_name)
+        safe_id = _safe_segment(project_id)
+        dest_dir = self._root / "projects" / safe_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        (dest_dir / relative_name).write_bytes(content)
 
     def write_model_artifact(self, model_id: str, relative_name: str, content: bytes) -> None:
         _validate_artifact_relative_name(relative_name)
@@ -95,6 +105,13 @@ class GcsObjectStorage:
         blob.upload_from_string(content, content_type="image/tiff")
         artifact_root = f"gs://{self._bucket.name}/{self._prefix}projects/{safe_id}"
         return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
+
+    def write_project_artifact(self, project_id: str, relative_name: str, content: bytes) -> None:
+        _validate_artifact_relative_name(relative_name)
+        safe_id = _safe_segment(project_id)
+        blob_name = f"{self._prefix}projects/{safe_id}/{relative_name}"
+        blob = self._bucket.blob(blob_name)
+        blob.upload_from_string(content)
 
     def write_model_artifact(self, model_id: str, relative_name: str, content: bytes) -> None:
         _validate_artifact_relative_name(relative_name)

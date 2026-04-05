@@ -84,4 +84,9 @@ def enrich_model_driver_config_from_project(model: Model, catalog: "CatalogServi
     dc = dict(model.driver_config or {})
     dc["feature_names"] = names
     dc["band_labels"] = labels
+    if proj.explainability_background_path and proj.driver_artifact_root:
+        dc["explainability_background_path"] = proj.explainability_background_path
+        dc["explainability_background_artifact_root"] = proj.driver_artifact_root
+    else:
+        dc.pop("explainability_background_artifact_root", None)
     return model.model_copy(update={"driver_config": dc})

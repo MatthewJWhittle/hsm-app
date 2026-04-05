@@ -51,11 +51,7 @@ from backend_api.routers.catalog_upload_utils import (
     validate_cog_bytes_threaded,
 )
 from backend_api.settings import Settings
-from backend_api.storage import (
-    EXPLAINABILITY_BACKGROUND_FILENAME,
-    EXPLAINABILITY_MODEL_FILENAME,
-    ObjectStorage,
-)
+from backend_api.storage import EXPLAINABILITY_MODEL_FILENAME, ObjectStorage
 
 router = APIRouter()
 
@@ -77,59 +73,35 @@ def _parse_driver_config_http(raw: str | None) -> dict | None:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
 
-async def _merge_explainability_file_uploads(
+async def _merge_explainability_model_upload(
     *,
     storage: ObjectStorage,
     settings: Settings,
     model_id: str,
     dc: dict | None,
     explainability_model_file: UploadFile | None,
-    explainability_background_file: UploadFile | None,
 ) -> dict | None:
-    """Write optional sklearn / parquet uploads and set fixed ``driver_config`` paths."""
-    if explainability_model_file is None and explainability_background_file is None:
+    """Write optional sklearn upload and set fixed ``driver_config`` path (background is project-level)."""
+    if explainability_model_file is None:
         return dc
     out = dict(dc) if dc else {}
-    if explainability_model_file is not None:
-        content = await explainability_model_file.read()
-        if not content:
-            raise HTTPException(
-                status_code=422, detail="explainability_model_file is empty"
-            )
-        if len(content) > settings.max_upload_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=f"explainability_model_file exceeds max size {settings.max_upload_bytes} bytes",
-            )
+    content = await explainability_model_file.read()
+    if not content:
+        raise HTTPException(
+            status_code=422, detail="explainability_model_file is empty"
+        )
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"explainability_model_file exceeds max size {settings.max_upload_bytes} bytes",
+        )
 
-        def _write_m() -> None:
-            storage.write_model_artifact(model_id, EXPLAINABILITY_MODEL_FILENAME, content)
+    def _write_m() -> None:
+        storage.write_model_artifact(model_id, EXPLAINABILITY_MODEL_FILENAME, content)
 
-        await run_in_threadpool(_write_m)
-        out["explainability_model_path"] = EXPLAINABILITY_MODEL_FILENAME
-    if explainability_background_file is not None:
-        content = await explainability_background_file.read()
-        if not content:
-            raise HTTPException(
-                status_code=422, detail="explainability_background_file is empty"
-            )
-        if len(content) > settings.max_upload_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=(
-                    "explainability_background_file exceeds max size "
-                    f"{settings.max_upload_bytes} bytes"
-                ),
-            )
-
-        def _write_b() -> None:
-            storage.write_model_artifact(
-                model_id, EXPLAINABILITY_BACKGROUND_FILENAME, content
-            )
-
-        await run_in_threadpool(_write_b)
-        out["explainability_background_path"] = EXPLAINABILITY_BACKGROUND_FILENAME
-    return out if out else None
+    await run_in_threadpool(_write_m)
+    out["explainability_model_path"] = EXPLAINABILITY_MODEL_FILENAME
+    return out
 
 
 def _parse_driver_band_indices(raw: str | None) -> list[int] | None:
@@ -185,7 +157,7 @@ async def get_model_point(
 
     When the model has ``driver_band_indices`` and a resolvable environmental COG,
     returns ``raw_environmental_values`` at the point. When ``driver_config`` includes
-    explainability artefacts (trained model + background + ``feature_names``), returns
+    explainability artefacts (trained model under the layer + project reference sample + ``feature_names``), returns
     SHAP-style influence in ``drivers``. Configuration is read from the catalog model only.
 
     Returns 422 if the point is outside the raster, nodata, or the file CRS is not EPSG:3857.
@@ -225,7 +197,6 @@ async def create_model(
     driver_band_indices: Annotated[str | None, Form()] = None,
     driver_config: Annotated[str | None, Form()] = None,
     explainability_model_file: Annotated[UploadFile | None, File()] = None,
-    explainability_background_file: Annotated[UploadFile | None, File()] = None,
 ):
     """Create a catalog entry and store the suitability COG (admin only)."""
     if catalog.get_project(project_id.strip()) is None:
@@ -261,13 +232,12 @@ async def create_model(
         ) from e
 
     dc = _parse_driver_config_http(driver_config)
-    dc = await _merge_explainability_file_uploads(
+    dc = await _merge_explainability_model_upload(
         storage=storage,
         settings=settings,
         model_id=model_id,
         dc=dc,
         explainability_model_file=explainability_model_file,
-        explainability_background_file=explainability_background_file,
     )
     model = Model(
         id=model_id,
@@ -332,7 +302,6 @@ async def update_model(
     driver_band_indices: Annotated[str | None, Form()] = None,
     driver_config: Annotated[str | None, Form()] = None,
     explainability_model_file: Annotated[UploadFile | None, File()] = None,
-    explainability_background_file: Annotated[UploadFile | None, File()] = None,
 ):
     """Update metadata and/or replace the suitability COG (admin only)."""
     model_id = existing.id
@@ -383,13 +352,12 @@ async def update_model(
     else:
         new_driver = existing.driver_config
 
-    merged_driver = await _merge_explainability_file_uploads(
+    merged_driver = await _merge_explainability_model_upload(
         storage=storage,
         settings=settings,
         model_id=model_id,
         dc=new_driver,
         explainability_model_file=explainability_model_file,
-        explainability_background_file=explainability_background_file,
     )
     new_driver = merged_driver
 

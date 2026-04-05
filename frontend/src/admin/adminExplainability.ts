@@ -29,6 +29,7 @@ export function mergeDriverConfigForSubmit(
   if (!opts.enabled) {
     delete base['explainability_model_path']
     delete base['explainability_background_path']
+    delete base['explainability_background_artifact_root']
     delete base['explainability_positive_class']
   }
   return JSON.stringify(base)

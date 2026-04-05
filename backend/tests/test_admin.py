@@ -20,6 +20,7 @@ SAMPLE_PROJECT = {
     "name": "Test project",
     "driver_artifact_root": "/data/projects/proj-1",
     "driver_cog_path": "environmental_cog.tif",
+    "explainability_background_path": "explainability_background.parquet",
     "environmental_band_definitions": [
         {"index": 0, "name": "a", "label": None},
         {"index": 1, "name": "b", "label": None},
@@ -159,11 +160,6 @@ def test_post_models_with_explainability_uploads(catalog_docs):
                         BytesIO(b"pk"),
                         "application/octet-stream",
                     ),
-                    "explainability_background_file": (
-                        "bg.parquet",
-                        BytesIO(b"pq"),
-                        "application/octet-stream",
-                    ),
                 },
             )
     assert r.status_code == 201
@@ -173,12 +169,10 @@ def test_post_models_with_explainability_uploads(catalog_docs):
         body["driver_config"]["explainability_background_path"]
         == EXPLAINABILITY_BACKGROUND_FILENAME
     )
+    assert body["driver_config"]["explainability_background_artifact_root"] == "/data/projects/proj-1"
     mid = body["id"]
     mock_storage.write_model_artifact.assert_any_call(
         mid, EXPLAINABILITY_MODEL_FILENAME, b"pk"
-    )
-    mock_storage.write_model_artifact.assert_any_call(
-        mid, EXPLAINABILITY_BACKGROUND_FILENAME, b"pq"
     )
 
 

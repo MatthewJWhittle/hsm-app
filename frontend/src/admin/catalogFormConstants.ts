@@ -24,6 +24,6 @@ export const EXPLAINABILITY_HELP = {
   bandLabels:
     'Optional friendly labels for the raw values list (same order as bands). Leave empty to use feature names.',
   modelFile: 'Pickled scikit-learn estimator (e.g. .pkl) saved with the same feature order.',
-  backgroundFile:
-    'Reference sample as Parquet: rows of training-like values; columns must match feature names (used only to compute explanations).',
+  backgroundNote:
+    'The reference sample for explanations is generated automatically from the project’s environmental COG when that raster is uploaded (shared by all layers in the project).',
 } as const

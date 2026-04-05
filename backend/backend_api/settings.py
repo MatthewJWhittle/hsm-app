@@ -105,3 +105,11 @@ class Settings(BaseSettings):
         ge=1024,
     )
 
+    env_background_sample_rows: int = Field(
+        default=256,
+        description="Number of random pixels sampled from the environmental COG into the shared explainability background Parquet.",
+        validation_alias=AliasChoices("ENV_BACKGROUND_SAMPLE_ROWS"),
+        ge=8,
+        le=50_000,
+    )
+

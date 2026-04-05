@@ -10,6 +10,7 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    Body,
     Depends,
     File,
     Form,
@@ -25,10 +26,11 @@ from backend_api.catalog_service import CatalogService
 from backend_api.catalog_write import upsert_project
 from backend_api.cog_validation import CogValidationError
 from backend_api.deps.catalog import get_object_storage, require_catalog_ready
+from backend_api.env_background_sample import write_project_explainability_background_parquet
 from backend_api.env_cog_bands import (
-    count_bands_in_geotiff_bytes,
+    band_definitions_for_upload_bytes,
     count_bands_in_path,
-    default_band_definitions,
+    default_band_definitions_from_path,
     parse_band_definitions_json,
     validate_band_definitions_match_raster,
 )
@@ -49,7 +51,7 @@ from backend_api.routers.project_visibility_parse import (
 )
 from backend_api.schemas_project import CatalogProject, EnvironmentalBandDefinition
 from backend_api.settings import Settings
-from backend_api.storage import ObjectStorage
+from backend_api.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
 
 router = APIRouter()
 
@@ -74,17 +76,6 @@ def _parse_allowed_uids(raw: str | None) -> list[str]:
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
-def _band_defs_for_upload_bytes(
-    content: bytes, definitions_form: str | None
-) -> list[EnvironmentalBandDefinition]:
-    count = count_bands_in_geotiff_bytes(content)
-    parsed = parse_band_definitions_json(definitions_form)
-    if parsed is not None:
-        validate_band_definitions_match_raster(count, parsed)
-        return parsed
-    return default_band_definitions(count)
-
-
 @router.get("/projects", response_model=list[CatalogProject], tags=["catalog"])
 async def list_projects(
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
@@ -99,6 +90,73 @@ async def get_project(
     project: Annotated[CatalogProject, Depends(get_project_visible_or_404)],
 ):
     """Return one catalog project if visible to the caller."""
+    return project
+
+
+@router.patch(
+    "/projects/{project_id}/environmental-band-definitions",
+    response_model=CatalogProject,
+    tags=["admin"],
+    responses=_ADMIN_RESPONSES,
+    summary="Set environmental band definitions (names and display labels)",
+)
+async def patch_environmental_band_definitions(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _claims: Annotated[dict, Depends(require_admin_claims)],
+    catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    project_id: str,
+    definitions: Annotated[list[EnvironmentalBandDefinition], Body(...)],
+):
+    """
+    Replace the project's band manifest. Must list every band index ``0 .. n-1`` matching
+    the on-disk environmental COG. Send JSON array, e.g.
+    ``[{"index": 0, "name": "band_0", "label": "Elevation"}, ...]``.
+    """
+    existing = catalog.get_project(project_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    artifact_root = existing.driver_artifact_root
+    cog_path = existing.driver_cog_path
+    abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
+    if not abs_path:
+        raise HTTPException(
+            status_code=422,
+            detail="cannot set band definitions without an environmental COG uploaded",
+        )
+    if not Path(abs_path).is_file():
+        raise HTTPException(
+            status_code=422,
+            detail="environmental COG not found on server; upload the file first",
+        )
+
+    def _count() -> int:
+        return count_bands_in_path(abs_path)
+
+    count = await run_in_threadpool(_count)
+    try:
+        validate_band_definitions_match_raster(count, definitions)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    now = datetime.now(UTC).isoformat()
+    project = existing.model_copy(
+        update={
+            "environmental_band_definitions": definitions,
+            "updated_at": now,
+        }
+    )
+
+    def _persist() -> None:
+        upsert_project(settings, project)
+
+    try:
+        await run_in_threadpool(_persist)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"could not save catalog: {e}") from e
+
+    await reload_catalog_threaded(request)
     return project
 
 
@@ -162,11 +220,35 @@ async def create_project(
         try:
 
             def _defs() -> list[EnvironmentalBandDefinition]:
-                return _band_defs_for_upload_bytes(content, environmental_band_definitions)
+                return band_definitions_for_upload_bytes(
+                    content, environmental_band_definitions
+                )
 
             band_defs = await run_in_threadpool(_defs)
         except ValueError as e:
             raise HTTPException(status_code=422, detail=str(e)) from e
+
+    explain_bg_path: str | None = None
+    if band_defs and artifact_root and cog_path:
+        try:
+
+            def _bg() -> None:
+                write_project_explainability_background_parquet(
+                    storage,
+                    project_id,
+                    artifact_root,
+                    cog_path,
+                    band_defs,
+                    settings.env_background_sample_rows,
+                )
+
+            await run_in_threadpool(_bg)
+            explain_bg_path = EXPLAINABILITY_BACKGROUND_FILENAME
+        except Exception as e:
+            raise HTTPException(
+                status_code=422,
+                detail=f"could not build explainability background sample from COG: {e}",
+            ) from e
 
     now = datetime.now(UTC).isoformat()
 
@@ -180,6 +262,7 @@ async def create_project(
         driver_artifact_root=artifact_root,
         driver_cog_path=cog_path,
         environmental_band_definitions=band_defs,
+        explainability_background_path=explain_bg_path,
         created_at=now,
         updated_at=now,
     )
@@ -272,7 +355,9 @@ async def update_project(
         try:
 
             def _defs() -> list[EnvironmentalBandDefinition]:
-                return _band_defs_for_upload_bytes(content, environmental_band_definitions)
+                return band_definitions_for_upload_bytes(
+                    content, environmental_band_definitions
+                )
 
             new_band_defs = await run_in_threadpool(_defs)
         except ValueError as e:
@@ -311,13 +396,39 @@ async def update_project(
         if abs_path and Path(abs_path).is_file():
 
             def _backfill() -> list[EnvironmentalBandDefinition]:
-                c = count_bands_in_path(abs_path)
-                return default_band_definitions(c)
+                return default_band_definitions_from_path(abs_path)
 
             try:
                 new_band_defs = await run_in_threadpool(_backfill)
             except OSError:
                 new_band_defs = None
+
+    new_explain_bg_path = existing.explainability_background_path
+    if (
+        new_band_defs
+        and artifact_root
+        and cog_path
+        and (file is not None or not existing.explainability_background_path)
+    ):
+        try:
+
+            def _bg() -> None:
+                write_project_explainability_background_parquet(
+                    storage,
+                    project_id,
+                    artifact_root,
+                    cog_path,
+                    new_band_defs,
+                    settings.env_background_sample_rows,
+                )
+
+            await run_in_threadpool(_bg)
+            new_explain_bg_path = EXPLAINABILITY_BACKGROUND_FILENAME
+        except Exception as e:
+            raise HTTPException(
+                status_code=422,
+                detail=f"could not build explainability background sample from COG: {e}",
+            ) from e
 
     now = datetime.now(UTC).isoformat()
     project = CatalogProject(
@@ -332,6 +443,7 @@ async def update_project(
         driver_artifact_root=artifact_root,
         driver_cog_path=cog_path,
         environmental_band_definitions=new_band_defs,
+        explainability_background_path=new_explain_bg_path,
         created_at=existing.created_at,
         updated_at=now,
     )

@@ -50,6 +50,10 @@ class CatalogProject(BaseModel):
         default=None,
         description="Per-band names (and optional labels) for the environmental COG; set after upload.",
     )
+    explainability_background_path: str | None = Field(
+        default=None,
+        description="Reference sample Parquet for SHAP (relative to driver_artifact_root); auto-generated when the COG is uploaded.",
+    )
     created_at: str | None = None
     updated_at: str | None = None
 

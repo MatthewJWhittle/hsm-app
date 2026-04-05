@@ -40,6 +40,7 @@ describe('mergeDriverConfigForSubmit', () => {
       {
         explainability_model_path: 'm.pkl',
         explainability_background_path: 'b.parquet',
+        explainability_background_artifact_root: '/proj',
         feature_names: ['x'],
         band_labels: ['old'],
       },
