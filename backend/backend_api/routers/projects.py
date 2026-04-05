@@ -34,7 +34,6 @@ from backend_api.env_cog_bands import (
     parse_band_definitions_json,
     validate_band_definitions_match_raster,
 )
-from backend_api.project_manifest import resolve_env_cog_path_from_parts
 from backend_api.deps.settings_dep import get_settings
 from backend_api.deps.visibility_models import (
     filter_projects_for_viewer,
@@ -49,7 +48,12 @@ from backend_api.routers.project_visibility_parse import (
     parse_visibility,
     parse_visibility_optional,
 )
-from backend_api.schemas_project import CatalogProject, EnvironmentalBandDefinition
+from backend_api.project_manifest import resolve_env_cog_path_from_parts
+from backend_api.schemas_project import (
+    CatalogProject,
+    EnvironmentalBandDefinition,
+    RegenerateExplainabilityBackgroundBody,
+)
 from backend_api.settings import Settings
 from backend_api.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
 
@@ -160,6 +164,116 @@ async def patch_environmental_band_definitions(
     return project
 
 
+def _environmental_cog_readable_for_sampling(abs_path: str) -> bool:
+    """Local files must exist on disk; ``gs://`` URIs are assumed present after upload."""
+    if abs_path.startswith("gs://"):
+        return True
+    return Path(abs_path).is_file()
+
+
+@router.post(
+    "/projects/{project_id}/explainability-background-sample",
+    response_model=CatalogProject,
+    tags=["admin"],
+    responses=_ADMIN_RESPONSES,
+    summary="Regenerate SHAP explainability background Parquet from the environmental COG",
+)
+async def post_explainability_background_sample(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _claims: Annotated[dict, Depends(require_admin_claims)],
+    storage: Annotated[ObjectStorage, Depends(get_object_storage)],
+    catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    project_id: str,
+    body: Annotated[
+        RegenerateExplainabilityBackgroundBody,
+        Body(),
+    ] = RegenerateExplainabilityBackgroundBody(),
+):
+    """
+    Re-sample random pixels from the project's environmental COG into
+    ``explainability_background.parquet`` (same path as on upload).
+
+    Does not require re-uploading the COG. Omit ``sample_rows`` to use
+    ``ENV_BACKGROUND_SAMPLE_ROWS``.
+    """
+    existing = catalog.get_project(project_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    artifact_root = existing.driver_artifact_root
+    cog_path = existing.driver_cog_path
+    band_defs = existing.environmental_band_definitions
+
+    if not artifact_root or not cog_path:
+        raise HTTPException(
+            status_code=422,
+            detail="project has no environmental COG; upload one first",
+        )
+    if not band_defs:
+        raise HTTPException(
+            status_code=422,
+            detail="project has no environmental band definitions; save band names first",
+        )
+
+    abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
+    if not abs_path:
+        raise HTTPException(
+            status_code=422,
+            detail="cannot resolve environmental COG path",
+        )
+    if not _environmental_cog_readable_for_sampling(abs_path):
+        raise HTTPException(
+            status_code=422,
+            detail="environmental COG not found on server",
+        )
+
+    n_samples = (
+        body.sample_rows
+        if body.sample_rows is not None
+        else settings.env_background_sample_rows
+    )
+
+    def _bg() -> None:
+        write_project_explainability_background_parquet(
+            storage,
+            project_id,
+            artifact_root,
+            cog_path,
+            band_defs,
+            n_samples,
+        )
+
+    try:
+        await run_in_threadpool(_bg)
+    except Exception as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"could not build explainability background sample from COG: {e}",
+        ) from e
+
+    now = datetime.now(UTC).isoformat()
+    project = existing.model_copy(
+        update={
+            "explainability_background_path": EXPLAINABILITY_BACKGROUND_FILENAME,
+            "explainability_background_sample_rows": n_samples,
+            "explainability_background_generated_at": now,
+            "updated_at": now,
+        }
+    )
+
+    def _persist() -> None:
+        upsert_project(settings, project)
+
+    try:
+        await run_in_threadpool(_persist)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"could not save catalog: {e}") from e
+
+    await reload_catalog_threaded(request)
+    return project
+
+
 @router.post(
     "/projects",
     response_model=CatalogProject,
@@ -229,6 +343,8 @@ async def create_project(
             raise HTTPException(status_code=422, detail=str(e)) from e
 
     explain_bg_path: str | None = None
+    explain_bg_rows: int | None = None
+    explain_bg_at: str | None = None
     if band_defs and artifact_root and cog_path:
         try:
 
@@ -244,6 +360,7 @@ async def create_project(
 
             await run_in_threadpool(_bg)
             explain_bg_path = EXPLAINABILITY_BACKGROUND_FILENAME
+            explain_bg_rows = settings.env_background_sample_rows
         except Exception as e:
             raise HTTPException(
                 status_code=422,
@@ -251,6 +368,8 @@ async def create_project(
             ) from e
 
     now = datetime.now(UTC).isoformat()
+    if explain_bg_path:
+        explain_bg_at = now
 
     project = CatalogProject(
         id=project_id,
@@ -263,6 +382,8 @@ async def create_project(
         driver_cog_path=cog_path,
         environmental_band_definitions=band_defs,
         explainability_background_path=explain_bg_path,
+        explainability_background_sample_rows=explain_bg_rows,
+        explainability_background_generated_at=explain_bg_at,
         created_at=now,
         updated_at=now,
     )
@@ -404,6 +525,8 @@ async def update_project(
                 new_band_defs = None
 
     new_explain_bg_path = existing.explainability_background_path
+    new_explain_bg_rows = existing.explainability_background_sample_rows
+    new_explain_bg_at = existing.explainability_background_generated_at
     if (
         new_band_defs
         and artifact_root
@@ -424,6 +547,8 @@ async def update_project(
 
             await run_in_threadpool(_bg)
             new_explain_bg_path = EXPLAINABILITY_BACKGROUND_FILENAME
+            new_explain_bg_rows = settings.env_background_sample_rows
+            new_explain_bg_at = datetime.now(UTC).isoformat()
         except Exception as e:
             raise HTTPException(
                 status_code=422,
@@ -444,6 +569,8 @@ async def update_project(
         driver_cog_path=cog_path,
         environmental_band_definitions=new_band_defs,
         explainability_background_path=new_explain_bg_path,
+        explainability_background_sample_rows=new_explain_bg_rows,
+        explainability_background_generated_at=new_explain_bg_at,
         created_at=existing.created_at,
         updated_at=now,
     )

@@ -95,6 +95,24 @@ export function parseProject(value: unknown): CatalogProject | null {
       return null
     }
   }
+  if (value.explainability_background_sample_rows !== undefined) {
+    if (value.explainability_background_sample_rows === null) {
+      out.explainability_background_sample_rows = null
+    } else if (typeof value.explainability_background_sample_rows === 'number') {
+      out.explainability_background_sample_rows = value.explainability_background_sample_rows
+    } else {
+      return null
+    }
+  }
+  if (value.explainability_background_generated_at !== undefined) {
+    if (value.explainability_background_generated_at === null) {
+      out.explainability_background_generated_at = null
+    } else if (typeof value.explainability_background_generated_at === 'string') {
+      out.explainability_background_generated_at = value.explainability_background_generated_at
+    } else {
+      return null
+    }
+  }
   return out
 }
 

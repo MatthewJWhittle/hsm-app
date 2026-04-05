@@ -22,6 +22,17 @@ class EnvironmentalBandDefinition(BaseModel):
     )
 
 
+class RegenerateExplainabilityBackgroundBody(BaseModel):
+    """Optional body for POST ``/projects/{id}/explainability-background-sample``."""
+
+    sample_rows: int | None = Field(
+        default=None,
+        ge=8,
+        le=50_000,
+        description="Number of random pixels; omit to use the server default (ENV_BACKGROUND_SAMPLE_ROWS).",
+    )
+
+
 class CatalogProject(BaseModel):
     """
     Admin-defined grouping: optional shared environmental (multi-band) COG per project
@@ -53,6 +64,14 @@ class CatalogProject(BaseModel):
     explainability_background_path: str | None = Field(
         default=None,
         description="Reference sample Parquet for SHAP (relative to driver_artifact_root); auto-generated when the COG is uploaded.",
+    )
+    explainability_background_sample_rows: int | None = Field(
+        default=None,
+        description="Row count of the last generated explainability background Parquet (random pixels).",
+    )
+    explainability_background_generated_at: str | None = Field(
+        default=None,
+        description="ISO 8601 timestamp when explainability_background.parquet was last written.",
     )
     created_at: str | None = None
     updated_at: str | None = None

@@ -25,6 +25,11 @@ type ProjectEditDialogProps = {
   editProjError: string | null
   savingProjectEdit: boolean
   onSave: () => void
+  regenerateExplainabilitySampleRows?: number
+  onRegenerateExplainabilitySampleRowsChange?: (n: number) => void
+  onRegenerateExplainabilityBackground?: () => void | Promise<void>
+  regeneratingExplainabilityBackground?: boolean
+  regenerateExplainabilityError?: string | null
 }
 
 export function ProjectEditDialog({
@@ -50,6 +55,11 @@ export function ProjectEditDialog({
   editProjError,
   savingProjectEdit,
   onSave,
+  regenerateExplainabilitySampleRows,
+  onRegenerateExplainabilitySampleRowsChange,
+  onRegenerateExplainabilityBackground,
+  regeneratingExplainabilityBackground,
+  regenerateExplainabilityError,
 }: ProjectEditDialogProps) {
   return (
     <Dialog
@@ -84,6 +94,14 @@ export function ProjectEditDialog({
             environmentalBandDefinitions={environmentalBandDefinitions}
             onEnvironmentalBandDefinitionsChange={onEnvironmentalBandDefinitionsChange}
             environmentalBandEditableFields={environmentalBandEditableFields}
+            regenerateExplainabilitySampleRows={regenerateExplainabilitySampleRows}
+            onRegenerateExplainabilitySampleRowsChange={onRegenerateExplainabilitySampleRowsChange}
+            onRegenerateExplainabilityBackground={onRegenerateExplainabilityBackground}
+            regeneratingExplainabilityBackground={regeneratingExplainabilityBackground}
+            regenerateExplainabilityError={regenerateExplainabilityError}
+            explainabilityBackgroundPath={editingProject?.explainability_background_path ?? null}
+            explainabilityBackgroundSampleRows={editingProject?.explainability_background_sample_rows ?? null}
+            explainabilityBackgroundGeneratedAt={editingProject?.explainability_background_generated_at ?? null}
           />
           {editProjError && (
             <Alert severity="error" sx={{ mt: 2 }}>

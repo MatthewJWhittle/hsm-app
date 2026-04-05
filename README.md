@@ -137,7 +137,7 @@ Restart the backend after seeding if it already started with an empty catalog.
 mkdir -p data/firestore-seed
 
 docker compose exec -w /workspace firebase-emulators \
-  firebase -P hsm-dashboard emulators:export /workspace/host-data/firestore-seed --force
+  firebase -P hsm-dashboard emulators:export /workspace/host-data/firestore-seed
 ```
 
 That directory gets **`firebase-export-metadata.json`** plus **`firestore_export/`** (and auth data if you use Auth). **`docker-compose.yml`** always passes **`--import=/workspace/host-data/firestore-seed`**; if the folder is empty or has no export metadata, Firebase logs a warning and starts with no imported data (then use the Python seed script or the Emulator UI).

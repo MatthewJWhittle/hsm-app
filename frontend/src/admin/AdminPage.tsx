@@ -9,6 +9,7 @@ import { createModel, updateModel } from '../api/adminModels'
 import {
   createProject,
   patchProjectEnvironmentalBandDefinitions,
+  postRegenerateExplainabilityBackgroundSample,
   updateProject,
 } from '../api/adminProjects'
 import { fetchModelCatalog } from '../api/catalog'
@@ -93,6 +94,9 @@ export function AdminPage() {
   const [editProjBandDefs, setEditProjBandDefs] = useState<EnvironmentalBandDefinition[]>([])
   const [editProjError, setEditProjError] = useState<string | null>(null)
   const [savingProjectEdit, setSavingProjectEdit] = useState(false)
+  const [regenerateExplainBgRows, setRegenerateExplainBgRows] = useState(256)
+  const [regeneratingExplainBg, setRegeneratingExplainBg] = useState(false)
+  const [regenerateExplainBgError, setRegenerateExplainBgError] = useState<string | null>(null)
 
   const projectById = useMemo(() => {
     const m = new Map<string, string>()
@@ -299,7 +303,47 @@ export function AdminPage() {
         : [],
     )
     setEditProjError(null)
+    setRegenerateExplainBgRows(256)
+    setRegenerateExplainBgError(null)
     setProjectEditOpen(true)
+  }
+
+  const handleRegenerateExplainabilityBackground = async () => {
+    if (!editingProject) return
+    setRegenerateExplainBgError(null)
+    setRegeneratingExplainBg(true)
+    try {
+      const token = await getIdToken(false)
+      if (!token) {
+        setRegenerateExplainBgError('Not signed in.')
+        return
+      }
+      const rows = Math.min(50_000, Math.max(8, Math.round(regenerateExplainBgRows)))
+      const updated = await postRegenerateExplainabilityBackgroundSample({
+        token,
+        projectId: editingProject.id,
+        sampleRows: rows,
+      })
+      setEditingProject(updated)
+      setEditProjBandDefs(
+        updated.environmental_band_definitions
+          ? [...updated.environmental_band_definitions].sort((a, b) => a.index - b.index)
+          : [],
+      )
+      setProjects((prev) => {
+        const i = prev.findIndex((p) => p.id === updated.id)
+        if (i < 0) return [...prev, updated]
+        const next = [...prev]
+        next[i] = updated
+        return next
+      })
+      setListError(null)
+      setLastRefreshedAt(new Date())
+    } catch (err) {
+      setRegenerateExplainBgError(err instanceof Error ? err.message : 'Regenerate failed')
+    } finally {
+      setRegeneratingExplainBg(false)
+    }
   }
 
   const handleSaveProjectEdit = async () => {
@@ -719,6 +763,7 @@ export function AdminPage() {
             onClose={() => {
               setProjectEditOpen(false)
               setEditingProject(null)
+              setRegenerateExplainBgError(null)
             }}
             formMaxWidth={FORM_MAX_WIDTH}
             editingProject={editingProject}
@@ -740,6 +785,11 @@ export function AdminPage() {
             editProjError={editProjError}
             savingProjectEdit={savingProjectEdit}
             onSave={handleSaveProjectEdit}
+            regenerateExplainabilitySampleRows={regenerateExplainBgRows}
+            onRegenerateExplainabilitySampleRowsChange={setRegenerateExplainBgRows}
+            onRegenerateExplainabilityBackground={handleRegenerateExplainabilityBackground}
+            regeneratingExplainabilityBackground={regeneratingExplainBg}
+            regenerateExplainabilityError={regenerateExplainBgError}
           />
 
           <LayerEditDialog

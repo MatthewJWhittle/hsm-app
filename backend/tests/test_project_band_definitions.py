@@ -17,6 +17,9 @@ SAMPLE_PROJECT = {
         {"index": 0, "name": "a", "label": None},
         {"index": 1, "name": "b", "label": None},
     ],
+    "explainability_background_path": "explainability_background.parquet",
+    "explainability_background_sample_rows": 256,
+    "explainability_background_generated_at": "2026-01-01T12:00:00+00:00",
     "visibility": "public",
     "allowed_uids": [],
     "status": "active",
@@ -94,3 +97,52 @@ def test_patch_environmental_band_definitions_unknown_project_404(admin_client_p
         ],
     )
     assert r.status_code == 404
+
+
+def test_post_explainability_background_sample_ok(admin_client_proj):
+    with patch(
+        "backend_api.routers.projects.write_project_explainability_background_parquet"
+    ) as mock_w:
+        c = admin_client_proj
+        r = c.post(
+            "/projects/proj-1/explainability-background-sample",
+            headers={"Authorization": "Bearer fake.token"},
+            json={"sample_rows": 128},
+        )
+        assert r.status_code == 200, r.text
+        mock_w.assert_called_once()
+        assert mock_w.call_args[0][5] == 128
+        body = r.json()
+        assert body.get("explainability_background_path") is not None
+        assert body.get("explainability_background_sample_rows") == 128
+        assert body.get("explainability_background_generated_at")
+
+
+def test_post_explainability_background_sample_unknown_project_404(admin_client_proj):
+    with patch(
+        "backend_api.routers.projects.write_project_explainability_background_parquet"
+    ):
+        c = admin_client_proj
+        r = c.post(
+            "/projects/missing-id/explainability-background-sample",
+            headers={"Authorization": "Bearer fake.token"},
+            json={},
+        )
+        assert r.status_code == 404
+
+
+def test_post_explainability_background_sample_default_rows(admin_client_proj):
+    with patch(
+        "backend_api.routers.projects.write_project_explainability_background_parquet"
+    ) as mock_w:
+        c = admin_client_proj
+        r = c.post(
+            "/projects/proj-1/explainability-background-sample",
+            headers={"Authorization": "Bearer fake.token"},
+            json={},
+        )
+        assert r.status_code == 200, r.text
+        assert mock_w.call_args[0][5] == 256
+        body = r.json()
+        assert body.get("explainability_background_sample_rows") == 256
+        assert body.get("explainability_background_generated_at")

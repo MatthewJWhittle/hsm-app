@@ -83,3 +83,32 @@ export async function patchProjectEnvironmentalBandDefinitions(params: {
   if (p === null) throw new Error('Invalid PATCH environmental-band-definitions response')
   return p
 }
+
+/** Rebuild ``explainability_background.parquet`` from the project environmental COG (admin). */
+export async function postRegenerateExplainabilityBackgroundSample(params: {
+  token: string
+  projectId: string
+  /** Pixel count; omit to use server default (ENV_BACKGROUND_SAMPLE_ROWS). */
+  sampleRows?: number
+}): Promise<CatalogProject> {
+  const body: { sample_rows?: number } = {}
+  if (params.sampleRows !== undefined) {
+    body.sample_rows = params.sampleRows
+  }
+  const r = await fetch(
+    `${apiBase()}/projects/${encodeURIComponent(params.projectId)}/explainability-background-sample`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${params.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  const p = parseProject(raw)
+  if (p === null) throw new Error('Invalid explainability-background-sample response')
+  return p
+}
