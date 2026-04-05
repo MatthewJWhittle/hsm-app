@@ -100,11 +100,15 @@ export function ProjectFormFields({
   const sortedBands = [...environmentalBandDefinitions].sort((a, b) => a.index - b.index)
   const namesEditable = environmentalBandEditableFields === 'all'
 
-  const updateBandRow = (bandIndex: number, field: 'name' | 'label', value: string) => {
+  const updateBandRow = (bandIndex: number, field: 'name' | 'label' | 'description', value: string) => {
     if (!onEnvironmentalBandDefinitionsChange) return
     if (field === 'name' && !namesEditable) return
+    let stored: string | null = value
+    if (field === 'label' || field === 'description') {
+      stored = value.trim() === '' ? null : value
+    }
     const next = environmentalBandDefinitions.map((row) =>
-      row.index === bandIndex ? { ...row, [field]: value } : row,
+      row.index === bandIndex ? { ...row, [field]: stored } : row,
     )
     onEnvironmentalBandDefinitionsChange(next)
   }
@@ -290,13 +294,13 @@ export function ProjectFormFields({
             {onEnvironmentalBandDefinitionsChange ? (
               namesEditable ? (
                 <>
-                  Stable <strong>name</strong> values must match your training columns. Optional <strong>label</strong>{' '}
-                  is shown in the map inspection panel.
+                  Stable <strong>Band name</strong> values must match your training columns. <strong>Display name</strong>{' '}
+                  and <strong>Description</strong> are optional and shown in the map UI.
                 </>
               ) : (
                 <>
-                  <strong>Name</strong> comes from the raster upload (or GDAL descriptions). Edit <strong>label</strong>{' '}
-                  for display names in the map inspection panel. Save the project to persist labels.
+                  <strong>Band name</strong> comes from the raster (or GDAL). Edit <strong>display name</strong> and{' '}
+                  <strong>description</strong> for map users. Save the project to persist.
                 </>
               )
             ) : (
@@ -309,9 +313,10 @@ export function ProjectFormFields({
           <Table size="small" sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
             <TableHead>
               <TableRow>
-                <TableCell width={56}>#</TableCell>
-                <TableCell>Name</TableCell>
-                <TableCell>Label (optional)</TableCell>
+                <TableCell width={48}>#</TableCell>
+                <TableCell sx={{ minWidth: 120 }}>Band name</TableCell>
+                <TableCell sx={{ minWidth: 120 }}>Display name</TableCell>
+                <TableCell sx={{ minWidth: 200 }}>Description</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -322,6 +327,7 @@ export function ProjectFormFields({
                     <TextField
                       size="small"
                       fullWidth
+                      placeholder="e.g. band_0"
                       value={row.name}
                       disabled={!onEnvironmentalBandDefinitionsChange || !namesEditable}
                       onChange={(e) => updateBandRow(row.index, 'name', e.target.value)}
@@ -331,10 +337,23 @@ export function ProjectFormFields({
                     <TextField
                       size="small"
                       fullWidth
-                      placeholder="Display label"
+                      placeholder="Short label"
                       value={row.label ?? ''}
                       disabled={!onEnvironmentalBandDefinitionsChange}
                       onChange={(e) => updateBandRow(row.index, 'label', e.target.value)}
+                    />
+                  </TableCell>
+                  <TableCell sx={{ verticalAlign: 'top' }}>
+                    <TextField
+                      size="small"
+                      fullWidth
+                      multiline
+                      minRows={2}
+                      maxRows={5}
+                      placeholder="What this variable measures"
+                      value={row.description ?? ''}
+                      disabled={!onEnvironmentalBandDefinitionsChange}
+                      onChange={(e) => updateBandRow(row.index, 'description', e.target.value)}
                     />
                   </TableCell>
                 </TableRow>

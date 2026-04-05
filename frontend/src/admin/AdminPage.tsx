@@ -1,7 +1,7 @@
 import { Alert, Box, Container, LinearProgress, Paper, Tab, Tabs, Typography } from '@mui/material'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import LayersOutlinedIcon from '@mui/icons-material/LayersOutlined'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import '../App.css'
 
@@ -29,8 +29,10 @@ import { LayersCatalogTab } from './LayersCatalogTab'
 import { ProjectCreateDialog } from './ProjectCreateDialog'
 import { ProjectEditDialog } from './ProjectEditDialog'
 import { ProjectsCatalogTab } from './ProjectsCatalogTab'
+import { layerFormSnapshot, projectFormSnapshot } from './adminEditSnapshots'
 
 const FORM_MAX_WIDTH = 640
+const AUTO_SAVE_DEBOUNCE_MS = 550
 
 export function AdminPage() {
   const { user, loading, isAdmin, getIdToken } = useAuth()
@@ -98,6 +100,11 @@ export function AdminPage() {
   const [regeneratingExplainBg, setRegeneratingExplainBg] = useState(false)
   const [regenerateExplainBgError, setRegenerateExplainBgError] = useState<string | null>(null)
 
+  const projectEditBaselineRef = useRef<string>('')
+  const layerEditBaselineRef = useRef<string>('')
+  const [projectEditSession, setProjectEditSession] = useState(0)
+  const [layerEditSession, setLayerEditSession] = useState(0)
+
   const projectById = useMemo(() => {
     const m = new Map<string, string>()
     for (const p of projects) {
@@ -136,6 +143,236 @@ export function AdminPage() {
     () => environmentalBandsForProject(editProjectId, projects),
     [editProjectId, projects],
   )
+
+  const buildProjectEditSnapshot = useCallback(() => {
+    return projectFormSnapshot({
+      name: editProjName,
+      description: editProjDesc,
+      status: editProjStatus,
+      visibility: editProjVisibility,
+      allowedUids: editProjAllowedUids,
+      bandDefs: editProjBandDefs,
+      pendingFileName: editProjFile?.name ?? null,
+    })
+  }, [
+    editProjName,
+    editProjDesc,
+    editProjStatus,
+    editProjVisibility,
+    editProjAllowedUids,
+    editProjBandDefs,
+    editProjFile,
+  ])
+
+  const buildLayerEditSnapshot = useCallback(() => {
+    if (!editModel) return ''
+    const driverConfigJson = mergeDriverConfigForSubmit(editModel.driver_config ?? null, {
+      enabled: editExplainEnabled,
+    })
+    return layerFormSnapshot({
+      species: editSpecies,
+      activity: editActivity,
+      projectId: editProjectId,
+      modelName: editName,
+      modelVersion: editVersion,
+      bandDefs: editSelectedEnvBands,
+      explainEnabled: editExplainEnabled,
+      driverConfigJson,
+      suitabilityFileName: editFile?.name ?? null,
+      explainModelFileName: editExplainModelFile?.name ?? null,
+    })
+  }, [
+    editModel,
+    editSpecies,
+    editActivity,
+    editProjectId,
+    editName,
+    editVersion,
+    editSelectedEnvBands,
+    editExplainEnabled,
+    editFile,
+    editExplainModelFile,
+  ])
+
+  useLayoutEffect(() => {
+    if (!projectEditOpen || !editingProject) return
+    projectEditBaselineRef.current = buildProjectEditSnapshot()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- baseline only when dialog opens / session bumps
+  }, [projectEditOpen, editingProject?.id, projectEditSession])
+
+  useLayoutEffect(() => {
+    if (!editOpen || !editModel) return
+    layerEditBaselineRef.current = buildLayerEditSnapshot()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- baseline only when dialog opens / session bumps
+  }, [editOpen, editModel?.id, layerEditSession])
+
+  const canPersistLayerEdit = useCallback(() => {
+    if (!editSpecies.trim() || !editActivity.trim()) return false
+    if (editExplainEnabled) {
+      if (editSelectedEnvBands.length === 0) return false
+      const hadArtifacts = editModel ? explainabilityConfiguredInCatalog(editModel) : false
+      if (!hadArtifacts && !editExplainModelFile) return false
+    }
+    return true
+  }, [editSpecies, editActivity, editExplainEnabled, editSelectedEnvBands, editExplainModelFile, editModel])
+
+  const persistProjectEdit = useCallback(async () => {
+    if (!editingProject || savingProjectEdit) return
+    if (!editProjName.trim()) return
+    const snap = buildProjectEditSnapshot()
+    if (snap === projectEditBaselineRef.current) return
+
+    setEditProjError(null)
+    const token = await getIdToken(false)
+    if (!token) {
+      setEditProjError('Not signed in.')
+      return
+    }
+    setSavingProjectEdit(true)
+    try {
+      const updated = await updateProject({
+        token,
+        projectId: editingProject.id,
+        name: editProjName.trim(),
+        description: editProjDesc.trim() || null,
+        status: editProjStatus,
+        visibility: editProjVisibility,
+        allowedUids: editProjAllowedUids,
+        file: editProjFile ?? undefined,
+      })
+      let merged = updated
+      if (!editProjFile && updated.driver_cog_path && editProjBandDefs.length > 0) {
+        merged = await patchProjectEnvironmentalBandDefinitions({
+          token,
+          projectId: editingProject.id,
+          definitions: editProjBandDefs,
+        })
+      }
+      const nextBands = merged.environmental_band_definitions
+        ? [...merged.environmental_band_definitions].sort((a, b) => a.index - b.index)
+        : editProjBandDefs
+      setEditingProject(merged)
+      setEditProjBandDefs(nextBands)
+      setEditProjFile(null)
+      setProjects((prev) => {
+        const i = prev.findIndex((p) => p.id === merged.id)
+        if (i < 0) return [...prev, merged]
+        const next = [...prev]
+        next[i] = merged
+        return next
+      })
+      setListError(null)
+      setLastRefreshedAt(new Date())
+      projectEditBaselineRef.current = projectFormSnapshot({
+        name: editProjName,
+        description: editProjDesc,
+        status: editProjStatus,
+        visibility: editProjVisibility,
+        allowedUids: editProjAllowedUids,
+        bandDefs: nextBands,
+        pendingFileName: null,
+      })
+    } catch (err) {
+      setEditProjError(err instanceof Error ? err.message : 'Update failed')
+    } finally {
+      setSavingProjectEdit(false)
+    }
+  }, [
+    editingProject,
+    savingProjectEdit,
+    editProjName,
+    editProjDesc,
+    editProjStatus,
+    editProjVisibility,
+    editProjAllowedUids,
+    editProjBandDefs,
+    editProjFile,
+    buildProjectEditSnapshot,
+    getIdToken,
+  ])
+
+  const persistLayerEdit = useCallback(async () => {
+    if (!editModel || savingEdit) return
+    if (!canPersistLayerEdit()) return
+    const snap = buildLayerEditSnapshot()
+    if (snap === layerEditBaselineRef.current) return
+
+    setEditError(null)
+    const token = await getIdToken(false)
+    if (!token) {
+      setEditError('Not signed in.')
+      return
+    }
+
+    const driverConfigJson = mergeDriverConfigForSubmit(editModel.driver_config ?? null, {
+      enabled: editExplainEnabled,
+    })
+
+    setSavingEdit(true)
+    try {
+      const updated = await updateModel({
+        token,
+        modelId: editModel.id,
+        species: editSpecies,
+        activity: editActivity,
+        modelName: editName || null,
+        modelVersion: editVersion || null,
+        file: editFile ?? undefined,
+        projectId: editProjectId || undefined,
+        driverBandIndicesJson:
+          editSelectedEnvBands.length > 0
+            ? JSON.stringify(editSelectedEnvBands.map((b) => b.index))
+            : '',
+        driverConfigJson,
+        explainabilityModelFile: editExplainModelFile ?? undefined,
+      })
+      setEditModel(updated)
+      setEditFile(null)
+      setEditExplainModelFile(null)
+      setModels((prev) => {
+        const i = prev.findIndex((m) => m.id === updated.id)
+        if (i < 0) return [...prev, updated]
+        const next = [...prev]
+        next[i] = updated
+        return next
+      })
+      setListError(null)
+      setLastRefreshedAt(new Date())
+      layerEditBaselineRef.current = layerFormSnapshot({
+        species: editSpecies,
+        activity: editActivity,
+        projectId: editProjectId,
+        modelName: editName,
+        modelVersion: editVersion,
+        bandDefs: editSelectedEnvBands,
+        explainEnabled: editExplainEnabled,
+        driverConfigJson: mergeDriverConfigForSubmit(updated.driver_config ?? null, {
+          enabled: editExplainEnabled,
+        }),
+        suitabilityFileName: null,
+        explainModelFileName: null,
+      })
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Update failed')
+    } finally {
+      setSavingEdit(false)
+    }
+  }, [
+    editModel,
+    savingEdit,
+    canPersistLayerEdit,
+    buildLayerEditSnapshot,
+    editSpecies,
+    editActivity,
+    editName,
+    editVersion,
+    editProjectId,
+    editSelectedEnvBands,
+    editExplainEnabled,
+    editFile,
+    editExplainModelFile,
+    getIdToken,
+  ])
 
   const handleEditProjectIdChange = useCallback(
     (id: string) => {
@@ -286,6 +523,7 @@ export function AdminPage() {
     setEditExplainModelFile(null)
     setEditFile(null)
     setEditError(null)
+    setLayerEditSession((s) => s + 1)
     setEditOpen(true)
   }
 
@@ -305,6 +543,7 @@ export function AdminPage() {
     setEditProjError(null)
     setRegenerateExplainBgRows(256)
     setRegenerateExplainBgError(null)
+    setProjectEditSession((s) => s + 1)
     setProjectEditOpen(true)
   }
 
@@ -324,12 +563,11 @@ export function AdminPage() {
         projectId: editingProject.id,
         sampleRows: rows,
       })
+      const nextBands = updated.environmental_band_definitions
+        ? [...updated.environmental_band_definitions].sort((a, b) => a.index - b.index)
+        : []
       setEditingProject(updated)
-      setEditProjBandDefs(
-        updated.environmental_band_definitions
-          ? [...updated.environmental_band_definitions].sort((a, b) => a.index - b.index)
-          : [],
-      )
+      setEditProjBandDefs(nextBands)
       setProjects((prev) => {
         const i = prev.findIndex((p) => p.id === updated.id)
         if (i < 0) return [...prev, updated]
@@ -339,6 +577,15 @@ export function AdminPage() {
       })
       setListError(null)
       setLastRefreshedAt(new Date())
+      projectEditBaselineRef.current = projectFormSnapshot({
+        name: editProjName,
+        description: editProjDesc,
+        status: editProjStatus,
+        visibility: editProjVisibility,
+        allowedUids: editProjAllowedUids,
+        bandDefs: nextBands,
+        pendingFileName: null,
+      })
     } catch (err) {
       setRegenerateExplainBgError(err instanceof Error ? err.message : 'Regenerate failed')
     } finally {
@@ -346,50 +593,70 @@ export function AdminPage() {
     }
   }
 
-  const handleSaveProjectEdit = async () => {
-    if (!editingProject) return
-    setEditProjError(null)
-    const token = await getIdToken(true)
-    if (!token) {
-      setEditProjError('Not signed in.')
-      return
-    }
-    if (!editProjName.trim()) {
-      setEditProjError('Project name is required.')
-      return
-    }
-    setSavingProjectEdit(true)
-    try {
-      await updateProject({
-        token,
-        projectId: editingProject.id,
-        name: editProjName.trim(),
-        description: editProjDesc.trim() || null,
-        status: editProjStatus,
-        visibility: editProjVisibility,
-        allowedUids: editProjAllowedUids,
-        file: editProjFile ?? undefined,
-      })
-      if (
-        !editProjFile &&
-        editingProject.driver_cog_path &&
-        editProjBandDefs.length > 0
-      ) {
-        await patchProjectEnvironmentalBandDefinitions({
-          token,
-          projectId: editingProject.id,
-          definitions: editProjBandDefs,
-        })
+  useEffect(() => {
+    if (!projectEditOpen || !editingProject) return
+    if (!editProjName.trim()) return
+    const snap = buildProjectEditSnapshot()
+    if (snap === projectEditBaselineRef.current) return
+    const t = window.setTimeout(() => {
+      void persistProjectEdit()
+    }, AUTO_SAVE_DEBOUNCE_MS)
+    return () => window.clearTimeout(t)
+  }, [
+    projectEditOpen,
+    editingProject?.id,
+    editProjName,
+    editProjDesc,
+    editProjStatus,
+    editProjVisibility,
+    editProjAllowedUids,
+    editProjBandDefs,
+    editProjFile,
+    buildProjectEditSnapshot,
+    persistProjectEdit,
+  ])
+
+  useEffect(() => {
+    if (!editOpen || !editModel) return
+    if (!canPersistLayerEdit()) return
+    const snap = buildLayerEditSnapshot()
+    if (snap === layerEditBaselineRef.current) return
+    const t = window.setTimeout(() => {
+      void persistLayerEdit()
+    }, AUTO_SAVE_DEBOUNCE_MS)
+    return () => window.clearTimeout(t)
+  }, [
+    editOpen,
+    editModel?.id,
+    editSpecies,
+    editActivity,
+    editProjectId,
+    editName,
+    editVersion,
+    editSelectedEnvBands,
+    editExplainEnabled,
+    editFile,
+    editExplainModelFile,
+    buildLayerEditSnapshot,
+    persistLayerEdit,
+    canPersistLayerEdit,
+  ])
+
+  const handleCloseProjectEdit = useCallback(async () => {
+    if (projectEditOpen && editingProject) {
+      const snap = buildProjectEditSnapshot()
+      if (snap !== projectEditBaselineRef.current) {
+        if (!editProjName.trim()) {
+          setEditProjError('Project name is required.')
+          return
+        }
+        await persistProjectEdit()
       }
-      setProjectEditOpen(false)
-      setEditingProject(null)
-      await refreshList()
-    } catch (err) {
-      setEditProjError(err instanceof Error ? err.message : 'Update failed')
-    } finally {
-      setSavingProjectEdit(false)
     }
-  }
+    setProjectEditOpen(false)
+    setEditingProject(null)
+    setRegenerateExplainBgError(null)
+  }, [projectEditOpen, editingProject, editProjName, buildProjectEditSnapshot, persistProjectEdit])
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -496,61 +763,21 @@ export function AdminPage() {
     }
   }
 
-  const handleSaveEdit = async () => {
-    if (!editModel) return
-    setEditError(null)
-    const token = await getIdToken(true)
-    if (!token) {
-      setEditError('Not signed in.')
-      return
-    }
-
-    const driverConfigJson = mergeDriverConfigForSubmit(editModel.driver_config ?? null, {
-      enabled: editExplainEnabled,
-    })
-
-    if (editExplainEnabled) {
-      if (editSelectedEnvBands.length === 0) {
-        setEditError(
-          'Select environmental variables in model feature order (from the project’s band list).',
-        )
-        return
-      }
-      const hadArtifacts = explainabilityConfiguredInCatalog(editModel)
-      if (!hadArtifacts && !editExplainModelFile) {
-        setEditError(
-          'Upload a trained model (.pkl), or save without variable influence. The reference sample comes from the project environmental COG.',
-        )
-        return
+  const handleCloseLayerEdit = useCallback(async () => {
+    if (editOpen && editModel) {
+      const snap = buildLayerEditSnapshot()
+      if (snap !== layerEditBaselineRef.current) {
+        if (!canPersistLayerEdit()) {
+          setEditError(
+            'Fill in species and activity. For variable influence, select environmental bands and upload a model or use an existing one.',
+          )
+          return
+        }
+        await persistLayerEdit()
       }
     }
-
-    setSavingEdit(true)
-    try {
-      await updateModel({
-        token,
-        modelId: editModel.id,
-        species: editSpecies,
-        activity: editActivity,
-        modelName: editName || null,
-        modelVersion: editVersion || null,
-        file: editFile,
-        projectId: editProjectId || undefined,
-        driverBandIndicesJson:
-          editSelectedEnvBands.length > 0
-            ? JSON.stringify(editSelectedEnvBands.map((b) => b.index))
-            : '',
-        driverConfigJson,
-        explainabilityModelFile: editExplainModelFile ?? undefined,
-      })
-      setEditOpen(false)
-      await refreshList()
-    } catch (err) {
-      setEditError(err instanceof Error ? err.message : 'Update failed')
-    } finally {
-      setSavingEdit(false)
-    }
-  }
+    setEditOpen(false)
+  }, [editOpen, editModel, buildLayerEditSnapshot, canPersistLayerEdit, persistLayerEdit])
 
   const activeProjects = projects.filter((p) => p.status === 'active')
   const canAddModel = activeProjects.length > 0
@@ -760,11 +987,7 @@ export function AdminPage() {
 
           <ProjectEditDialog
             open={projectEditOpen}
-            onClose={() => {
-              setProjectEditOpen(false)
-              setEditingProject(null)
-              setRegenerateExplainBgError(null)
-            }}
+            onClose={() => void handleCloseProjectEdit()}
             formMaxWidth={FORM_MAX_WIDTH}
             editingProject={editingProject}
             editProjName={editProjName}
@@ -784,7 +1007,6 @@ export function AdminPage() {
             onEditProjFileChange={setEditProjFile}
             editProjError={editProjError}
             savingProjectEdit={savingProjectEdit}
-            onSave={handleSaveProjectEdit}
             regenerateExplainabilitySampleRows={regenerateExplainBgRows}
             onRegenerateExplainabilitySampleRowsChange={setRegenerateExplainBgRows}
             onRegenerateExplainabilityBackground={handleRegenerateExplainabilityBackground}
@@ -794,7 +1016,7 @@ export function AdminPage() {
 
           <LayerEditDialog
             open={editOpen}
-            onClose={() => setEditOpen(false)}
+            onClose={() => void handleCloseLayerEdit()}
             formMaxWidth={FORM_MAX_WIDTH}
             editModel={editModel}
             activeProjects={activeProjects}
@@ -822,7 +1044,6 @@ export function AdminPage() {
             onEditFileChange={setEditFile}
             editError={editError}
             savingEdit={savingEdit}
-            onSave={handleSaveEdit}
           />
         </Container>
       </Box>

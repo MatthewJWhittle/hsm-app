@@ -102,7 +102,7 @@ async def get_project(
     response_model=CatalogProject,
     tags=["admin"],
     responses=_ADMIN_RESPONSES,
-    summary="Set environmental band definitions (names and display labels)",
+    summary="Set environmental band definitions (name, display label, description)",
 )
 async def patch_environmental_band_definitions(
     request: Request,
@@ -115,7 +115,7 @@ async def patch_environmental_band_definitions(
     """
     Replace the project's band manifest. Must list every band index ``0 .. n-1`` matching
     the on-disk environmental COG. Send JSON array, e.g.
-    ``[{"index": 0, "name": "band_0", "label": "Elevation"}, ...]``.
+    ``[{"index": 0, "name": "band_0", "label": "Elevation", "description": "..."}, ...]``.
     """
     existing = catalog.get_project(project_id)
     if existing is None:

@@ -222,6 +222,7 @@ def build_raw_environmental_values(
     else:
         names = [str(x) for x in names]
     units = dc.get("band_units")
+    descs = dc.get("band_descriptions")
     out: list[RawEnvironmentalValue] = []
     for i, (name, val) in enumerate(zip(names, values)):
         unit = None
@@ -229,7 +230,12 @@ def build_raw_environmental_values(
             u = units[i]
             if isinstance(u, str) and u.strip():
                 unit = u.strip()
-        out.append(RawEnvironmentalValue(name=name, value=val, unit=unit))
+        desc = None
+        if isinstance(descs, list) and i < len(descs):
+            di = descs[i]
+            if isinstance(di, str) and di.strip():
+                desc = di.strip()
+        out.append(RawEnvironmentalValue(name=name, value=val, unit=unit, description=desc))
     return out
 
 

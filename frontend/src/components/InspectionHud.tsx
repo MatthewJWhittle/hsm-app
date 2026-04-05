@@ -125,10 +125,14 @@ function InfluenceDriverRow({ d, maxAbs }: { d: DriverVariable; maxAbs: number }
       : d.direction === 'decrease'
         ? 'error.main'
         : 'text.secondary'
+  const title = d.display_name?.trim() ? d.display_name : d.name
   return (
     <Box sx={{ mb: 1 }}>
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-        {d.name}: {d.label ?? (d.magnitude != null ? d.magnitude.toFixed(4) : d.direction)}
+        <Tooltip title={d.display_name ? `Column: ${d.name}` : ''} disableHoverListener={!d.display_name}>
+          <span>{title}</span>
+        </Tooltip>
+        : {d.label ?? (d.magnitude != null ? d.magnitude.toFixed(4) : d.direction)}
       </Typography>
       <Box sx={{ height: 6, bgcolor: 'action.hover', borderRadius: 0.5, mt: 0.25 }}>
         <Box
@@ -431,12 +435,21 @@ export function InspectionHud({
                       {INTERPRETATION_RAW_VALUES_CAPTION}
                     </Typography>
                     <Box component="ul" sx={{ m: 0, pl: 2 }}>
-                      {rawVals.map((r) => (
-                        <li key={r.name}>
-                          <Typography variant="caption" color="text.secondary">
+                      {rawVals.map((r, ri) => (
+                        <li key={`${r.name}-${ri}`}>
+                          <Typography variant="caption" color="text.secondary" component="div">
                             {r.name}: {r.value.toFixed(4)}
                             {r.unit ? ` ${r.unit}` : ''}
                           </Typography>
+                          {r.description?.trim() ? (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: 'block', opacity: 0.85, pl: 0.5, mt: 0.25 }}
+                            >
+                              {r.description}
+                            </Typography>
+                          ) : null}
                         </li>
                       ))}
                     </Box>

@@ -41,6 +41,10 @@ class DriverVariable(BaseModel):
     direction: Literal["increase", "decrease", "neutral"]
     label: str | None = None
     magnitude: float | None = None
+    display_name: str | None = Field(
+        default=None,
+        description="Human-friendly name from catalog (when different from ``name``).",
+    )
 
 
 class RawEnvironmentalValue(BaseModel):
@@ -49,6 +53,10 @@ class RawEnvironmentalValue(BaseModel):
     name: str
     value: float
     unit: str | None = None
+    description: str | None = Field(
+        default=None,
+        description="Optional catalog description for this variable.",
+    )
 
 
 class PointInspection(BaseModel):

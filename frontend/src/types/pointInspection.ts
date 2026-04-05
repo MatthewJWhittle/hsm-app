@@ -7,12 +7,16 @@ export interface DriverVariable {
   direction: DriverDirection
   label?: string | null
   magnitude?: number | null
+  /** Human-friendly title when it differs from ``name`` (from catalog display names). */
+  display_name?: string | null
 }
 
 export interface RawEnvironmentalValue {
   name: string
   value: number
   unit?: string | null
+  /** Longer explanation from the catalog band definition, if any. */
+  description?: string | null
 }
 
 export interface PointInspection {

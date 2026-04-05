@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material'
+import { Alert, Box, Dialog, DialogContent, DialogTitle, Typography } from '@mui/material'
 import type { Model } from '../types/model'
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import { MapLayerFormFields } from './MapLayerFormFields'
@@ -31,7 +31,6 @@ type LayerEditDialogProps = {
   onEditFileChange: (f: File | null) => void
   editError: string | null
   savingEdit: boolean
-  onSave: () => void
 }
 
 export function LayerEditDialog({
@@ -62,7 +61,6 @@ export function LayerEditDialog({
   onEditFileChange,
   editError,
   savingEdit,
-  onSave,
 }: LayerEditDialogProps) {
   return (
     <Dialog
@@ -72,8 +70,13 @@ export function LayerEditDialog({
       maxWidth="md"
       PaperProps={{ sx: { borderRadius: 2 } }}
     >
-      <DialogTitle sx={{ fontWeight: 700 }}>Edit map layer</DialogTitle>
-      <DialogContent>
+      <DialogTitle sx={{ fontWeight: 700 }}>
+        Edit map layer
+        <Typography variant="caption" component="span" display="block" color="text.secondary" fontWeight={400} sx={{ mt: 0.5 }}>
+          {savingEdit ? 'Saving…' : 'Changes save automatically. Click outside to close.'}
+        </Typography>
+      </DialogTitle>
+      <DialogContent sx={{ pb: 2 }}>
         <Box sx={{ mt: 0.5 }}>
           <MapLayerFormFields
             mode="edit"
@@ -109,12 +112,6 @@ export function LayerEditDialog({
           )}
         </Box>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={() => onClose()}>Cancel</Button>
-        <Button variant="contained" onClick={() => void onSave()} disabled={savingEdit}>
-          {savingEdit ? 'Saving…' : 'Save'}
-        </Button>
-      </DialogActions>
     </Dialog>
   )
 }

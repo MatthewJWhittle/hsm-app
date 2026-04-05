@@ -73,17 +73,26 @@ def enrich_model_driver_config_from_project(model: Model, catalog: "CatalogServi
     by_idx = {d.index: d for d in proj.environmental_band_definitions}
     names: list[str] = []
     labels: list[str] = []
+    descriptions: list[str | None] = []
     for idx in indices:
         d = by_idx.get(idx)
         if d is None:
             continue
         names.append(d.name)
         labels.append(d.label.strip() if d.label else d.name)
+        if d.description is not None and str(d.description).strip():
+            descriptions.append(str(d.description).strip())
+        else:
+            descriptions.append(None)
     if len(names) != len(indices):
         return model
     dc = dict(model.driver_config or {})
     dc["feature_names"] = names
     dc["band_labels"] = labels
+    if any(x is not None for x in descriptions):
+        dc["band_descriptions"] = descriptions
+    else:
+        dc.pop("band_descriptions", None)
     if proj.explainability_background_path and proj.driver_artifact_root:
         dc["explainability_background_path"] = proj.explainability_background_path
         dc["explainability_background_artifact_root"] = proj.driver_artifact_root

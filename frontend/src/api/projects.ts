@@ -8,13 +8,17 @@ function parseBandDefinitions(value: unknown): EnvironmentalBandDefinition[] | n
   const out: EnvironmentalBandDefinition[] = []
   for (const row of value) {
     if (!isRecord(row)) return null
-    const { index, name, label } = row
+    const { index, name, label, description } = row
     if (typeof index !== 'number' || typeof name !== 'string') return null
     if (label !== undefined && label !== null && typeof label !== 'string') return null
+    if (description !== undefined && description !== null && typeof description !== 'string') return null
     out.push({
       index,
       name,
       ...(label !== undefined && label !== null ? { label } : {}),
+      ...(description !== undefined && description !== null && description !== ''
+        ? { description }
+        : {}),
     })
   }
   return out

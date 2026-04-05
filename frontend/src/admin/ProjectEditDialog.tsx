@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material'
+import { Alert, Box, Dialog, DialogContent, DialogTitle, Typography } from '@mui/material'
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import { ProjectFormFields } from './ProjectFormFields'
 
@@ -24,7 +24,6 @@ type ProjectEditDialogProps = {
   onEditProjFileChange: (f: File | null) => void
   editProjError: string | null
   savingProjectEdit: boolean
-  onSave: () => void
   regenerateExplainabilitySampleRows?: number
   onRegenerateExplainabilitySampleRowsChange?: (n: number) => void
   onRegenerateExplainabilityBackground?: () => void | Promise<void>
@@ -54,7 +53,6 @@ export function ProjectEditDialog({
   onEditProjFileChange,
   editProjError,
   savingProjectEdit,
-  onSave,
   regenerateExplainabilitySampleRows,
   onRegenerateExplainabilitySampleRowsChange,
   onRegenerateExplainabilityBackground,
@@ -71,8 +69,15 @@ export function ProjectEditDialog({
       maxWidth="sm"
       PaperProps={{ sx: { borderRadius: 2 } }}
     >
-      <DialogTitle sx={{ fontWeight: 700 }}>Edit project</DialogTitle>
-      <DialogContent>
+      <DialogTitle sx={{ fontWeight: 700 }}>
+        Edit project
+        <Typography variant="caption" component="span" display="block" color="text.secondary" fontWeight={400} sx={{ mt: 0.5 }}>
+          {savingProjectEdit
+            ? 'Saving…'
+            : 'Changes save automatically. Click outside to close.'}
+        </Typography>
+      </DialogTitle>
+      <DialogContent sx={{ pb: 2 }}>
         <Box sx={{ mt: 0.5 }}>
           <ProjectFormFields
             mode="edit"
@@ -110,12 +115,6 @@ export function ProjectEditDialog({
           )}
         </Box>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={() => void onSave()} disabled={savingProjectEdit}>
-          {savingProjectEdit ? 'Saving…' : 'Save'}
-        </Button>
-      </DialogActions>
     </Dialog>
   )
 }

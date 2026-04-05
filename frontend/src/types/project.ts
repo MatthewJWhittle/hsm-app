@@ -2,8 +2,12 @@
 
 export interface EnvironmentalBandDefinition {
   index: number
+  /** Machine-friendly name (GDAL / band_i); matches training columns. */
   name: string
+  /** Optional human-friendly display name (map UI). */
   label?: string | null
+  /** Optional longer explanation of what the variable measures. */
+  description?: string | null
 }
 
 export interface CatalogProject {

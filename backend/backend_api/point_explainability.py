@@ -140,6 +140,14 @@ def compute_shap_driver_variables(
     pairs.sort(key=lambda x: abs(float(x[1])), reverse=True)
     pairs = pairs[:TOP_INFLUENCE_DRIVERS]
 
+    band_labels = dc.get("band_labels")
+    name_to_display: dict[str, str] = {}
+    if isinstance(band_labels, list) and len(band_labels) == len(fnames):
+        for i, fname in enumerate(fnames):
+            bl = band_labels[i]
+            if isinstance(bl, str) and bl.strip():
+                name_to_display[str(fname)] = bl.strip()
+
     drivers: list[DriverVariable] = []
     for name, phi in pairs:
         phi_f = float(phi)
@@ -149,12 +157,14 @@ def compute_shap_driver_variables(
             direction = "decrease"
         else:
             direction = "neutral"
+        dn = name_to_display.get(str(name))
         drivers.append(
             DriverVariable(
                 name=name,
                 direction=direction,
                 magnitude=phi_f,
                 label=f"{phi_f:+.4g}",
+                display_name=dn if dn and dn != str(name) else None,
             )
         )
     return drivers

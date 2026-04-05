@@ -65,14 +65,16 @@ def test_patch_environmental_band_definitions_sets_labels(admin_client_proj):
         "/projects/proj-1/environmental-band-definitions",
         headers={"Authorization": "Bearer fake.token"},
         json=[
-            {"index": 0, "name": "a", "label": "Elevation"},
-            {"index": 1, "name": "b", "label": "Slope"},
+            {"index": 0, "name": "a", "label": "Elevation", "description": "Height above sea level"},
+            {"index": 1, "name": "b", "label": "Slope", "description": None},
         ],
     )
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["environmental_band_definitions"][0]["label"] == "Elevation"
+    assert body["environmental_band_definitions"][0]["description"] == "Height above sea level"
     assert body["environmental_band_definitions"][1]["label"] == "Slope"
+    assert not body["environmental_band_definitions"][1].get("description")
 
 
 def test_patch_environmental_band_definitions_wrong_count_422(admin_client_proj):

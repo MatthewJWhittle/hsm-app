@@ -7,7 +7,7 @@ import { isRecord } from './jsonGuards'
 
 function parseDriverVariable(value: unknown): DriverVariable | null {
   if (!isRecord(value)) return null
-  const { name, direction, label, magnitude } = value
+  const { name, direction, label, magnitude, display_name } = value
   if (typeof name !== 'string') return null
   if (direction !== 'increase' && direction !== 'decrease' && direction !== 'neutral') {
     return null
@@ -16,6 +16,10 @@ function parseDriverVariable(value: unknown): DriverVariable | null {
   if (label !== undefined) {
     if (label !== null && typeof label !== 'string') return null
     out.label = label
+  }
+  if (display_name !== undefined) {
+    if (display_name !== null && typeof display_name !== 'string') return null
+    out.display_name = display_name
   }
   if (magnitude !== undefined) {
     if (magnitude === null) {
@@ -31,13 +35,17 @@ function parseDriverVariable(value: unknown): DriverVariable | null {
 
 function parseRawEnvironmentalValue(value: unknown): RawEnvironmentalValue | null {
   if (!isRecord(value)) return null
-  const { name, value: v, unit } = value
+  const { name, value: v, unit, description } = value
   if (typeof name !== 'string') return null
   if (typeof v !== 'number' || !Number.isFinite(v)) return null
   const out: RawEnvironmentalValue = { name, value: v }
   if (unit !== undefined) {
     if (unit !== null && typeof unit !== 'string') return null
     out.unit = unit
+  }
+  if (description !== undefined) {
+    if (description !== null && typeof description !== 'string') return null
+    out.description = description
   }
   return out
 }

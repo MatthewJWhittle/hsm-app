@@ -14,11 +14,16 @@ class EnvironmentalBandDefinition(BaseModel):
     name: str = Field(
         ...,
         min_length=1,
-        description="Stable column name (matches training / model feature order)",
+        description="Machine-friendly band / column name (from GDAL or band_i; matches training order)",
     )
     label: str | None = Field(
         default=None,
-        description="Optional human-readable label for UI and raw value display",
+        description="Optional human-friendly display name (shown in map UI when set)",
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=2048,
+        description="Optional human-friendly explanation of what this variable measures",
     )
 
 
@@ -59,7 +64,7 @@ class CatalogProject(BaseModel):
     )
     environmental_band_definitions: list[EnvironmentalBandDefinition] | None = Field(
         default=None,
-        description="Per-band names (and optional labels) for the environmental COG; set after upload.",
+        description="Per-band machine name, optional display label, optional description; set after upload.",
     )
     explainability_background_path: str | None = Field(
         default=None,

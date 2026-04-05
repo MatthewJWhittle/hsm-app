@@ -37,14 +37,14 @@ def definitions_from_rasterio_dataset(src: DatasetReader) -> list[EnvironmentalB
             if raw is not None and str(raw).strip()
             else f"band_{i}"
         )
-        out.append(EnvironmentalBandDefinition(index=i, name=name, label=None))
+        out.append(EnvironmentalBandDefinition(index=i, name=name, label=None, description=None))
     return out
 
 
 def default_band_definitions(count: int) -> list[EnvironmentalBandDefinition]:
     """``band_0`` … ``band_{count-1}`` placeholders (admin can rename via PUT)."""
     return [
-        EnvironmentalBandDefinition(index=i, name=f"band_{i}", label=None)
+        EnvironmentalBandDefinition(index=i, name=f"band_{i}", label=None, description=None)
         for i in range(count)
     ]
 
