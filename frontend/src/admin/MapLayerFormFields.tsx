@@ -3,21 +3,23 @@ import {
   Autocomplete,
   Box,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Divider,
   FormControl,
-  FormControlLabel,
   FormHelperText,
   InputLabel,
   MenuItem,
   Select,
   Stack,
-  Switch,
   TextField,
   Typography,
 } from '@mui/material'
+import { useEffect, useState } from 'react'
 
-import type { CatalogProject } from '../types/project'
-import type { EnvironmentalBandDefinition } from '../types/project'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import { COG_REPLACE_HINT, EXPLAINABILITY_HELP, FIELD_HELP } from './catalogFormConstants'
 
 export interface MapLayerFormFieldsProps {
@@ -85,8 +87,50 @@ export function MapLayerFormFields({
 }: MapLayerFormFieldsProps) {
   const isEdit = mode === 'edit'
   const opts = environmentalBandOptions ?? []
-  const showEnvPicker = Boolean(projectId) && !allowStandAloneProject
-  const noManifest = showEnvPicker && projectId && opts.length === 0
+  const showEnvSection = Boolean(projectId)
+  const noManifest = showEnvSection && opts.length === 0
+
+  const [influenceDialogOpen, setInfluenceDialogOpen] = useState(false)
+  const [draftBands, setDraftBands] = useState<EnvironmentalBandDefinition[]>([])
+  const [draftFile, setDraftFile] = useState<File | null>(null)
+  const [dialogError, setDialogError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!influenceDialogOpen) return
+    setDraftBands(selectedEnvironmentalBands)
+    setDraftFile(explainModelFile)
+    setDialogError(null)
+  }, [influenceDialogOpen, selectedEnvironmentalBands, explainModelFile])
+
+  const handleApplyInfluence = () => {
+    if (draftBands.length === 0) {
+      setDialogError('Select at least one environmental variable in model feature order.')
+      return
+    }
+    if (!draftFile && !explainHasExistingArtifacts) {
+      setDialogError(
+        'Choose a trained model (.pkl). The reference sample is generated from the project environmental COG.',
+      )
+      return
+    }
+    onSelectedEnvironmentalBandsChange(draftBands)
+    onExplainModelFileChange(draftFile)
+    onExplainabilityEnabledChange(true)
+    setInfluenceDialogOpen(false)
+  }
+
+  const handleRemoveInfluence = () => {
+    onSelectedEnvironmentalBandsChange([])
+    onExplainModelFileChange(null)
+    onExplainabilityEnabledChange(false)
+  }
+
+  const featureCount = selectedEnvironmentalBands.length
+  const modelLabel = explainModelFile
+    ? explainModelFile.name
+    : explainabilityEnabled && explainHasExistingArtifacts
+      ? 'Existing model on server'
+      : ''
 
   return (
     <Stack spacing={2} sx={{ maxWidth, opacity: disabled ? 0.55 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
@@ -159,82 +203,57 @@ export function MapLayerFormFields({
           disabled={disabled}
         />
       </Stack>
-      {showEnvPicker && (
+
+      {showEnvSection && (
         <>
+          <Divider sx={{ my: 0.5 }} />
+          <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+            Variable influence (optional)
+          </Typography>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: -0.5 }}>
+            {EXPLAINABILITY_HELP.toggle}
+          </Typography>
           {noManifest ? (
             <Alert severity="warning" variant="outlined" sx={{ py: 0.75 }}>
-              This project has no environmental band definitions yet. Upload a shared environmental COG on the
-              project and save, then edit band names if needed.
+              This project has no environmental band definitions yet. Upload a shared environmental COG on the project
+              and save, then you can upload an explainability model here.
             </Alert>
-          ) : (
-            <Autocomplete
-              multiple
-              disableCloseOnSelect
-              options={opts}
-              value={selectedEnvironmentalBands}
-              onChange={(_e, v) => onSelectedEnvironmentalBandsChange(v)}
-              getOptionLabel={(o) => (o.label?.trim() ? `${o.name} (${o.label})` : o.name)}
-              isOptionEqualToValue={(a, b) => a.index === b.index}
-              disabled={disabled}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  size="small"
-                  label="Environmental variables"
-                  helperText="Select in model feature order (order of chips = column order for training / explainability)."
-                />
-              )}
-            />
-          )}
-        </>
-      )}
-      <Divider sx={{ my: 0.5 }} />
-      <FormControlLabel
-        control={
-          <Switch
-            checked={explainabilityEnabled}
-            onChange={(_e, v) => onExplainabilityEnabledChange(v)}
-            disabled={disabled}
-          />
-        }
-        label="Variable influence explanations"
-      />
-      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: -1, mb: 0.5 }}>
-        {EXPLAINABILITY_HELP.toggle}
-      </Typography>
-      {explainabilityEnabled && (
-        <Stack spacing={2} sx={{ pl: { sm: 0.5 } }}>
-          {isEdit && explainHasExistingArtifacts && (
-            <Alert severity="info" variant="outlined" sx={{ py: 0.5 }}>
-              A trained model is already stored for this layer. Upload a new .pkl below to replace it. The reference
-              sample comes from the project environmental COG.
-            </Alert>
-          )}
-          <Box>
-            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
-              Trained model (.pkl)
-            </Typography>
-            <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
-              <Button variant="outlined" component="label" size="small" disabled={disabled}>
-                Choose file
-                <input
-                  type="file"
-                  accept=".pkl,.pickle,application/octet-stream"
-                  hidden
-                  onChange={(e) => onExplainModelFileChange(e.target.files?.[0] ?? null)}
-                />
-              </Button>
-              <Typography variant="body2" color="text.secondary" noWrap sx={{ maxWidth: 220 }}>
-                {explainModelFile ? explainModelFile.name : isEdit ? 'Keep existing or choose…' : 'Required on create'}
+          ) : explainabilityEnabled ? (
+            <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
+              <Typography variant="body2" color="text.secondary">
+                {featureCount} feature{featureCount === 1 ? '' : 's'}
+                {modelLabel ? ` · ${modelLabel}` : ''}
               </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  disabled={disabled}
+                  onClick={() => setInfluenceDialogOpen(true)}
+                >
+                  Change model or features…
+                </Button>
+                <Button size="small" disabled={disabled} onClick={handleRemoveInfluence}>
+                  Remove
+                </Button>
+              </Stack>
             </Stack>
-            <FormHelperText sx={{ mx: 0, mt: 0.5 }}>{EXPLAINABILITY_HELP.modelFile}</FormHelperText>
-          </Box>
-          <Typography variant="caption" color="text.secondary" display="block" sx={{ pl: { sm: 0.5 } }}>
+          ) : (
+            <Button
+              variant="outlined"
+              size="small"
+              disabled={disabled}
+              onClick={() => setInfluenceDialogOpen(true)}
+            >
+              Upload model for variable influence…
+            </Button>
+          )}
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ pl: { sm: 0.25 } }}>
             {EXPLAINABILITY_HELP.backgroundNote}
           </Typography>
-        </Stack>
+        </>
       )}
+
       <Box>
         <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
           {isEdit ? 'Replace map file (optional)' : 'Suitability map file (required)'}
@@ -262,6 +281,84 @@ export function MapLayerFormFields({
         )}
         {isEdit && <FormHelperText sx={{ mx: 0, mt: 0.5 }}>{COG_REPLACE_HINT}</FormHelperText>}
       </Box>
+
+      <Dialog
+        open={influenceDialogOpen}
+        onClose={() => setInfluenceDialogOpen(false)}
+        fullWidth
+        maxWidth="sm"
+        scroll="paper"
+        PaperProps={{ sx: { borderRadius: 2 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Variable influence model</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Select environmental variables in the same order as your trained model, then upload the pickled estimator
+            (.pkl).
+          </Typography>
+          {noManifest ? (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              This project has no band manifest yet. Configure the project’s environmental COG first.
+            </Alert>
+          ) : (
+            <Autocomplete
+              multiple
+              disableCloseOnSelect
+              options={opts}
+              value={draftBands}
+              onChange={(_e, v) => setDraftBands(v)}
+              getOptionLabel={(o) => (o.label?.trim() ? `${o.name} (${o.label})` : o.name)}
+              isOptionEqualToValue={(a, b) => a.index === b.index}
+              sx={{ mb: 2 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  size="small"
+                  label="Environmental variables (features)"
+                  helperText="Order of chips = column order for training / explainability."
+                />
+              )}
+            />
+          )}
+          {isEdit && explainHasExistingArtifacts && (
+            <Alert severity="info" variant="outlined" sx={{ mb: 2, py: 0.75 }}>
+              A trained model is already stored for this layer. Leave the file field empty to keep it, or choose a new
+              .pkl to replace it.
+            </Alert>
+          )}
+          <Box>
+            <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
+              Trained model (.pkl)
+            </Typography>
+            <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
+              <Button variant="outlined" component="label" size="small">
+                Choose file
+                <input
+                  type="file"
+                  accept=".pkl,.pickle,application/octet-stream"
+                  hidden
+                  onChange={(e) => setDraftFile(e.target.files?.[0] ?? null)}
+                />
+              </Button>
+              <Typography variant="body2" color="text.secondary" noWrap sx={{ maxWidth: 240 }}>
+                {draftFile ? draftFile.name : isEdit && explainHasExistingArtifacts ? 'Keep existing' : 'Required'}
+              </Typography>
+            </Stack>
+            <FormHelperText sx={{ mx: 0, mt: 0.5 }}>{EXPLAINABILITY_HELP.modelFile}</FormHelperText>
+          </Box>
+          {dialogError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {dialogError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setInfluenceDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleApplyInfluence} disabled={noManifest}>
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Stack>
   )
 }

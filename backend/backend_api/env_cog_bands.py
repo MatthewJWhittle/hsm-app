@@ -7,7 +7,7 @@ from pathlib import Path
 import rasterio
 from rasterio.io import DatasetReader, MemoryFile
 
-from backend_api.schemas_project import EnvironmentalBandDefinition
+from backend_api.schemas_project import BandLabelPatch, EnvironmentalBandDefinition
 
 
 def count_bands_in_geotiff_bytes(content: bytes) -> int:
@@ -121,3 +121,42 @@ def parse_band_definitions_json(raw: str | None) -> list[EnvironmentalBandDefini
         return [EnvironmentalBandDefinition.model_validate(x) for x in data]
     except ValidationError as e:
         raise ValueError(str(e)) from e
+
+
+def merge_band_label_patch(
+    definition: EnvironmentalBandDefinition, patch: BandLabelPatch
+) -> EnvironmentalBandDefinition:
+    """Apply partial label/description; ``label`` overrides ``name`` when both are set."""
+    fs = patch.model_fields_set
+    new_label = definition.label
+    new_desc = definition.description
+    if "label" in fs:
+        new_label = patch.label
+    elif "name" in fs:
+        new_label = patch.name
+    if "description" in fs:
+        new_desc = patch.description
+    return definition.model_copy(update={"label": new_label, "description": new_desc})
+
+
+def apply_band_label_updates(
+    definitions: list[EnvironmentalBandDefinition],
+    updates: dict[str, BandLabelPatch],
+) -> list[EnvironmentalBandDefinition]:
+    """
+    Merge label patches keyed by machine ``name``. Raises ``ValueError`` if any key is unknown.
+    """
+    if not updates:
+        raise ValueError("updates must be non-empty")
+    by_name = {d.name for d in definitions}
+    unknown = sorted(k for k in updates if k not in by_name)
+    if unknown:
+        raise ValueError(f"unknown band name(s): {unknown!r}")
+    out: list[EnvironmentalBandDefinition] = []
+    for d in definitions:
+        p = updates.get(d.name)
+        if p is None:
+            out.append(d)
+        else:
+            out.append(merge_band_label_patch(d, p))
+    return out

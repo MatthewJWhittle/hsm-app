@@ -101,6 +101,53 @@ def test_patch_environmental_band_definitions_unknown_project_404(admin_client_p
     assert r.status_code == 404
 
 
+def test_patch_environmental_band_definition_labels_partial(admin_client_proj):
+    c = admin_client_proj
+    r = c.patch(
+        "/projects/proj-1/environmental-band-definitions/labels",
+        headers={"Authorization": "Bearer fake.token"},
+        json={"a": {"name": "Alpha", "description": "first band"}},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["environmental_band_definitions"][0]["label"] == "Alpha"
+    assert body["environmental_band_definitions"][0]["description"] == "first band"
+    assert body["environmental_band_definitions"][1]["label"] is None
+
+
+def test_patch_environmental_band_definition_labels_label_wins_over_name(admin_client_proj):
+    c = admin_client_proj
+    r = c.patch(
+        "/projects/proj-1/environmental-band-definitions/labels",
+        headers={"Authorization": "Bearer fake.token"},
+        json={"b": {"label": "Beta", "name": "Ignored"}},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["environmental_band_definitions"][1]["label"] == "Beta"
+
+
+def test_patch_environmental_band_definition_labels_unknown_name_422(admin_client_proj):
+    c = admin_client_proj
+    r = c.patch(
+        "/projects/proj-1/environmental-band-definitions/labels",
+        headers={"Authorization": "Bearer fake.token"},
+        json={"no_such_band": {"name": "X"}},
+    )
+    assert r.status_code == 422
+    assert "unknown" in str(r.json().get("detail", "")).lower()
+
+
+def test_patch_environmental_band_definition_labels_empty_body_422(admin_client_proj):
+    c = admin_client_proj
+    r = c.patch(
+        "/projects/proj-1/environmental-band-definitions/labels",
+        headers={"Authorization": "Bearer fake.token"},
+        json={},
+    )
+    assert r.status_code == 422
+
+
 def test_post_explainability_background_sample_ok(admin_client_proj):
     with patch(
         "backend_api.routers.projects.write_project_explainability_background_parquet"

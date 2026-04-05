@@ -1,4 +1,11 @@
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
+
+/** Partial label update for PATCH …/environmental-band-definitions/labels (``name`` aliases display label). */
+export type BandLabelPatch = {
+  label?: string | null
+  description?: string | null
+  name?: string | null
+}
 import { apiBase } from '../utils/apiBase'
 import { readFetchErrorDetail } from './errors'
 import { parseProject } from './projects'
@@ -81,6 +88,30 @@ export async function patchProjectEnvironmentalBandDefinitions(params: {
   const raw: unknown = await r.json()
   const p = parseProject(raw)
   if (p === null) throw new Error('Invalid PATCH environmental-band-definitions response')
+  return p
+}
+
+/** Patch display labels/descriptions for one or more bands (keyed by machine band ``name``). */
+export async function patchProjectEnvironmentalBandLabels(params: {
+  token: string
+  projectId: string
+  updates: Record<string, BandLabelPatch>
+}): Promise<CatalogProject> {
+  const r = await fetch(
+    `${apiBase()}/projects/${encodeURIComponent(params.projectId)}/environmental-band-definitions/labels`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${params.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params.updates),
+    },
+  )
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  const p = parseProject(raw)
+  if (p === null) throw new Error('Invalid PATCH environmental-band-definitions/labels response')
   return p
 }
 

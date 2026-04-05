@@ -398,7 +398,10 @@ export function AdminPage() {
   }, [projects])
 
   useEffect(() => {
-    if (layerCreateOpen) setSelectedEnvBands([])
+    if (!layerCreateOpen) return
+    setSelectedEnvBands([])
+    setExplainEnabled(false)
+    setExplainModelFile(null)
   }, [modelProjectId, layerCreateOpen])
 
   const refreshList = useCallback(async () => {
@@ -719,13 +722,13 @@ export function AdminPage() {
     if (explainEnabled) {
       if (selectedEnvBands.length === 0) {
         setCreateError(
-          'Select environmental variables in model feature order (from the project’s band list).',
+          'Variable influence: open “Upload model for variable influence”, select features, and add a .pkl.',
         )
         return
       }
       if (!explainModelFile) {
         setCreateError(
-          'Variable influence requires a trained model (.pkl). The reference sample is generated from the project environmental COG.',
+          'Variable influence requires a trained model (.pkl). Use the upload dialog to choose one.',
         )
         return
       }
@@ -769,7 +772,7 @@ export function AdminPage() {
       if (snap !== layerEditBaselineRef.current) {
         if (!canPersistLayerEdit()) {
           setEditError(
-            'Fill in species and activity. For variable influence, select environmental bands and upload a model or use an existing one.',
+            'Fill in species and activity. For variable influence, use “Upload model for variable influence” to set features and a .pkl (or keep an existing server model).',
           )
           return
         }

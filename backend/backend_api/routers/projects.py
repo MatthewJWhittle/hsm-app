@@ -28,6 +28,7 @@ from backend_api.cog_validation import CogValidationError
 from backend_api.deps.catalog import get_object_storage, require_catalog_ready
 from backend_api.env_background_sample import write_project_explainability_background_parquet
 from backend_api.env_cog_bands import (
+    apply_band_label_updates,
     band_definitions_for_upload_bytes,
     count_bands_in_path,
     default_band_definitions_from_path,
@@ -50,6 +51,7 @@ from backend_api.routers.project_visibility_parse import (
 )
 from backend_api.project_manifest import resolve_env_cog_path_from_parts
 from backend_api.schemas_project import (
+    BandLabelPatch,
     CatalogProject,
     EnvironmentalBandDefinition,
     RegenerateExplainabilityBackgroundBody,
@@ -148,6 +150,93 @@ async def patch_environmental_band_definitions(
     project = existing.model_copy(
         update={
             "environmental_band_definitions": definitions,
+            "updated_at": now,
+        }
+    )
+
+    def _persist() -> None:
+        upsert_project(settings, project)
+
+    try:
+        await run_in_threadpool(_persist)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"could not save catalog: {e}") from e
+
+    await reload_catalog_threaded(request)
+    return project
+
+
+@router.patch(
+    "/projects/{project_id}/environmental-band-definitions/labels",
+    response_model=CatalogProject,
+    tags=["admin"],
+    responses=_ADMIN_RESPONSES,
+    summary="Patch display labels and descriptions for one or more bands (by machine name)",
+)
+async def patch_environmental_band_definition_labels(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _claims: Annotated[dict, Depends(require_admin_claims)],
+    catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    project_id: str,
+    updates: Annotated[dict[str, BandLabelPatch], Body(...)],
+):
+    """
+    Partial update: request body is a JSON object mapping each band's machine ``name`` to fields to set.
+
+    Example::
+
+        {
+          "ceh_landcover_arable": {
+            "name": "Arable",
+            "description": "CEH Land Cover Map; arable agriculture."
+          },
+          "terrain_dtm": { "label": "Ground elevation", "description": "..." }
+        }
+
+    Use ``label`` or ``name`` for the display title (``label`` wins if both are present).
+    Omitted bands are unchanged. Unknown band names return **422**.
+    """
+    existing = catalog.get_project(project_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    defs = existing.environmental_band_definitions
+    if not defs:
+        raise HTTPException(
+            status_code=422,
+            detail="project has no environmental band definitions; upload the environmental COG first",
+        )
+
+    artifact_root = existing.driver_artifact_root
+    cog_path = existing.driver_cog_path
+    abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
+    if not abs_path:
+        raise HTTPException(
+            status_code=422,
+            detail="cannot patch band labels without an environmental COG on the project",
+        )
+    if not Path(abs_path).is_file():
+        raise HTTPException(
+            status_code=422,
+            detail="environmental COG not found on server; upload the file first",
+        )
+
+    try:
+        merged = apply_band_label_updates(defs, updates)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    count = await run_in_threadpool(lambda: count_bands_in_path(abs_path))
+    try:
+        validate_band_definitions_match_raster(count, merged)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    now = datetime.now(UTC).isoformat()
+    project = existing.model_copy(
+        update={
+            "environmental_band_definitions": merged,
             "updated_at": now,
         }
     )

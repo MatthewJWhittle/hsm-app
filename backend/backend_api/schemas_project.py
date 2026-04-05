@@ -27,6 +27,29 @@ class EnvironmentalBandDefinition(BaseModel):
     )
 
 
+class BandLabelPatch(BaseModel):
+    """
+    Partial update for one band's display fields (PATCH ``.../environmental-band-definitions/labels``).
+
+    Export JSON often uses ``name`` for the human-readable title; the API field is ``label``.
+    If both ``label`` and ``name`` are sent, ``label`` wins.
+    """
+
+    label: str | None = Field(
+        default=None,
+        description="Human-friendly display name (shown in map UI).",
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=2048,
+        description="Human-friendly explanation of what this variable measures.",
+    )
+    name: str | None = Field(
+        default=None,
+        description="Alias for ``label`` in bulk JSON exports; ignored if ``label`` is set.",
+    )
+
+
 class RegenerateExplainabilityBackgroundBody(BaseModel):
     """Optional body for POST ``/projects/{id}/explainability-background-sample``."""
 
