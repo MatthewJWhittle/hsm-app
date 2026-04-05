@@ -69,7 +69,7 @@ Default posture for production: **precompute where possible**; use live explaine
 
 ## 8. API and UX behaviour
 
-- **Progressive capability**: suitability works without drivers; drivers without live SHAP; avoid UI that implies a stronger signal than the API provides.
+- **Progressive capability**: suitability works without influence drivers; raw env values may appear when bands are configured without SHAP artefacts; avoid UI that implies a stronger signal than the API provides.
 - **Honest copy**: distinguish raw env values, local contributions, and global importance where users could confuse them.
 - **Explicit empty and error states**: “not configured”, “outside extent”, “nodata”, and “server error” should be distinguishable in the UI and logs.
 

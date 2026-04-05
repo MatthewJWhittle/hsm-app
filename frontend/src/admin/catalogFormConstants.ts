@@ -15,3 +15,15 @@ export const DRIVER_COG_INFO =
 
 export const COG_REPLACE_HINT =
   'Optional replacement file with the same rules. Leave empty to keep the current upload.'
+
+export const EXPLAINABILITY_HELP = {
+  toggle:
+    'When enabled, map clicks can show which environmental variables increase or decrease suitability at that point (requires matching project environmental raster and band indices).',
+  featureNames:
+    'Comma-separated names in the same order as environmental band indices. Must match the columns your trained model expects.',
+  bandLabels:
+    'Optional friendly labels for the raw values list (same order as bands). Leave empty to use feature names.',
+  modelFile: 'Pickled scikit-learn estimator (e.g. .pkl) saved with the same feature order.',
+  backgroundFile:
+    'Reference sample as Parquet: rows of training-like values; columns must match feature names (used only to compute explanations).',
+} as const

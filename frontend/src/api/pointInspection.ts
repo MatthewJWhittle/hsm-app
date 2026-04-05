@@ -1,4 +1,8 @@
-import type { DriverVariable, PointInspection } from '../types/pointInspection'
+import type {
+  DriverVariable,
+  PointInspection,
+  RawEnvironmentalValue,
+} from '../types/pointInspection'
 import { isRecord } from './jsonGuards'
 
 function parseDriverVariable(value: unknown): DriverVariable | null {
@@ -25,12 +29,25 @@ function parseDriverVariable(value: unknown): DriverVariable | null {
   return out
 }
 
+function parseRawEnvironmentalValue(value: unknown): RawEnvironmentalValue | null {
+  if (!isRecord(value)) return null
+  const { name, value: v, unit } = value
+  if (typeof name !== 'string') return null
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null
+  const out: RawEnvironmentalValue = { name, value: v }
+  if (unit !== undefined) {
+    if (unit !== null && typeof unit !== 'string') return null
+    out.unit = unit
+  }
+  return out
+}
+
 export function parsePointInspection(value: unknown): PointInspection | null {
   if (!isRecord(value)) return null
-  const v = value.value
-  if (typeof v !== 'number' || !Number.isFinite(v)) return null
+  const val = value.value
+  if (typeof val !== 'number' || !Number.isFinite(val)) return null
 
-  const out: PointInspection = { value: v }
+  const out: PointInspection = { value: val }
 
   if ('unit' in value) {
     const u = value.unit
@@ -38,15 +55,36 @@ export function parsePointInspection(value: unknown): PointInspection | null {
     out.unit = u ?? null
   }
 
-  if ('drivers' in value && value.drivers != null) {
-    if (!Array.isArray(value.drivers)) return null
-    const drivers: DriverVariable[] = []
-    for (const d of value.drivers) {
-      const dv = parseDriverVariable(d)
-      if (dv === null) return null
-      drivers.push(dv)
+  if ('drivers' in value) {
+    if (value.drivers == null) {
+      out.drivers = null
+    } else if (Array.isArray(value.drivers)) {
+      const drivers: DriverVariable[] = []
+      for (const d of value.drivers) {
+        const dv = parseDriverVariable(d)
+        if (dv === null) return null
+        drivers.push(dv)
+      }
+      out.drivers = drivers
+    } else {
+      return null
     }
-    out.drivers = drivers
+  }
+
+  if ('raw_environmental_values' in value) {
+    if (value.raw_environmental_values == null) {
+      out.raw_environmental_values = null
+    } else if (Array.isArray(value.raw_environmental_values)) {
+      const raw: RawEnvironmentalValue[] = []
+      for (const r of value.raw_environmental_values) {
+        const rv = parseRawEnvironmentalValue(r)
+        if (rv === null) return null
+        raw.push(rv)
+      }
+      out.raw_environmental_values = raw
+    } else {
+      return null
+    }
   }
 
   return out

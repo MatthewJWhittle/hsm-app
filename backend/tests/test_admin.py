@@ -1,6 +1,7 @@
 """Tests for admin POST/PUT /models (auth + storage mocked)."""
 
 import importlib
+import json
 from contextlib import contextmanager
 from io import BytesIO
 from unittest.mock import MagicMock, patch
@@ -8,6 +9,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from backend_api.storage import (
+    EXPLAINABILITY_BACKGROUND_FILENAME,
+    EXPLAINABILITY_MODEL_FILENAME,
+)
 from tests.helpers import mock_firestore_client_for_documents
 
 SAMPLE_PROJECT = {
@@ -116,6 +121,61 @@ def test_post_models_requires_admin_claim():
                 files={"file": ("cog.tif", BytesIO(b"dummy"), "image/tiff")},
             )
     assert r.status_code == 403
+
+
+def test_post_models_with_explainability_uploads(catalog_docs):
+    mock_storage = MagicMock()
+    mock_storage.write_suitability_cog.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
+    with (
+        patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
+        patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
+    ):
+        with _admin_client(
+            catalog_docs,
+            mock_storage,
+            project_documents=[SAMPLE_PROJECT],
+        ) as c:
+            r = c.post(
+                "/models",
+                headers={"Authorization": "Bearer fake.token"},
+                data={
+                    "project_id": "proj-1",
+                    "species": "New species",
+                    "activity": "Flight",
+                    "driver_band_indices": "[0, 1]",
+                    "driver_config": json.dumps({"feature_names": ["a", "b"]}),
+                },
+                files={
+                    "file": ("cog.tif", BytesIO(b"dummy"), "image/tiff"),
+                    "explainability_model_file": (
+                        "m.pkl",
+                        BytesIO(b"pk"),
+                        "application/octet-stream",
+                    ),
+                    "explainability_background_file": (
+                        "bg.parquet",
+                        BytesIO(b"pq"),
+                        "application/octet-stream",
+                    ),
+                },
+            )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["driver_config"]["explainability_model_path"] == EXPLAINABILITY_MODEL_FILENAME
+    assert (
+        body["driver_config"]["explainability_background_path"]
+        == EXPLAINABILITY_BACKGROUND_FILENAME
+    )
+    mid = body["id"]
+    mock_storage.write_model_artifact.assert_any_call(
+        mid, EXPLAINABILITY_MODEL_FILENAME, b"pk"
+    )
+    mock_storage.write_model_artifact.assert_any_call(
+        mid, EXPLAINABILITY_BACKGROUND_FILENAME, b"pq"
+    )
 
 
 def test_post_models_201_creates_model(catalog_docs):

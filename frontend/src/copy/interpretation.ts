@@ -12,9 +12,13 @@ export const INTERPRETATION_DECISION_SUPPORT =
 export const INTERPRETATION_DRIVERS_POINTER =
   'Click the map for a local score, drivers when available, and technical details.'
 
-/** Point inspection — raw environmental bands (issue #13); not causal / SHAP attribution. */
-export const INTERPRETATION_DRIVERS_RAW =
-  'Environmental values at this click; they are inputs at this location, not a full causal explanation of suitability.'
+/** Point inspection — variable influence (e.g. SHAP) when the model has explainability artefacts. */
+export const INTERPRETATION_INFLUENCE_CAPTION =
+  'Estimated contribution to suitability at this location (stronger magnitude = more influence).'
+
+/** Point inspection — raw environmental raster values at the click (secondary detail). */
+export const INTERPRETATION_RAW_VALUES_CAPTION =
+  'Values sampled from the environmental layers at this point.'
 
 /** Short reminder in the point-inspection HUD (repeat key caution). */
 export const INTERPRETATION_HUD_REMINDER =

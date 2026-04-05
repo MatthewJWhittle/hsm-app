@@ -1,15 +1,18 @@
 """Tests for GET /models/{id}/point (synthetic COG in tmp_path)."""
 
 import importlib
+import pickle
 from unittest.mock import patch
 
 import numpy as np
+import pandas as pd
 import pytest
 import rasterio
 from fastapi.testclient import TestClient
 from rasterio.crs import CRS
 from rasterio.transform import from_bounds
 from rasterio.warp import transform as transform_coords
+from sklearn.linear_model import LogisticRegression
 
 from tests.helpers import mock_firestore_client_for_documents
 
@@ -239,8 +242,8 @@ def test_point_nodata_pixel_422(tmp_path):
     assert "nodata" in r.json()["detail"].lower()
 
 
-def test_point_returns_environmental_drivers(tmp_path):
-    """Model with project env COG and driver_band_indices returns raw driver values."""
+def test_point_returns_raw_environmental_values(tmp_path):
+    """Model with project env COG and driver_band_indices returns rawEnvironmentalValues; no SHAP without artefacts."""
     bounds = (-200_000.0, 7_000_000.0, -199_000.0, 7_000_500.0)
     cog = tmp_path / "suitability_cog.tif"
     _write_test_cog(cog, bounds, fill=0.42)
@@ -283,12 +286,13 @@ def test_point_returns_environmental_drivers(tmp_path):
     assert r.status_code == 200
     data = r.json()
     assert data["value"] == pytest.approx(0.42)
-    assert len(data["drivers"]) == 2
-    assert data["drivers"][0]["name"] == "forest"
-    assert data["drivers"][0]["direction"] == "neutral"
-    assert data["drivers"][0]["magnitude"] == pytest.approx(0.11)
-    assert data["drivers"][1]["name"] == "water"
-    assert data["drivers"][1]["magnitude"] == pytest.approx(0.33)
+    assert data["drivers"] == []
+    raw = data["raw_environmental_values"]
+    assert len(raw) == 2
+    assert raw[0]["name"] == "forest"
+    assert raw[0]["value"] == pytest.approx(0.11)
+    assert raw[1]["name"] == "water"
+    assert raw[1]["value"] == pytest.approx(0.33)
 
 
 def test_point_drivers_empty_when_not_configured(point_client):
@@ -341,6 +345,68 @@ def test_point_env_raster_missing_503_when_drivers_configured(tmp_path):
             )
     assert r.status_code == 503
     assert "environmental" in r.json()["detail"].lower()
+
+
+def test_point_returns_shap_influence(tmp_path):
+    """With explainability artefacts, drivers lists SHAP-style influence."""
+    np.random.seed(0)
+    bounds = (-200_000.0, 7_000_000.0, -199_000.0, 7_000_500.0)
+    cog = tmp_path / "suitability_cog.tif"
+    _write_test_cog(cog, bounds, fill=0.5)
+    env_cog = tmp_path / "projects" / "proj-a" / "environmental_cog.tif"
+    env_cog.parent.mkdir(parents=True)
+    _write_test_cog_multiband(env_cog, bounds, fills=[0.3, 0.7])
+
+    X = np.random.randn(40, 2)
+    y = (X[:, 0] + X[:, 1] > 0).astype(int)
+    clf = LogisticRegression(max_iter=500).fit(X, y)
+    with open(tmp_path / "mdl.pkl", "wb") as f:
+        pickle.dump(clf, f)
+    bg = pd.DataFrame(np.random.randn(20, 2), columns=["f0", "f1"])
+    bg.to_parquet(tmp_path / "bg.parquet")
+
+    project_id = "proj-a"
+    project_documents = [
+        {
+            "id": project_id,
+            "name": "Test project",
+            "driver_artifact_root": str(env_cog.parent),
+            "driver_cog_path": "environmental_cog.tif",
+        }
+    ]
+    documents = [
+        {
+            "id": "m-shap",
+            "species": "Bat",
+            "activity": "Fly",
+            "artifact_root": str(tmp_path),
+            "suitability_cog_path": "suitability_cog.tif",
+            "project_id": project_id,
+            "driver_band_indices": [0, 1],
+            "driver_config": {
+                "feature_names": ["f0", "f1"],
+                "explainability_model_path": "mdl.pkl",
+                "explainability_background_path": "bg.parquet",
+                "band_labels": ["f0", "f1"],
+            },
+        }
+    ]
+    mock_client = mock_firestore_client_for_documents(documents, project_documents=project_documents)
+    with patch("backend_api.catalog_service.firestore.Client", return_value=mock_client):
+        import backend_api.main as main
+
+        importlib.reload(main)
+        with TestClient(main.app) as client:
+            lng, lat = _center_wgs84(bounds)
+            r = client.get(
+                "/models/m-shap/point",
+                params={"lng": lng, "lat": lat},
+            )
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["drivers"]) >= 1
+    assert all("direction" in d for d in data["drivers"])
+    assert len(data["raw_environmental_values"]) == 2
 
 
 def test_point_wrong_crs_422(tmp_path):

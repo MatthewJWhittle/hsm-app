@@ -16,12 +16,23 @@ type LayerEditDialogProps = {
   editName: string
   editVersion: string
   editDriverBandIndices: string
+  editBandLabelsCsv: string
+  editExplainabilityEnabled: boolean
+  editExplainFeatureNamesCsv: string
+  editExplainModelFile: File | null
+  editExplainBackgroundFile: File | null
+  editExplainHasExistingArtifacts: boolean
   editFile: File | null
   onEditSpeciesChange: (v: string) => void
   onEditActivityChange: (v: string) => void
   onEditNameChange: (v: string) => void
   onEditVersionChange: (v: string) => void
   onEditDriverBandIndicesChange: (v: string) => void
+  onEditBandLabelsCsvChange: (v: string) => void
+  onEditExplainabilityEnabledChange: (v: boolean) => void
+  onEditExplainFeatureNamesCsvChange: (v: string) => void
+  onEditExplainModelFileChange: (f: File | null) => void
+  onEditExplainBackgroundFileChange: (f: File | null) => void
   onEditFileChange: (f: File | null) => void
   editError: string | null
   savingEdit: boolean
@@ -41,12 +52,23 @@ export function LayerEditDialog({
   editName,
   editVersion,
   editDriverBandIndices,
+  editBandLabelsCsv,
+  editExplainabilityEnabled,
+  editExplainFeatureNamesCsv,
+  editExplainModelFile,
+  editExplainBackgroundFile,
+  editExplainHasExistingArtifacts,
   editFile,
   onEditSpeciesChange,
   onEditActivityChange,
   onEditNameChange,
   onEditVersionChange,
   onEditDriverBandIndicesChange,
+  onEditBandLabelsCsvChange,
+  onEditExplainabilityEnabledChange,
+  onEditExplainFeatureNamesCsvChange,
+  onEditExplainModelFileChange,
+  onEditExplainBackgroundFileChange,
   onEditFileChange,
   editError,
   savingEdit,
@@ -57,7 +79,7 @@ export function LayerEditDialog({
       open={open}
       onClose={() => onClose()}
       fullWidth
-      maxWidth="sm"
+      maxWidth="md"
       PaperProps={{ sx: { borderRadius: 2 } }}
     >
       <DialogTitle sx={{ fontWeight: 700 }}>Edit map layer</DialogTitle>
@@ -75,6 +97,17 @@ export function LayerEditDialog({
             modelName={editName}
             modelVersion={editVersion}
             driverBandIndices={editDriverBandIndices}
+            bandLabelsCsv={editBandLabelsCsv}
+            onBandLabelsCsvChange={onEditBandLabelsCsvChange}
+            explainabilityEnabled={editExplainabilityEnabled}
+            onExplainabilityEnabledChange={onEditExplainabilityEnabledChange}
+            explainFeatureNamesCsv={editExplainFeatureNamesCsv}
+            onExplainFeatureNamesCsvChange={onEditExplainFeatureNamesCsvChange}
+            explainModelFile={editExplainModelFile}
+            explainBackgroundFile={editExplainBackgroundFile}
+            onExplainModelFileChange={onEditExplainModelFileChange}
+            onExplainBackgroundFileChange={onEditExplainBackgroundFileChange}
+            explainHasExistingArtifacts={editExplainHasExistingArtifacts}
             onSpeciesChange={onEditSpeciesChange}
             onActivityChange={onEditActivityChange}
             onModelNameChange={onEditNameChange}

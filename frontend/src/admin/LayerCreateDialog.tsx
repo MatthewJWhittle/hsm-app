@@ -21,12 +21,22 @@ type LayerCreateDialogProps = {
   modelName: string
   modelVersion: string
   driverBandIndices: string
+  bandLabelsCsv: string
+  explainabilityEnabled: boolean
+  explainFeatureNamesCsv: string
+  explainModelFile: File | null
+  explainBackgroundFile: File | null
   file: File | null
   onSpeciesChange: (v: string) => void
   onActivityChange: (v: string) => void
   onModelNameChange: (v: string) => void
   onModelVersionChange: (v: string) => void
   onDriverBandIndicesChange: (v: string) => void
+  onBandLabelsCsvChange: (v: string) => void
+  onExplainabilityEnabledChange: (v: boolean) => void
+  onExplainFeatureNamesCsvChange: (v: string) => void
+  onExplainModelFileChange: (f: File | null) => void
+  onExplainBackgroundFileChange: (f: File | null) => void
   onFileChange: (f: File | null) => void
 }
 
@@ -46,12 +56,22 @@ export function LayerCreateDialog({
   modelName,
   modelVersion,
   driverBandIndices,
+  bandLabelsCsv,
+  explainabilityEnabled,
+  explainFeatureNamesCsv,
+  explainModelFile,
+  explainBackgroundFile,
   file,
   onSpeciesChange,
   onActivityChange,
   onModelNameChange,
   onModelVersionChange,
   onDriverBandIndicesChange,
+  onBandLabelsCsvChange,
+  onExplainabilityEnabledChange,
+  onExplainFeatureNamesCsvChange,
+  onExplainModelFileChange,
+  onExplainBackgroundFileChange,
   onFileChange,
 }: LayerCreateDialogProps) {
   return (
@@ -62,7 +82,7 @@ export function LayerCreateDialog({
         onClose()
       }}
       fullWidth
-      maxWidth="sm"
+      maxWidth="md"
       PaperProps={{ sx: { borderRadius: 2 } }}
     >
       <DialogTitle sx={{ fontWeight: 700 }}>New map layer</DialogTitle>
@@ -91,6 +111,16 @@ export function LayerCreateDialog({
             modelName={modelName}
             modelVersion={modelVersion}
             driverBandIndices={driverBandIndices}
+            bandLabelsCsv={bandLabelsCsv}
+            onBandLabelsCsvChange={onBandLabelsCsvChange}
+            explainabilityEnabled={explainabilityEnabled}
+            onExplainabilityEnabledChange={onExplainabilityEnabledChange}
+            explainFeatureNamesCsv={explainFeatureNamesCsv}
+            onExplainFeatureNamesCsvChange={onExplainFeatureNamesCsvChange}
+            explainModelFile={explainModelFile}
+            explainBackgroundFile={explainBackgroundFile}
+            onExplainModelFileChange={onExplainModelFileChange}
+            onExplainBackgroundFileChange={onExplainBackgroundFileChange}
             onSpeciesChange={onSpeciesChange}
             onActivityChange={onActivityChange}
             onModelNameChange={onModelNameChange}

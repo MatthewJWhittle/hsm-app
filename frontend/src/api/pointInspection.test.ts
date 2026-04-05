@@ -69,4 +69,19 @@ describe('parsePointInspection', () => {
     expect(parsePointInspection(null)).toBeNull()
     expect(parsePointInspection('x')).toBeNull()
   })
+
+  it('parses raw_environmental_values', () => {
+    const p = parsePointInspection({
+      value: 0.5,
+      drivers: [],
+      raw_environmental_values: [
+        { name: 'elev', value: 120.5, unit: 'm' },
+        { name: 'forest', value: 0.3 },
+      ],
+    })
+    expect(p!.raw_environmental_values).toHaveLength(2)
+    expect(p!.raw_environmental_values![0].name).toBe('elev')
+    expect(p!.raw_environmental_values![0].value).toBe(120.5)
+    expect(p!.raw_environmental_values![0].unit).toBe('m')
+  })
 })

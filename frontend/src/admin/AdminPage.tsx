@@ -14,6 +14,7 @@ import { Navbar } from '../components/Navbar'
 import type { Model } from '../types/model'
 import type { CatalogProject } from '../types/project'
 
+import { explainabilityConfiguredInCatalog, mergeDriverConfigForSubmit } from './adminExplainability'
 import { AdminCatalogHeader } from './AdminCatalogHeader'
 import { AdminTabPanel } from './AdminTabPanel'
 import { LayerCreateDialog } from './LayerCreateDialog'
@@ -55,6 +56,11 @@ export function AdminPage() {
   const [modelName, setModelName] = useState('')
   const [modelVersion, setModelVersion] = useState('')
   const [driverBandIndices, setDriverBandIndices] = useState('')
+  const [bandLabelsCsv, setBandLabelsCsv] = useState('')
+  const [explainEnabled, setExplainEnabled] = useState(false)
+  const [explainFeatureNames, setExplainFeatureNames] = useState('')
+  const [explainModelFile, setExplainModelFile] = useState<File | null>(null)
+  const [explainBackgroundFile, setExplainBackgroundFile] = useState<File | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -69,6 +75,11 @@ export function AdminPage() {
   const [editProjectId, setEditProjectId] = useState('')
   const [editFile, setEditFile] = useState<File | null>(null)
   const [editDriverBandIndices, setEditDriverBandIndices] = useState('')
+  const [editBandLabels, setEditBandLabels] = useState('')
+  const [editExplainEnabled, setEditExplainEnabled] = useState(false)
+  const [editExplainFeatureNames, setEditExplainFeatureNames] = useState('')
+  const [editExplainModelFile, setEditExplainModelFile] = useState<File | null>(null)
+  const [editExplainBackgroundFile, setEditExplainBackgroundFile] = useState<File | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
 
@@ -115,6 +126,11 @@ export function AdminPage() {
 
   const openLayerCreateDialog = useCallback(() => {
     setLayerCreateOpen(true)
+    setBandLabelsCsv('')
+    setExplainEnabled(false)
+    setExplainFeatureNames('')
+    setExplainModelFile(null)
+    setExplainBackgroundFile(null)
     setModelProjectId((prev) => {
       if (prev) return prev
       const first = projects.find((p) => p.status === 'active')
@@ -243,6 +259,20 @@ export function AdminPage() {
         ? JSON.stringify(m.driver_band_indices)
         : '',
     )
+    const dc = m.driver_config
+    const labels =
+      dc && typeof dc === 'object' && Array.isArray(dc['band_labels'])
+        ? (dc['band_labels'] as unknown[]).map(String).join(', ')
+        : ''
+    setEditBandLabels(labels)
+    setEditExplainEnabled(explainabilityConfiguredInCatalog(m))
+    const fn =
+      dc && typeof dc === 'object' && Array.isArray(dc['feature_names'])
+        ? (dc['feature_names'] as unknown[]).map(String).join(', ')
+        : ''
+    setEditExplainFeatureNames(fn)
+    setEditExplainModelFile(null)
+    setEditExplainBackgroundFile(null)
     setEditFile(null)
     setEditError(null)
     setEditOpen(true)
@@ -342,6 +372,27 @@ export function AdminPage() {
       setCreateError('Not signed in.')
       return
     }
+
+    const driverConfigJson = mergeDriverConfigForSubmit(null, {
+      enabled: explainEnabled,
+      featureNamesCsv: explainFeatureNames,
+      bandLabelsCsv,
+    })
+    const hasDriverConfig = Object.keys(JSON.parse(driverConfigJson)).length > 0
+
+    if (explainEnabled) {
+      if (!explainFeatureNames.trim()) {
+        setCreateError('Enter feature names in the same order as your environmental band indices.')
+        return
+      }
+      if (!explainModelFile || !explainBackgroundFile) {
+        setCreateError(
+          'Variable influence requires both a trained model (.pkl) and a reference sample (.parquet).',
+        )
+        return
+      }
+    }
+
     setCreating(true)
     try {
       await createModel({
@@ -355,12 +406,20 @@ export function AdminPage() {
         driverBandIndicesJson: driverBandIndices.trim()
           ? driverBandIndices.trim()
           : undefined,
+        driverConfigJson: hasDriverConfig ? driverConfigJson : undefined,
+        explainabilityModelFile: explainEnabled ? explainModelFile : undefined,
+        explainabilityBackgroundFile: explainEnabled ? explainBackgroundFile : undefined,
       })
       setSpecies('')
       setActivity('')
       setModelName('')
       setModelVersion('')
       setDriverBandIndices('')
+      setBandLabelsCsv('')
+      setExplainEnabled(false)
+      setExplainFeatureNames('')
+      setExplainModelFile(null)
+      setExplainBackgroundFile(null)
       setFile(null)
       setLayerCreateOpen(false)
       await refreshList()
@@ -379,6 +438,27 @@ export function AdminPage() {
       setEditError('Not signed in.')
       return
     }
+
+    const driverConfigJson = mergeDriverConfigForSubmit(editModel.driver_config ?? null, {
+      enabled: editExplainEnabled,
+      featureNamesCsv: editExplainFeatureNames,
+      bandLabelsCsv: editBandLabels,
+    })
+
+    if (editExplainEnabled) {
+      if (!editExplainFeatureNames.trim()) {
+        setEditError('Enter feature names in the same order as your environmental band indices.')
+        return
+      }
+      const hadArtifacts = explainabilityConfiguredInCatalog(editModel)
+      if (!hadArtifacts && (!editExplainModelFile || !editExplainBackgroundFile)) {
+        setEditError(
+          'Upload both a trained model (.pkl) and a reference sample (.parquet), or save without variable influence.',
+        )
+        return
+      }
+    }
+
     setSavingEdit(true)
     try {
       await updateModel({
@@ -391,6 +471,9 @@ export function AdminPage() {
         file: editFile,
         projectId: editProjectId || undefined,
         driverBandIndicesJson: editDriverBandIndices.trim() || '',
+        driverConfigJson,
+        explainabilityModelFile: editExplainModelFile ?? undefined,
+        explainabilityBackgroundFile: editExplainBackgroundFile ?? undefined,
       })
       setEditOpen(false)
       await refreshList()
@@ -593,12 +676,22 @@ export function AdminPage() {
             modelName={modelName}
             modelVersion={modelVersion}
             driverBandIndices={driverBandIndices}
+            bandLabelsCsv={bandLabelsCsv}
+            explainabilityEnabled={explainEnabled}
+            explainFeatureNamesCsv={explainFeatureNames}
+            explainModelFile={explainModelFile}
+            explainBackgroundFile={explainBackgroundFile}
             file={file}
             onSpeciesChange={setSpecies}
             onActivityChange={setActivity}
             onModelNameChange={setModelName}
             onModelVersionChange={setModelVersion}
             onDriverBandIndicesChange={setDriverBandIndices}
+            onBandLabelsCsvChange={setBandLabelsCsv}
+            onExplainabilityEnabledChange={setExplainEnabled}
+            onExplainFeatureNamesCsvChange={setExplainFeatureNames}
+            onExplainModelFileChange={setExplainModelFile}
+            onExplainBackgroundFileChange={setExplainBackgroundFile}
             onFileChange={setFile}
           />
 
@@ -640,12 +733,25 @@ export function AdminPage() {
             editName={editName}
             editVersion={editVersion}
             editDriverBandIndices={editDriverBandIndices}
+            editBandLabelsCsv={editBandLabels}
+            editExplainabilityEnabled={editExplainEnabled}
+            editExplainFeatureNamesCsv={editExplainFeatureNames}
+            editExplainModelFile={editExplainModelFile}
+            editExplainBackgroundFile={editExplainBackgroundFile}
+            editExplainHasExistingArtifacts={
+              editModel ? explainabilityConfiguredInCatalog(editModel) : false
+            }
             editFile={editFile}
             onEditSpeciesChange={setEditSpecies}
             onEditActivityChange={setEditActivity}
             onEditNameChange={setEditName}
             onEditVersionChange={setEditVersion}
             onEditDriverBandIndicesChange={setEditDriverBandIndices}
+            onEditBandLabelsCsvChange={setEditBandLabels}
+            onEditExplainabilityEnabledChange={setEditExplainEnabled}
+            onEditExplainFeatureNamesCsvChange={setEditExplainFeatureNames}
+            onEditExplainModelFileChange={setEditExplainModelFile}
+            onEditExplainBackgroundFileChange={setEditExplainBackgroundFile}
             onEditFileChange={setEditFile}
             editError={editError}
             savingEdit={savingEdit}

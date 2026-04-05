@@ -13,7 +13,7 @@ from rasterio.transform import rowcol
 from rasterio.warp import transform as transform_coords
 from rasterio.windows import Window
 
-from backend_api.schemas import DriverVariable, Model, PointInspection
+from backend_api.schemas import DriverVariable, Model, PointInspection, RawEnvironmentalValue
 
 if TYPE_CHECKING:
     from backend_api.catalog_service import CatalogService
@@ -206,36 +206,30 @@ def sample_environmental_bands_at_point(
     return out
 
 
-def _driver_display_names(model: Model) -> list[str]:
-    """One display name per ``driver_band_indices`` entry."""
+def build_raw_environmental_values(
+    model: Model, values: list[float]
+) -> list[RawEnvironmentalValue]:
+    """Labels for sampled bands; prefers ``band_labels`` / ``band_names``, else ``feature_names``."""
     indices = model.driver_band_indices or []
     dc = model.driver_config or {}
-    labels = dc.get("band_labels") or dc.get("band_names")
-    if isinstance(labels, list) and len(labels) == len(indices):
-        return [str(x) for x in labels]
-    return [f"band_{i}" for i in indices]
-
-
-def build_driver_variables(model: Model, values: list[float]) -> list[DriverVariable]:
-    """Map raw band values to API drivers (neutral direction: raw inputs, not attribution)."""
-    names = _driver_display_names(model)
-    dc = model.driver_config or {}
+    names = dc.get("band_labels") or dc.get("band_names")
+    if not (isinstance(names, list) and len(names) == len(values)):
+        fn = dc.get("feature_names")
+        if isinstance(fn, list) and len(fn) == len(values):
+            names = [str(x) for x in fn]
+        else:
+            names = [f"band_{indices[i]}" for i in range(len(values))]
+    else:
+        names = [str(x) for x in names]
     units = dc.get("band_units")
-    out: list[DriverVariable] = []
-    for idx, (name, val) in enumerate(zip(names, values)):
-        label = f"{val:.4g}"
-        if isinstance(units, list) and len(units) == len(names) and idx < len(units):
-            u = units[idx]
+    out: list[RawEnvironmentalValue] = []
+    for i, (name, val) in enumerate(zip(names, values)):
+        unit = None
+        if isinstance(units, list) and i < len(units):
+            u = units[i]
             if isinstance(u, str) and u.strip():
-                label = f"{val:.4g} {u.strip()}"
-        out.append(
-            DriverVariable(
-                name=name,
-                direction="neutral",
-                label=label,
-                magnitude=val,
-            )
-        )
+                unit = u.strip()
+        out.append(RawEnvironmentalValue(name=name, value=val, unit=unit))
     return out
 
 
@@ -246,20 +240,48 @@ def inspect_point(
     *,
     catalog: "CatalogService | None" = None,
 ) -> PointInspection:
-    """Sample suitability at WGS84; optional environmental driver bands from the model record."""
+    """Sample suitability; optional raw env values and SHAP influence when configured."""
+    from backend_api.point_explainability import (
+        compute_shap_driver_variables,
+        explainability_configured,
+    )
+
     path = resolve_cog_path(model)
     value = sample_suitability(path, lng, lat)
 
-    drivers: list[DriverVariable] = []
+    drivers_out: list[DriverVariable] | None = None  # None → serialize as empty list
+    raw_out: list[RawEnvironmentalValue] | None = None
+
     indices = model.driver_band_indices
     if catalog is not None and indices:
         env_path = resolve_environmental_cog_path_for_model(model, catalog)
         if env_path is not None:
-            values = sample_environmental_bands_at_point(env_path, lng, lat, indices)
-            drivers = build_driver_variables(model, values)
+            band_values = sample_environmental_bands_at_point(
+                env_path, lng, lat, indices
+            )
+            raw_out = build_raw_environmental_values(model, band_values)
+            if explainability_configured(model):
+                dc = model.driver_config or {}
+                fnames = dc.get("feature_names")
+                if not (
+                    isinstance(fnames, list)
+                    and len(fnames) == len(band_values)
+                    and len(fnames) > 0
+                ):
+                    raise PointSamplingError(
+                        "explainability requires feature_names with the same length "
+                        "and order as driver_band_indices"
+                    )
+                import pandas as pd
+
+                feature_df = pd.DataFrame(
+                    [band_values], columns=[str(x) for x in fnames]
+                )
+                drivers_out = compute_shap_driver_variables(model, feature_df)
 
     return PointInspection(
         value=value,
         unit="suitability (0–1)",
-        drivers=drivers,
+        drivers=drivers_out or [],
+        raw_environmental_values=raw_out,
     )

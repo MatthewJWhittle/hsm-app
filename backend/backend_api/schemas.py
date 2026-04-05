@@ -35,7 +35,7 @@ class Model(BaseModel):
 
 
 class DriverVariable(BaseModel):
-    """One factor in a point-level suitability explanation."""
+    """One variable’s contribution to suitability at this point (e.g. SHAP-style influence)."""
 
     name: str
     direction: Literal["increase", "decrease", "neutral"]
@@ -43,12 +43,27 @@ class DriverVariable(BaseModel):
     magnitude: float | None = None
 
 
+class RawEnvironmentalValue(BaseModel):
+    """Sampled environmental input at the clicked location (secondary detail)."""
+
+    name: str
+    value: float
+    unit: str | None = None
+
+
 class PointInspection(BaseModel):
-    """Suitability value and optional driver explanation at a location."""
+    """Suitability value, optional influence drivers, and optional raw env values at a location."""
 
     value: float
     unit: str | None = None
-    drivers: list[DriverVariable] | None = None
+    drivers: list[DriverVariable] = Field(
+        default_factory=list,
+        description="Ranked variable influence (e.g. SHAP); empty when explainability is not configured.",
+    )
+    raw_environmental_values: list[RawEnvironmentalValue] | None = Field(
+        default=None,
+        description="Raw raster values for configured bands at this point (same order as model inputs when aligned).",
+    )
 
 
 class AuthMeResponse(BaseModel):

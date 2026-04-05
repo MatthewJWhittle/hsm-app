@@ -4,7 +4,8 @@ import {
   INTERPRETATION_CRS_NOTE,
   INTERPRETATION_DECISION_SUPPORT,
   INTERPRETATION_DRIVERS_POINTER,
-  INTERPRETATION_DRIVERS_RAW,
+  INTERPRETATION_INFLUENCE_CAPTION,
+  INTERPRETATION_RAW_VALUES_CAPTION,
   LAYER_DETAILS_DIALOG_TITLE,
   LAYER_DETAILS_PROJECT_METADATA_UNAVAILABLE,
   MAP_INFO_DIALOG_TITLE,
@@ -34,7 +35,8 @@ describe('interpretation copy', () => {
     expect(INTERPRETATION_GUARDRAIL_SHORT).toMatch(/presence|absent/i)
     expect(INTERPRETATION_DECISION_SUPPORT).toMatch(/expert judgement|judgment/i)
     expect(INTERPRETATION_DRIVERS_POINTER).toMatch(/click the map/i)
-    expect(INTERPRETATION_DRIVERS_RAW).toMatch(/environmental|inputs/i)
+    expect(INTERPRETATION_INFLUENCE_CAPTION).toMatch(/contribution|suitability|influence/i)
+    expect(INTERPRETATION_RAW_VALUES_CAPTION).toMatch(/environmental|values|point/i)
     expect(INTERPRETATION_HUD_REMINDER).toMatch(/relative suitability|presence|absent/i)
     expect(INTERPRETATION_CRS_NOTE).toMatch(/Web Mercator/i)
     expect(MAP_INFO_DIALOG_TITLE.length).toBeGreaterThan(0)

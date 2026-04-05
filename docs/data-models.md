@@ -27,13 +27,19 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 
 #### `driver_config` keys (point inspection)
 
-These fields are read by the backend when building `PointInspection.drivers` for `GET /models/{id}/point`. Same order as `driver_band_indices`.
+These fields are read by the backend for `GET /models/{id}/point`. **Band indices** select which raster bands to sample; **feature names** align model inputs with those bands in order.
 
 | Key | Type | Description |
 |-----|------|-------------|
 | `driver_cog_path` | string? | Optional. When the model does **not** use a project environmental stack (or to override), path to a multi-band COG **relative to `artifact_root`**, or absolute filesystem path in local dev. If omitted and `project_id` is set, the project’s `driver_artifact_root` + `driver_cog_path` is used. |
-| `band_labels` or `band_names` | string[]? | Optional. Human-readable names for each index in `driver_band_indices` (same length). If omitted, API uses `band_{index}`. |
+| `band_labels` or `band_names` | string[]? | Optional. Human-readable names for each index in `driver_band_indices` (same length), used for `raw_environmental_values` labels. |
 | `band_units` | string[]? | Optional. Units per band (same length as indices) for display, e.g. `"m"`. |
+| `feature_names` | string[]? | **Required for SHAP explainability.** Column names for the trained model, **same length and order** as `driver_band_indices` (each index samples one band; values become one row in this column order). |
+| `explainability_model_path` | string? | Path to pickled **sklearn** estimator **relative to `artifact_root`**. The Admin “Variable influence” flow uploads to the fixed name `explainability_model.pkl`; JSON-only registration can use any safe single-segment filename. When set with `explainability_background_path` and `feature_names`, the API runs permutation SHAP and fills `PointInspection.drivers`. |
+| `explainability_background_path` | string? | Path to **Parquet** background matrix **relative to `artifact_root`** (columns must include `feature_names`). Admin uploads use `explainability_background.parquet`. Used to reconstruct `shap.Explainer` (see training repo pattern). |
+| `explainability_positive_class` | int? | Optional. Index of the positive class for `predict_proba` (default `1`). |
+
+Admin `POST/PUT /models` accepts optional multipart fields `explainability_model_file` and `explainability_background_file`; the API stores them under the model’s `artifact_root` with the fixed relative names above and sets `driver_config` paths. It validates band indices against the environmental COG when possible, and—when explainability paths are set—that files exist and `feature_names` length matches `driver_band_indices`.
 
 ### Catalog project (shared environmental stack)
 
@@ -163,20 +169,29 @@ Returned by `GET /models/{id}/point?lng=&lat=` when the user clicks the map or r
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `value` | number | Suitability (or band value) at the point. |
+| `value` | number | Suitability at the point. |
 | `unit` | string? | e.g. "suitability (0–1)" or "relative". |
-| `drivers` | DriverVariable[]? | Main variables contributing at this location (MVP: simple explanation). |
+| `drivers` | DriverVariable[] | Variable **influence** at this location (e.g. SHAP contribution); empty when explainability artefacts are not configured. |
+| `raw_environmental_values` | RawEnvironmentalValue[]? | Optional sampled **raw** raster values for each configured band (secondary detail for the UI). |
 
-### DriverVariable (one variable in the explanation)
+### RawEnvironmentalValue (one sampled input)
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `name` | string | Variable or factor name (e.g. "Land cover", "Distance to water"). |
-| `direction` | "increase" \| "decrease" \| "neutral" | Whether it pushes suitability up, down, or neutral. |
-| `label` | string? | Short plain-language label for UI. |
-| `magnitude` | number? | Optional relative importance or contribution. |
+| `name` | string | Label for the variable / band. |
+| `value` | number | Raster value at the click. |
+| `unit` | string? | Optional unit for display. |
 
-**MVP:** PointInspection with `value` and optional `drivers[]`; each driver at least `name` and `direction`.
+### DriverVariable (one variable in the influence list)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Variable name (matches model feature name). |
+| `direction` | "increase" \| "decrease" \| "neutral" | Sign of contribution toward higher suitability at this point. |
+| `label` | string? | Short display string (e.g. formatted contribution). |
+| `magnitude` | number? | Signed contribution (e.g. SHAP value). |
+
+**MVP:** PointInspection with `value`, optional `drivers` (influence), optional `raw_environmental_values`.
 
 ---
 

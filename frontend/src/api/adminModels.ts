@@ -12,6 +12,9 @@ export async function createModel(params: {
   modelName?: string
   modelVersion?: string
   driverBandIndicesJson?: string
+  driverConfigJson?: string
+  explainabilityModelFile?: File | null
+  explainabilityBackgroundFile?: File | null
 }): Promise<Model> {
   const form = new FormData()
   form.append('project_id', params.projectId)
@@ -22,6 +25,15 @@ export async function createModel(params: {
   if (params.modelVersion) form.append('model_version', params.modelVersion)
   if (params.driverBandIndicesJson) {
     form.append('driver_band_indices', params.driverBandIndicesJson)
+  }
+  if (params.driverConfigJson) {
+    form.append('driver_config', params.driverConfigJson)
+  }
+  if (params.explainabilityModelFile) {
+    form.append('explainability_model_file', params.explainabilityModelFile)
+  }
+  if (params.explainabilityBackgroundFile) {
+    form.append('explainability_background_file', params.explainabilityBackgroundFile)
   }
 
   const r = await fetch(`${apiBase()}/models`, {
@@ -46,6 +58,9 @@ export async function updateModel(params: {
   modelVersion: string | null
   projectId?: string | null
   driverBandIndicesJson?: string | null
+  driverConfigJson?: string | null
+  explainabilityModelFile?: File | null
+  explainabilityBackgroundFile?: File | null
 }): Promise<Model> {
   const form = new FormData()
   form.append('species', params.species)
@@ -58,6 +73,15 @@ export async function updateModel(params: {
   }
   if (params.driverBandIndicesJson !== undefined && params.driverBandIndicesJson !== null) {
     form.append('driver_band_indices', params.driverBandIndicesJson)
+  }
+  if (params.driverConfigJson !== undefined && params.driverConfigJson !== null) {
+    form.append('driver_config', params.driverConfigJson)
+  }
+  if (params.explainabilityModelFile) {
+    form.append('explainability_model_file', params.explainabilityModelFile)
+  }
+  if (params.explainabilityBackgroundFile) {
+    form.append('explainability_background_file', params.explainabilityBackgroundFile)
   }
 
   const r = await fetch(`${apiBase()}/models/${encodeURIComponent(params.modelId)}`, {

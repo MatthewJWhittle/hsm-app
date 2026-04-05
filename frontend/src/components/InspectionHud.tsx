@@ -9,9 +9,13 @@ import {
 } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { INTERPRETATION_DRIVERS_RAW, INTERPRETATION_HUD_REMINDER } from '../copy/interpretation'
+import {
+  INTERPRETATION_HUD_REMINDER,
+  INTERPRETATION_INFLUENCE_CAPTION,
+  INTERPRETATION_RAW_VALUES_CAPTION,
+} from '../copy/interpretation'
 import { clampSuitability01, SUITABILITY_VIRIDIS_GRADIENT_CSS } from '../map/suitabilityScale'
-import type { PointInspection as PointInspectionData } from '../types/pointInspection'
+import type { DriverVariable, PointInspection as PointInspectionData } from '../types/pointInspection'
 
 export interface InspectionTechnicalDetails {
   modelId: string
@@ -112,6 +116,35 @@ function SuitabilityScaleMarker({ value, stale }: { value: number; stale: boolea
   )
 }
 
+function InfluenceDriverRow({ d, maxAbs }: { d: DriverVariable; maxAbs: number }) {
+  const mag = d.magnitude ?? 0
+  const w = maxAbs > 0 ? (Math.abs(mag) / maxAbs) * 100 : 0
+  const color =
+    d.direction === 'increase'
+      ? 'success.main'
+      : d.direction === 'decrease'
+        ? 'error.main'
+        : 'text.secondary'
+  return (
+    <Box sx={{ mb: 1 }}>
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+        {d.name}: {d.label ?? (d.magnitude != null ? d.magnitude.toFixed(4) : d.direction)}
+      </Typography>
+      <Box sx={{ height: 6, bgcolor: 'action.hover', borderRadius: 0.5, mt: 0.25 }}>
+        <Box
+          sx={{
+            height: '100%',
+            width: `${w}%`,
+            bgcolor: color,
+            borderRadius: 0.5,
+            transition: 'width 0.2s ease',
+          }}
+        />
+      </Box>
+    </Box>
+  )
+}
+
 export function InspectionHud({
   onClose,
   modelLabel,
@@ -128,11 +161,16 @@ export function InspectionHud({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
   const [technicalOpen, setTechnicalOpen] = useState(false)
+  const [rawDetailsOpen, setRawDetailsOpen] = useState(false)
   const dragStartRef = useRef({ clientX: 0, clientY: 0, offX: 0, offY: 0 })
 
   useEffect(() => {
     setTechnicalOpen(false)
   }, [technicalDetails?.modelId])
+
+  useEffect(() => {
+    setRawDetailsOpen(false)
+  }, [lng, lat, inspection?.value])
 
   const reducedMotion = () =>
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -349,23 +387,65 @@ export function InspectionHud({
         </Typography>
       )}
 
-      {!loading && !error && inspection && (inspection.drivers?.length ?? 0) > 0 && (
-        <Box sx={{ mt: 0.75 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, lineHeight: 1.45 }}>
-            {INTERPRETATION_DRIVERS_RAW}
-          </Typography>
-          <Box component="ul" sx={{ m: 0, pl: 2 }}>
-            {(inspection.drivers ?? []).map((d, i) => (
-              <li key={`${d.name}-${i}`}>
-                <Typography variant="caption" color="text.secondary">
-                  {d.name}: {d.label ?? (d.magnitude != null ? d.magnitude.toFixed(4) : d.direction)}
-                  {d.direction !== 'neutral' ? ` (${d.direction})` : ''}
-                </Typography>
-              </li>
-            ))}
-          </Box>
-        </Box>
-      )}
+      {!loading &&
+        !error &&
+        inspection &&
+        (() => {
+          const drivers = inspection.drivers ?? []
+          const rawVals = inspection.raw_environmental_values ?? []
+          if (drivers.length === 0 && rawVals.length === 0) return null
+          const maxAbs = Math.max(...drivers.map((d) => Math.abs(d.magnitude ?? 0)), 1e-9)
+          return (
+            <Box sx={{ mt: 0.75 }}>
+              {drivers.length > 0 && (
+                <>
+                  <Typography
+                    variant="caption"
+                    color="text.secondary"
+                    sx={{ display: 'block', mb: 0.75, lineHeight: 1.45 }}
+                  >
+                    {INTERPRETATION_INFLUENCE_CAPTION}
+                  </Typography>
+                  {drivers.map((d, i) => (
+                    <InfluenceDriverRow key={`${d.name}-${i}`} d={d} maxAbs={maxAbs} />
+                  ))}
+                </>
+              )}
+              {rawVals.length > 0 && (
+                <Box sx={{ mt: drivers.length > 0 ? 1 : 0 }}>
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={() => setRawDetailsOpen((o) => !o)}
+                    aria-expanded={rawDetailsOpen}
+                    sx={{ minWidth: 0, px: 0, py: 0.25, textTransform: 'none', fontSize: '0.75rem' }}
+                  >
+                    {rawDetailsOpen ? '▼' : '▶'} Environmental values at this point
+                  </Button>
+                  <Collapse in={rawDetailsOpen}>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: 'block', mb: 0.5, mt: 0.5, lineHeight: 1.45 }}
+                    >
+                      {INTERPRETATION_RAW_VALUES_CAPTION}
+                    </Typography>
+                    <Box component="ul" sx={{ m: 0, pl: 2 }}>
+                      {rawVals.map((r) => (
+                        <li key={r.name}>
+                          <Typography variant="caption" color="text.secondary">
+                            {r.name}: {r.value.toFixed(4)}
+                            {r.unit ? ` ${r.unit}` : ''}
+                          </Typography>
+                        </li>
+                      ))}
+                    </Box>
+                  </Collapse>
+                </Box>
+              )}
+            </Box>
+          )
+        })()}
 
       {technicalDetails && (
         <Box sx={{ mt: 1 }}>

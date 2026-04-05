@@ -92,8 +92,8 @@ flowchart TB
 ### 3.3 Point and site inspection
 
 - **Purpose**: “Click or inspect a location” and “see a simple explanation of the main variables” (MVP journeys 2 and 3).
-- **Responsibilities**: Return suitability value at a point; return “drivers” (main variables, increase/decrease) and, if available, a short plain-language summary.
-- **API**: `GET /models/{id}/point?lng=&lat=`. Response: PointInspection (value, unit?, drivers[]). See [Data models](data-models.md).
+- **Responsibilities**: Return suitability value at a point; optional **variable influence** in `drivers` (e.g. SHAP when explainability artefacts exist); optional **raw environmental values** at the click. See [ML artifacts and serving principles](ml-artifacts-and-serving-principles.md).
+- **API**: `GET /models/{id}/point?lng=&lat=`. Response: PointInspection (value, unit?, drivers[], raw_environmental_values?). See [Data models](data-models.md).
 - **Implementation**: Raster read at point plus driver raster or lookup, or small service keyed by (x, y, model_id). MVP prefers simple lookup or precomputed data.
 - **Engineering guidance**: Bundles, manifests, precomputation vs live inference, validation, and operational practices — [ML artifacts and serving principles](ml-artifacts-and-serving-principles.md).
 
@@ -124,7 +124,7 @@ flowchart TB
 1. **App load**: Frontend calls `GET /models` once; warm TiTiler in parallel on load ([Infrastructure](infrastructure-and-deployment.md#cold-starts-scale-to-zero-and-ux)). List of models (id, species, activity, suitability_cog_path, …). User sees selector and map. No second “get URL” request.
 2. **Model selected**: Frontend has full model from list; sets raster tile source from model.suitability_cog_path (build TiTiler URL). Map requests tiles on viewport/zoom.
 3. **User pans/zooms**: MapLibre requests tiles; TiTiler serves from COGs. Regional-to-local use case supported by zoom level and extent.
-4. **User clicks map**: Frontend calls `GET /models/{id}/point?lng=&lat=`. Response: PointInspection (value, drivers). Frontend shows value and “what’s driving suitability here” in plain language.
+4. **User clicks map**: Frontend calls `GET /models/{id}/point?lng=&lat=`. Response: PointInspection (value, drivers, raw environmental values). Frontend shows suitability, influence where configured, and optional raw inputs.
 5. **Interpretation**: Caveats and guidance are shown in UI (panel/modal/legend) from static or CMS content; no extra API for MVP.
 
 ---
