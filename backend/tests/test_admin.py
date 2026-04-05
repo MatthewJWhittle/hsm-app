@@ -20,6 +20,10 @@ SAMPLE_PROJECT = {
     "name": "Test project",
     "driver_artifact_root": "/data/projects/proj-1",
     "driver_cog_path": "environmental_cog.tif",
+    "environmental_band_definitions": [
+        {"index": 0, "name": "a", "label": None},
+        {"index": 1, "name": "b", "label": None},
+    ],
     "visibility": "public",
     "allowed_uids": [],
     "status": "active",

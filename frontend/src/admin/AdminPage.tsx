@@ -12,8 +12,9 @@ import { fetchProjectCatalog } from '../api/projects'
 import { useAuth } from '../auth/useAuth'
 import { Navbar } from '../components/Navbar'
 import type { Model } from '../types/model'
-import type { CatalogProject } from '../types/project'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 
+import { bandsFromDriverIndices, environmentalBandsForProject } from './adminBandSelect'
 import { explainabilityConfiguredInCatalog, mergeDriverConfigForSubmit } from './adminExplainability'
 import { AdminCatalogHeader } from './AdminCatalogHeader'
 import { AdminTabPanel } from './AdminTabPanel'
@@ -55,10 +56,8 @@ export function AdminPage() {
   const [activity, setActivity] = useState('')
   const [modelName, setModelName] = useState('')
   const [modelVersion, setModelVersion] = useState('')
-  const [driverBandIndices, setDriverBandIndices] = useState('')
-  const [bandLabelsCsv, setBandLabelsCsv] = useState('')
+  const [selectedEnvBands, setSelectedEnvBands] = useState<EnvironmentalBandDefinition[]>([])
   const [explainEnabled, setExplainEnabled] = useState(false)
-  const [explainFeatureNames, setExplainFeatureNames] = useState('')
   const [explainModelFile, setExplainModelFile] = useState<File | null>(null)
   const [explainBackgroundFile, setExplainBackgroundFile] = useState<File | null>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -74,10 +73,8 @@ export function AdminPage() {
   const [editVersion, setEditVersion] = useState('')
   const [editProjectId, setEditProjectId] = useState('')
   const [editFile, setEditFile] = useState<File | null>(null)
-  const [editDriverBandIndices, setEditDriverBandIndices] = useState('')
-  const [editBandLabels, setEditBandLabels] = useState('')
+  const [editSelectedEnvBands, setEditSelectedEnvBands] = useState<EnvironmentalBandDefinition[]>([])
   const [editExplainEnabled, setEditExplainEnabled] = useState(false)
-  const [editExplainFeatureNames, setEditExplainFeatureNames] = useState('')
   const [editExplainModelFile, setEditExplainModelFile] = useState<File | null>(null)
   const [editExplainBackgroundFile, setEditExplainBackgroundFile] = useState<File | null>(null)
   const [editError, setEditError] = useState<string | null>(null)
@@ -91,6 +88,7 @@ export function AdminPage() {
   const [editProjAllowedUids, setEditProjAllowedUids] = useState('')
   const [editProjStatus, setEditProjStatus] = useState<'active' | 'archived'>('active')
   const [editProjFile, setEditProjFile] = useState<File | null>(null)
+  const [editProjBandDefs, setEditProjBandDefs] = useState<EnvironmentalBandDefinition[]>([])
   const [editProjError, setEditProjError] = useState<string | null>(null)
   const [savingProjectEdit, setSavingProjectEdit] = useState(false)
 
@@ -124,11 +122,30 @@ export function AdminPage() {
 
   const filteredModelIds = useMemo(() => filteredModelsTable.map((m) => m.id), [filteredModelsTable])
 
+  const createLayerEnvOptions = useMemo(
+    () => environmentalBandsForProject(modelProjectId, projects),
+    [modelProjectId, projects],
+  )
+  const editLayerEnvOptions = useMemo(
+    () => environmentalBandsForProject(editProjectId, projects),
+    [editProjectId, projects],
+  )
+
+  const handleEditProjectIdChange = useCallback(
+    (id: string) => {
+      setEditProjectId(id)
+      if (editModel) {
+        const defs = id ? environmentalBandsForProject(id, projects) : null
+        setEditSelectedEnvBands(bandsFromDriverIndices(editModel.driver_band_indices, defs))
+      }
+    },
+    [editModel, projects],
+  )
+
   const openLayerCreateDialog = useCallback(() => {
     setLayerCreateOpen(true)
-    setBandLabelsCsv('')
+    setSelectedEnvBands([])
     setExplainEnabled(false)
-    setExplainFeatureNames('')
     setExplainModelFile(null)
     setExplainBackgroundFile(null)
     setModelProjectId((prev) => {
@@ -137,6 +154,10 @@ export function AdminPage() {
       return first?.id ?? ''
     })
   }, [projects])
+
+  useEffect(() => {
+    if (layerCreateOpen) setSelectedEnvBands([])
+  }, [modelProjectId, layerCreateOpen])
 
   const refreshList = useCallback(async () => {
     setListRefreshing(true)
@@ -254,23 +275,9 @@ export function AdminPage() {
     setEditName(m.model_name ?? '')
     setEditVersion(m.model_version ?? '')
     setEditProjectId(m.project_id ?? '')
-    setEditDriverBandIndices(
-      m.driver_band_indices && m.driver_band_indices.length > 0
-        ? JSON.stringify(m.driver_band_indices)
-        : '',
-    )
-    const dc = m.driver_config
-    const labels =
-      dc && typeof dc === 'object' && Array.isArray(dc['band_labels'])
-        ? (dc['band_labels'] as unknown[]).map(String).join(', ')
-        : ''
-    setEditBandLabels(labels)
+    const defs = m.project_id ? environmentalBandsForProject(m.project_id, projects) : null
+    setEditSelectedEnvBands(bandsFromDriverIndices(m.driver_band_indices, defs))
     setEditExplainEnabled(explainabilityConfiguredInCatalog(m))
-    const fn =
-      dc && typeof dc === 'object' && Array.isArray(dc['feature_names'])
-        ? (dc['feature_names'] as unknown[]).map(String).join(', ')
-        : ''
-    setEditExplainFeatureNames(fn)
     setEditExplainModelFile(null)
     setEditExplainBackgroundFile(null)
     setEditFile(null)
@@ -286,6 +293,11 @@ export function AdminPage() {
     setEditProjAllowedUids(p.allowed_uids?.length ? p.allowed_uids.join(', ') : '')
     setEditProjStatus(p.status)
     setEditProjFile(null)
+    setEditProjBandDefs(
+      p.environmental_band_definitions
+        ? [...p.environmental_band_definitions].sort((a, b) => a.index - b.index)
+        : [],
+    )
     setEditProjError(null)
     setProjectEditOpen(true)
   }
@@ -313,6 +325,9 @@ export function AdminPage() {
         visibility: editProjVisibility,
         allowedUids: editProjAllowedUids,
         file: editProjFile ?? undefined,
+        ...(editingProject.driver_cog_path || editProjFile
+          ? { environmentalBandDefinitionsJson: JSON.stringify(editProjBandDefs) }
+          : {}),
       })
       setProjectEditOpen(false)
       setEditingProject(null)
@@ -327,6 +342,10 @@ export function AdminPage() {
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault()
     setProjError(null)
+    if (!projName.trim()) {
+      setProjError('Project name is required.')
+      return
+    }
     const token = await getIdToken(true)
     if (!token) {
       setProjError('Not signed in.')
@@ -375,14 +394,14 @@ export function AdminPage() {
 
     const driverConfigJson = mergeDriverConfigForSubmit(null, {
       enabled: explainEnabled,
-      featureNamesCsv: explainFeatureNames,
-      bandLabelsCsv,
     })
     const hasDriverConfig = Object.keys(JSON.parse(driverConfigJson)).length > 0
 
     if (explainEnabled) {
-      if (!explainFeatureNames.trim()) {
-        setCreateError('Enter feature names in the same order as your environmental band indices.')
+      if (selectedEnvBands.length === 0) {
+        setCreateError(
+          'Select environmental variables in model feature order (from the project’s band list).',
+        )
         return
       }
       if (!explainModelFile || !explainBackgroundFile) {
@@ -403,9 +422,8 @@ export function AdminPage() {
         file,
         modelName: modelName || undefined,
         modelVersion: modelVersion || undefined,
-        driverBandIndicesJson: driverBandIndices.trim()
-          ? driverBandIndices.trim()
-          : undefined,
+        driverBandIndicesJson:
+          selectedEnvBands.length > 0 ? JSON.stringify(selectedEnvBands.map((b) => b.index)) : undefined,
         driverConfigJson: hasDriverConfig ? driverConfigJson : undefined,
         explainabilityModelFile: explainEnabled ? explainModelFile : undefined,
         explainabilityBackgroundFile: explainEnabled ? explainBackgroundFile : undefined,
@@ -414,10 +432,8 @@ export function AdminPage() {
       setActivity('')
       setModelName('')
       setModelVersion('')
-      setDriverBandIndices('')
-      setBandLabelsCsv('')
+      setSelectedEnvBands([])
       setExplainEnabled(false)
-      setExplainFeatureNames('')
       setExplainModelFile(null)
       setExplainBackgroundFile(null)
       setFile(null)
@@ -441,13 +457,13 @@ export function AdminPage() {
 
     const driverConfigJson = mergeDriverConfigForSubmit(editModel.driver_config ?? null, {
       enabled: editExplainEnabled,
-      featureNamesCsv: editExplainFeatureNames,
-      bandLabelsCsv: editBandLabels,
     })
 
     if (editExplainEnabled) {
-      if (!editExplainFeatureNames.trim()) {
-        setEditError('Enter feature names in the same order as your environmental band indices.')
+      if (editSelectedEnvBands.length === 0) {
+        setEditError(
+          'Select environmental variables in model feature order (from the project’s band list).',
+        )
         return
       }
       const hadArtifacts = explainabilityConfiguredInCatalog(editModel)
@@ -470,7 +486,10 @@ export function AdminPage() {
         modelVersion: editVersion || null,
         file: editFile,
         projectId: editProjectId || undefined,
-        driverBandIndicesJson: editDriverBandIndices.trim() || '',
+        driverBandIndicesJson:
+          editSelectedEnvBands.length > 0
+            ? JSON.stringify(editSelectedEnvBands.map((b) => b.index))
+            : '',
         driverConfigJson,
         explainabilityModelFile: editExplainModelFile ?? undefined,
         explainabilityBackgroundFile: editExplainBackgroundFile ?? undefined,
@@ -675,10 +694,10 @@ export function AdminPage() {
             activity={activity}
             modelName={modelName}
             modelVersion={modelVersion}
-            driverBandIndices={driverBandIndices}
-            bandLabelsCsv={bandLabelsCsv}
+            selectedEnvironmentalBands={selectedEnvBands}
+            onSelectedEnvironmentalBandsChange={setSelectedEnvBands}
+            environmentalBandOptions={createLayerEnvOptions}
             explainabilityEnabled={explainEnabled}
-            explainFeatureNamesCsv={explainFeatureNames}
             explainModelFile={explainModelFile}
             explainBackgroundFile={explainBackgroundFile}
             file={file}
@@ -686,10 +705,7 @@ export function AdminPage() {
             onActivityChange={setActivity}
             onModelNameChange={setModelName}
             onModelVersionChange={setModelVersion}
-            onDriverBandIndicesChange={setDriverBandIndices}
-            onBandLabelsCsvChange={setBandLabelsCsv}
             onExplainabilityEnabledChange={setExplainEnabled}
-            onExplainFeatureNamesCsvChange={setExplainFeatureNames}
             onExplainModelFileChange={setExplainModelFile}
             onExplainBackgroundFileChange={setExplainBackgroundFile}
             onFileChange={setFile}
@@ -709,6 +725,8 @@ export function AdminPage() {
             editProjAllowedUids={editProjAllowedUids}
             editProjStatus={editProjStatus}
             editProjFile={editProjFile}
+            environmentalBandDefinitions={editProjBandDefs}
+            onEnvironmentalBandDefinitionsChange={setEditProjBandDefs}
             onEditProjNameChange={setEditProjName}
             onEditProjDescChange={setEditProjDesc}
             onEditProjVisibilityChange={setEditProjVisibility}
@@ -727,15 +745,15 @@ export function AdminPage() {
             editModel={editModel}
             activeProjects={activeProjects}
             editProjectId={editProjectId}
-            onEditProjectIdChange={setEditProjectId}
+            onEditProjectIdChange={handleEditProjectIdChange}
             editSpecies={editSpecies}
             editActivity={editActivity}
             editName={editName}
             editVersion={editVersion}
-            editDriverBandIndices={editDriverBandIndices}
-            editBandLabelsCsv={editBandLabels}
+            selectedEnvironmentalBands={editSelectedEnvBands}
+            onSelectedEnvironmentalBandsChange={setEditSelectedEnvBands}
+            environmentalBandOptions={editLayerEnvOptions}
             editExplainabilityEnabled={editExplainEnabled}
-            editExplainFeatureNamesCsv={editExplainFeatureNames}
             editExplainModelFile={editExplainModelFile}
             editExplainBackgroundFile={editExplainBackgroundFile}
             editExplainHasExistingArtifacts={
@@ -746,10 +764,7 @@ export function AdminPage() {
             onEditActivityChange={setEditActivity}
             onEditNameChange={setEditName}
             onEditVersionChange={setEditVersion}
-            onEditDriverBandIndicesChange={setEditDriverBandIndices}
-            onEditBandLabelsCsvChange={setEditBandLabels}
             onEditExplainabilityEnabledChange={setEditExplainEnabled}
-            onEditExplainFeatureNamesCsvChange={setEditExplainFeatureNames}
             onEditExplainModelFileChange={setEditExplainModelFile}
             onEditExplainBackgroundFileChange={setEditExplainBackgroundFile}
             onEditFileChange={setEditFile}

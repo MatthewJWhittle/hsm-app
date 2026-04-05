@@ -39,6 +39,7 @@ export async function updateProject(params: {
   visibility?: 'public' | 'private'
   allowedUids?: string | null
   file?: File | null
+  environmentalBandDefinitionsJson?: string | null
 }): Promise<CatalogProject> {
   const form = new FormData()
   if (params.name !== undefined) form.append('name', params.name)
@@ -47,6 +48,9 @@ export async function updateProject(params: {
   if (params.visibility !== undefined) form.append('visibility', params.visibility)
   if (params.allowedUids !== undefined) form.append('allowed_uids', params.allowedUids ?? '')
   if (params.file) form.append('file', params.file)
+  if (params.environmentalBandDefinitionsJson !== undefined && params.environmentalBandDefinitionsJson !== null) {
+    form.append('environmental_band_definitions', params.environmentalBandDefinitionsJson)
+  }
 
   const r = await fetch(`${apiBase()}/projects/${encodeURIComponent(params.projectId)}`, {
     method: 'PUT',

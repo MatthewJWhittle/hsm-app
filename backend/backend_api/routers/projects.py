@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from pathlib import Path
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -24,6 +25,14 @@ from backend_api.catalog_service import CatalogService
 from backend_api.catalog_write import upsert_project
 from backend_api.cog_validation import CogValidationError
 from backend_api.deps.catalog import get_object_storage, require_catalog_ready
+from backend_api.env_cog_bands import (
+    count_bands_in_geotiff_bytes,
+    count_bands_in_path,
+    default_band_definitions,
+    parse_band_definitions_json,
+    validate_band_definitions_match_raster,
+)
+from backend_api.project_manifest import resolve_env_cog_path_from_parts
 from backend_api.deps.settings_dep import get_settings
 from backend_api.deps.visibility_models import (
     filter_projects_for_viewer,
@@ -38,7 +47,7 @@ from backend_api.routers.project_visibility_parse import (
     parse_visibility,
     parse_visibility_optional,
 )
-from backend_api.schemas_project import CatalogProject
+from backend_api.schemas_project import CatalogProject, EnvironmentalBandDefinition
 from backend_api.settings import Settings
 from backend_api.storage import ObjectStorage
 
@@ -63,6 +72,17 @@ def _parse_allowed_uids(raw: str | None) -> list[str]:
             raise ValueError("allowed_uids must be a JSON array of strings")
         return [str(x) for x in data]
     return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def _band_defs_for_upload_bytes(
+    content: bytes, definitions_form: str | None
+) -> list[EnvironmentalBandDefinition]:
+    count = count_bands_in_geotiff_bytes(content)
+    parsed = parse_band_definitions_json(definitions_form)
+    if parsed is not None:
+        validate_band_definitions_match_raster(count, parsed)
+        return parsed
+    return default_band_definitions(count)
 
 
 @router.get("/projects", response_model=list[CatalogProject], tags=["catalog"])
@@ -100,8 +120,11 @@ async def create_project(
     description: Annotated[str | None, Form()] = None,
     visibility: Annotated[str, Form()] = "public",
     allowed_uids: Annotated[str | None, Form()] = None,
+    environmental_band_definitions: Annotated[str | None, Form()] = None,
 ):
     """Create a project; environmental COG may be uploaded now or added via PUT (admin only)."""
+    if not name.strip():
+        raise HTTPException(status_code=422, detail="name is required")
     visibility_v = parse_visibility(visibility)
     try:
         uids = _parse_allowed_uids(allowed_uids)
@@ -111,6 +134,7 @@ async def create_project(
     project_id = str(uuid.uuid4())
     artifact_root: str | None = None
     cog_path: str | None = None
+    band_defs: list[EnvironmentalBandDefinition] | None = None
     if file is not None:
         content = await file.read()
         if not content:
@@ -135,6 +159,15 @@ async def create_project(
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"could not store file: {e}") from e
 
+        try:
+
+            def _defs() -> list[EnvironmentalBandDefinition]:
+                return _band_defs_for_upload_bytes(content, environmental_band_definitions)
+
+            band_defs = await run_in_threadpool(_defs)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+
     now = datetime.now(UTC).isoformat()
 
     project = CatalogProject(
@@ -146,6 +179,7 @@ async def create_project(
         allowed_uids=uids,
         driver_artifact_root=artifact_root,
         driver_cog_path=cog_path,
+        environmental_band_definitions=band_defs,
         created_at=now,
         updated_at=now,
     )
@@ -182,6 +216,7 @@ async def update_project(
     visibility: Annotated[str | None, Form()] = None,
     allowed_uids: Annotated[str | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
+    environmental_band_definitions: Annotated[str | None, Form()] = None,
 ):
     """Update project (admin only)."""
     existing = catalog.get_project(project_id)
@@ -206,6 +241,9 @@ async def update_project(
 
     artifact_root = existing.driver_artifact_root
     cog_path = existing.driver_cog_path
+    new_band_defs: list[EnvironmentalBandDefinition] | None = (
+        existing.environmental_band_definitions
+    )
 
     if file is not None:
         content = await file.read()
@@ -231,6 +269,56 @@ async def update_project(
         except Exception as e:
             raise HTTPException(status_code=503, detail=f"could not store file: {e}") from e
 
+        try:
+
+            def _defs() -> list[EnvironmentalBandDefinition]:
+                return _band_defs_for_upload_bytes(content, environmental_band_definitions)
+
+            new_band_defs = await run_in_threadpool(_defs)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+    elif environmental_band_definitions is not None and environmental_band_definitions.strip():
+        try:
+            parsed = parse_band_definitions_json(environmental_band_definitions)
+        except (json.JSONDecodeError, ValueError) as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        if parsed is None:
+            new_band_defs = None
+        else:
+            abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
+            if not abs_path:
+                raise HTTPException(
+                    status_code=422,
+                    detail="cannot set band definitions without an environmental COG uploaded",
+                )
+            if not Path(abs_path).is_file():
+                raise HTTPException(
+                    status_code=422,
+                    detail="environmental COG not found on server; upload the file first",
+                )
+
+            def _count() -> int:
+                return count_bands_in_path(abs_path)
+
+            count = await run_in_threadpool(_count)
+            try:
+                validate_band_definitions_match_raster(count, parsed)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+            new_band_defs = parsed
+    elif not existing.environmental_band_definitions:
+        abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
+        if abs_path and Path(abs_path).is_file():
+
+            def _backfill() -> list[EnvironmentalBandDefinition]:
+                c = count_bands_in_path(abs_path)
+                return default_band_definitions(c)
+
+            try:
+                new_band_defs = await run_in_threadpool(_backfill)
+            except OSError:
+                new_band_defs = None
+
     now = datetime.now(UTC).isoformat()
     project = CatalogProject(
         id=project_id,
@@ -243,6 +331,7 @@ async def update_project(
         allowed_uids=new_uids if new_uids is not None else existing.allowed_uids,
         driver_artifact_root=artifact_root,
         driver_cog_path=cog_path,
+        environmental_band_definitions=new_band_defs,
         created_at=existing.created_at,
         updated_at=now,
     )

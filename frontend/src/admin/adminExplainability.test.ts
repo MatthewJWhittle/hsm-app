@@ -35,24 +35,29 @@ describe('explainabilityConfiguredInCatalog', () => {
 })
 
 describe('mergeDriverConfigForSubmit', () => {
-  it('strips explainability keys when disabled but keeps band labels from the form', () => {
+  it('strips explainability path keys when disabled but keeps other driver_config keys', () => {
     const s = mergeDriverConfigForSubmit(
       {
         explainability_model_path: 'm.pkl',
+        explainability_background_path: 'b.parquet',
         feature_names: ['x'],
         band_labels: ['old'],
       },
-      { enabled: false, featureNamesCsv: '', bandLabelsCsv: 'L' },
+      { enabled: false },
     )
-    expect(JSON.parse(s)).toEqual({ band_labels: ['L'] })
+    expect(JSON.parse(s)).toEqual({ feature_names: ['x'], band_labels: ['old'] })
   })
 
-  it('sets feature_names when enabled', () => {
-    const s = mergeDriverConfigForSubmit(null, {
-      enabled: true,
-      featureNamesCsv: 'a, b',
-      bandLabelsCsv: '',
-    })
-    expect(JSON.parse(s)).toEqual({ feature_names: ['a', 'b'] })
+  it('passes through existing config when enabled (feature_names come from the API after save)', () => {
+    const s = mergeDriverConfigForSubmit(
+      { explainability_model_path: 'm.pkl', feature_names: ['a', 'b'] },
+      { enabled: true },
+    )
+    expect(JSON.parse(s)).toEqual({ explainability_model_path: 'm.pkl', feature_names: ['a', 'b'] })
+  })
+
+  it('returns empty object when no existing config and enabled', () => {
+    const s = mergeDriverConfigForSubmit(null, { enabled: true })
+    expect(JSON.parse(s)).toEqual({})
   })
 })

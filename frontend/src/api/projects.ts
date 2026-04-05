@@ -1,6 +1,24 @@
-import type { CatalogProject } from '../types/project'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import { apiBase } from '../utils/apiBase'
 import { isRecord } from './jsonGuards'
+
+function parseBandDefinitions(value: unknown): EnvironmentalBandDefinition[] | null {
+  if (value === undefined || value === null) return null
+  if (!Array.isArray(value)) return null
+  const out: EnvironmentalBandDefinition[] = []
+  for (const row of value) {
+    if (!isRecord(row)) return null
+    const { index, name, label } = row
+    if (typeof index !== 'number' || typeof name !== 'string') return null
+    if (label !== undefined && label !== null && typeof label !== 'string') return null
+    out.push({
+      index,
+      name,
+      ...(label !== undefined && label !== null ? { label } : {}),
+    })
+  }
+  return out
+}
 
 export function parseProject(value: unknown): CatalogProject | null {
   if (!isRecord(value)) return null
@@ -58,6 +76,15 @@ export function parseProject(value: unknown): CatalogProject | null {
   if (updated_at !== undefined) {
     if (updated_at !== null && typeof updated_at !== 'string') return null
     out.updated_at = updated_at
+  }
+  if (value.environmental_band_definitions !== undefined) {
+    if (value.environmental_band_definitions === null) {
+      out.environmental_band_definitions = null
+    } else {
+      const defs = parseBandDefinitions(value.environmental_band_definitions)
+      if (defs === null) return null
+      out.environmental_band_definitions = defs
+    }
   }
   return out
 }

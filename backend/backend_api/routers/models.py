@@ -40,6 +40,10 @@ from backend_api.point_sampling import (
     inspect_point,
     validate_driver_band_indices_for_model,
 )
+from backend_api.project_manifest import (
+    enrich_model_driver_config_from_project,
+    validate_model_bands_against_project_manifest,
+)
 from backend_api.schemas import Model, PointInspection
 from backend_api.schemas_admin import parse_driver_config_form
 from backend_api.routers.catalog_upload_utils import (
@@ -278,12 +282,15 @@ async def create_model(
         driver_config=dc,
     )
 
-    def _validate_point_config() -> None:
-        validate_driver_band_indices_for_model(model, catalog)
-        validate_explainability_artifacts_for_model(model)
+    def _validate_and_enrich() -> Model:
+        validate_model_bands_against_project_manifest(model, catalog)
+        m = enrich_model_driver_config_from_project(model, catalog)
+        validate_driver_band_indices_for_model(m, catalog)
+        validate_explainability_artifacts_for_model(m)
+        return m
 
     try:
-        await run_in_threadpool(_validate_point_config)
+        model = await run_in_threadpool(_validate_and_enrich)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -410,12 +417,15 @@ async def update_model(
         driver_config=new_driver,
     )
 
-    def _validate_point_config() -> None:
-        validate_driver_band_indices_for_model(model, catalog)
-        validate_explainability_artifacts_for_model(model)
+    def _validate_and_enrich() -> Model:
+        validate_model_bands_against_project_manifest(model, catalog)
+        m = enrich_model_driver_config_from_project(model, catalog)
+        validate_driver_band_indices_for_model(m, catalog)
+        validate_explainability_artifacts_for_model(m)
+        return m
 
     try:
-        await run_in_threadpool(_validate_point_config)
+        model = await run_in_threadpool(_validate_and_enrich)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 

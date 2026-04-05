@@ -1,5 +1,6 @@
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Divider,
@@ -16,6 +17,7 @@ import {
 } from '@mui/material'
 
 import type { CatalogProject } from '../types/project'
+import type { EnvironmentalBandDefinition } from '../types/project'
 import { COG_REPLACE_HINT, EXPLAINABILITY_HELP, FIELD_HELP } from './catalogFormConstants'
 
 export interface MapLayerFormFieldsProps {
@@ -30,19 +32,17 @@ export interface MapLayerFormFieldsProps {
   activity: string
   modelName: string
   modelVersion: string
-  driverBandIndices: string
   onSpeciesChange: (value: string) => void
   onActivityChange: (value: string) => void
   onModelNameChange: (value: string) => void
   onModelVersionChange: (value: string) => void
-  onDriverBandIndicesChange: (value: string) => void
-  /** Optional labels for raw env values (same order as band indices). */
-  bandLabelsCsv: string
-  onBandLabelsCsvChange: (value: string) => void
+  /** Ordered selection from the project manifest (feature order for the model). */
+  selectedEnvironmentalBands: EnvironmentalBandDefinition[]
+  onSelectedEnvironmentalBandsChange: (value: EnvironmentalBandDefinition[]) => void
+  /** Bands available for the current project (null = none / not loaded). */
+  environmentalBandOptions: EnvironmentalBandDefinition[] | null
   explainabilityEnabled: boolean
   onExplainabilityEnabledChange: (value: boolean) => void
-  explainFeatureNamesCsv: string
-  onExplainFeatureNamesCsvChange: (value: string) => void
   explainModelFile: File | null
   explainBackgroundFile: File | null
   onExplainModelFileChange: (file: File | null) => void
@@ -57,11 +57,6 @@ export interface MapLayerFormFieldsProps {
   layerId?: string
 }
 
-const BANDS_HELPER_CREATE =
-  'Which bands from the project’s environmental file this layer uses. Example: [0,1,2]'
-const BANDS_HELPER_EDIT =
-  'Which bands from the project’s environmental file this layer uses. Example: [0,1,2]. Leave empty if not used.'
-
 export function MapLayerFormFields({
   mode,
   maxWidth = 640,
@@ -73,18 +68,15 @@ export function MapLayerFormFields({
   activity,
   modelName,
   modelVersion,
-  driverBandIndices,
   onSpeciesChange,
   onActivityChange,
   onModelNameChange,
   onModelVersionChange,
-  onDriverBandIndicesChange,
-  bandLabelsCsv,
-  onBandLabelsCsvChange,
+  selectedEnvironmentalBands,
+  onSelectedEnvironmentalBandsChange,
+  environmentalBandOptions,
   explainabilityEnabled,
   onExplainabilityEnabledChange,
-  explainFeatureNamesCsv,
-  onExplainFeatureNamesCsvChange,
   explainModelFile,
   explainBackgroundFile,
   onExplainModelFileChange,
@@ -96,6 +88,9 @@ export function MapLayerFormFields({
   layerId,
 }: MapLayerFormFieldsProps) {
   const isEdit = mode === 'edit'
+  const opts = environmentalBandOptions ?? []
+  const showEnvPicker = Boolean(projectId) && !allowStandAloneProject
+  const noManifest = showEnvPicker && projectId && opts.length === 0
 
   return (
     <Stack spacing={2} sx={{ maxWidth, opacity: disabled ? 0.55 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
@@ -168,24 +163,35 @@ export function MapLayerFormFields({
           disabled={disabled}
         />
       </Stack>
-      <TextField
-        label="Environmental bands (optional)"
-        helperText={isEdit ? BANDS_HELPER_EDIT : BANDS_HELPER_CREATE}
-        value={driverBandIndices}
-        onChange={(e) => onDriverBandIndicesChange(e.target.value)}
-        size="small"
-        fullWidth
-        disabled={disabled}
-      />
-      <TextField
-        label="Band labels (optional)"
-        helperText="Comma-separated labels for the same order as band indices (shown in the map inspection panel)."
-        value={bandLabelsCsv}
-        onChange={(e) => onBandLabelsCsvChange(e.target.value)}
-        size="small"
-        fullWidth
-        disabled={disabled}
-      />
+      {showEnvPicker && (
+        <>
+          {noManifest ? (
+            <Alert severity="warning" variant="outlined" sx={{ py: 0.75 }}>
+              This project has no environmental band definitions yet. Upload a shared environmental COG on the
+              project and save, then edit band names if needed.
+            </Alert>
+          ) : (
+            <Autocomplete
+              multiple
+              disableCloseOnSelect
+              options={opts}
+              value={selectedEnvironmentalBands}
+              onChange={(_e, v) => onSelectedEnvironmentalBandsChange(v)}
+              getOptionLabel={(o) => (o.label?.trim() ? `${o.name} (${o.label})` : o.name)}
+              isOptionEqualToValue={(a, b) => a.index === b.index}
+              disabled={disabled}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  size="small"
+                  label="Environmental variables"
+                  helperText="Select in model feature order (order of chips = column order for training / explainability)."
+                />
+              )}
+            />
+          )}
+        </>
+      )}
       <Divider sx={{ my: 0.5 }} />
       <FormControlLabel
         control={
@@ -208,16 +214,6 @@ export function MapLayerFormFields({
               replace them.
             </Alert>
           )}
-          <TextField
-            required
-            label="Feature names (training order)"
-            helperText={EXPLAINABILITY_HELP.featureNames}
-            value={explainFeatureNamesCsv}
-            onChange={(e) => onExplainFeatureNamesCsvChange(e.target.value)}
-            size="small"
-            fullWidth
-            disabled={disabled}
-          />
           <Box>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
               Trained model (.pkl)

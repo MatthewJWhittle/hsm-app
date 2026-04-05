@@ -8,10 +8,16 @@ import {
   MenuItem,
   Select,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   TextField,
   Typography,
 } from '@mui/material'
 
+import type { EnvironmentalBandDefinition } from '../types/project'
 import { DRIVER_COG_INFO, COG_REPLACE_HINT } from './catalogFormConstants'
 
 export interface ProjectFormFieldsProps {
@@ -35,6 +41,9 @@ export interface ProjectFormFieldsProps {
   projectId?: string
   /** Edit: existing stored path, if any */
   existingDriverPath?: string | null
+  /** Edit: band names/labels for the environmental COG (one row per raster band). */
+  environmentalBandDefinitions?: EnvironmentalBandDefinition[]
+  onEnvironmentalBandDefinitionsChange?: (value: EnvironmentalBandDefinition[]) => void
 }
 
 export function ProjectFormFields({
@@ -54,8 +63,20 @@ export function ProjectFormFields({
   onFileChange,
   projectId,
   existingDriverPath,
+  environmentalBandDefinitions = [],
+  onEnvironmentalBandDefinitionsChange,
 }: ProjectFormFieldsProps) {
   const isEdit = mode === 'edit'
+  const hasCog = Boolean(existingDriverPath)
+  const sortedBands = [...environmentalBandDefinitions].sort((a, b) => a.index - b.index)
+
+  const updateBandRow = (bandIndex: number, field: 'name' | 'label', value: string) => {
+    if (!onEnvironmentalBandDefinitionsChange) return
+    const next = environmentalBandDefinitions.map((row) =>
+      row.index === bandIndex ? { ...row, [field]: value } : row,
+    )
+    onEnvironmentalBandDefinitionsChange(next)
+  }
 
   return (
     <Stack spacing={2} sx={{ maxWidth }}>
@@ -164,6 +185,56 @@ export function ProjectFormFields({
         </Stack>
         {isEdit && <FormHelperText sx={{ mx: 0, mt: 0.5 }}>{COG_REPLACE_HINT}</FormHelperText>}
       </Box>
+      {isEdit && hasCog && sortedBands.length === 0 && (
+        <Alert severity="info" variant="outlined" sx={{ py: 0.75 }}>
+          Save the project once to generate default band names from the environmental raster, or upload/replace the
+          file above first.
+        </Alert>
+      )}
+      {isEdit && sortedBands.length > 0 && onEnvironmentalBandDefinitionsChange && (
+        <Box>
+          <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
+            Environmental raster bands
+          </Typography>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+            Stable <strong>name</strong> values must match your training columns. Optional <strong>label</strong> is
+            shown in the map inspection panel.
+          </Typography>
+          <Table size="small" sx={{ border: 1, borderColor: 'divider', borderRadius: 1 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell width={56}>#</TableCell>
+                <TableCell>Name</TableCell>
+                <TableCell>Label (optional)</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {sortedBands.map((row) => (
+                <TableRow key={row.index}>
+                  <TableCell>{row.index}</TableCell>
+                  <TableCell>
+                    <TextField
+                      size="small"
+                      fullWidth
+                      value={row.name}
+                      onChange={(e) => updateBandRow(row.index, 'name', e.target.value)}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <TextField
+                      size="small"
+                      fullWidth
+                      placeholder="Display label"
+                      value={row.label ?? ''}
+                      onChange={(e) => updateBandRow(row.index, 'label', e.target.value)}
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Box>
+      )}
     </Stack>
   )
 }

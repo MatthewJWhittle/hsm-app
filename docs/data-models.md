@@ -29,17 +29,19 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 
 These fields are read by the backend for `GET /models/{id}/point`. **Band indices** select which raster bands to sample; **feature names** align model inputs with those bands in order.
 
+For models tied to a **catalog project** with `environmental_band_definitions`, the API **fills or refreshes** `feature_names` and `band_labels` (and related display strings) from that manifest whenever a model is saved, using the layer’s ordered `driver_band_indices`. Admin does not send separate CSVs for those keys.
+
 | Key | Type | Description |
 |-----|------|-------------|
 | `driver_cog_path` | string? | Optional. When the model does **not** use a project environmental stack (or to override), path to a multi-band COG **relative to `artifact_root`**, or absolute filesystem path in local dev. If omitted and `project_id` is set, the project’s `driver_artifact_root` + `driver_cog_path` is used. |
-| `band_labels` or `band_names` | string[]? | Optional. Human-readable names for each index in `driver_band_indices` (same length), used for `raw_environmental_values` labels. |
+| `band_labels` or `band_names` | string[]? | Optional. Human-readable names for each index in `driver_band_indices` (same length), used for `raw_environmental_values` labels. **Project-scoped models:** derived from the project band manifest. |
 | `band_units` | string[]? | Optional. Units per band (same length as indices) for display, e.g. `"m"`. |
-| `feature_names` | string[]? | **Required for SHAP explainability.** Column names for the trained model, **same length and order** as `driver_band_indices` (each index samples one band; values become one row in this column order). |
+| `feature_names` | string[]? | **Required for SHAP explainability.** Column names for the trained model, **same length and order** as `driver_band_indices` (each index samples one band; values become one row in this column order). **Project-scoped models:** `name` values from the manifest in band order. |
 | `explainability_model_path` | string? | Path to pickled **sklearn** estimator **relative to `artifact_root`**. The Admin “Variable influence” flow uploads to the fixed name `explainability_model.pkl`; JSON-only registration can use any safe single-segment filename. When set with `explainability_background_path` and `feature_names`, the API runs permutation SHAP and fills `PointInspection.drivers`. |
 | `explainability_background_path` | string? | Path to **Parquet** background matrix **relative to `artifact_root`** (columns must include `feature_names`). Admin uploads use `explainability_background.parquet`. Used to reconstruct `shap.Explainer` (see training repo pattern). |
 | `explainability_positive_class` | int? | Optional. Index of the positive class for `predict_proba` (default `1`). |
 
-Admin `POST/PUT /models` accepts optional multipart fields `explainability_model_file` and `explainability_background_file`; the API stores them under the model’s `artifact_root` with the fixed relative names above and sets `driver_config` paths. It validates band indices against the environmental COG when possible, and—when explainability paths are set—that files exist and `feature_names` length matches `driver_band_indices`.
+Admin `POST/PUT /models` accepts optional multipart fields `explainability_model_file` and `explainability_background_file`; the API stores them under the model’s `artifact_root` with the fixed relative names above and sets `driver_config` paths. It validates band indices against the environmental COG when possible, enriches `feature_names` / `band_labels` from the project manifest when applicable, and—when explainability paths are set—that files exist and `feature_names` length matches `driver_band_indices`.
 
 ### Catalog project (shared environmental stack)
 
@@ -53,6 +55,7 @@ Admin `POST/PUT /models` accepts optional multipart fields `explainability_model
 | `allowed_uids` | string[] | When `visibility` is `private`, these uids may read the project and its models (via optional `Authorization: Bearer` on `GET /projects` and `GET /models`). |
 | `driver_artifact_root` | string | Storage prefix for the project’s shared multi-band environmental COG. |
 | `driver_cog_path` | string | Filename or path relative to `driver_artifact_root` (e.g. `environmental_cog.tif`). |
+| `environmental_band_definitions` | `{ index, name, label }[]`? | **Optional.** One entry per raster band in the environmental COG: **0-based `index`**, machine **`name`**, and human **`label`**. Populated when the COG is uploaded (defaults like `band_0`, …) and editable in the admin project form. This is the **single manifest** for band identity; the API derives `driver_config.feature_names` and `driver_config.band_labels` for each model from the layer’s ordered `driver_band_indices` and this list. |
 
 **Firestore:** Collection **`projects`**. **Models** stay in the top-level **`models`** collection and reference **`project_id`** (no subcollections for models under projects).
 

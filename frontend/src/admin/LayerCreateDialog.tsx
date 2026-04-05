@@ -1,5 +1,5 @@
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material'
-import type { CatalogProject } from '../types/project'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import { COG_REQUIREMENTS_INFO } from './catalogFormConstants'
 import { MapLayerFormFields } from './MapLayerFormFields'
 
@@ -20,10 +20,10 @@ type LayerCreateDialogProps = {
   activity: string
   modelName: string
   modelVersion: string
-  driverBandIndices: string
-  bandLabelsCsv: string
+  selectedEnvironmentalBands: EnvironmentalBandDefinition[]
+  onSelectedEnvironmentalBandsChange: (bands: EnvironmentalBandDefinition[]) => void
+  environmentalBandOptions: EnvironmentalBandDefinition[] | null
   explainabilityEnabled: boolean
-  explainFeatureNamesCsv: string
   explainModelFile: File | null
   explainBackgroundFile: File | null
   file: File | null
@@ -31,10 +31,7 @@ type LayerCreateDialogProps = {
   onActivityChange: (v: string) => void
   onModelNameChange: (v: string) => void
   onModelVersionChange: (v: string) => void
-  onDriverBandIndicesChange: (v: string) => void
-  onBandLabelsCsvChange: (v: string) => void
   onExplainabilityEnabledChange: (v: boolean) => void
-  onExplainFeatureNamesCsvChange: (v: string) => void
   onExplainModelFileChange: (f: File | null) => void
   onExplainBackgroundFileChange: (f: File | null) => void
   onFileChange: (f: File | null) => void
@@ -55,10 +52,10 @@ export function LayerCreateDialog({
   activity,
   modelName,
   modelVersion,
-  driverBandIndices,
-  bandLabelsCsv,
+  selectedEnvironmentalBands,
+  onSelectedEnvironmentalBandsChange,
+  environmentalBandOptions,
   explainabilityEnabled,
-  explainFeatureNamesCsv,
   explainModelFile,
   explainBackgroundFile,
   file,
@@ -66,10 +63,7 @@ export function LayerCreateDialog({
   onActivityChange,
   onModelNameChange,
   onModelVersionChange,
-  onDriverBandIndicesChange,
-  onBandLabelsCsvChange,
   onExplainabilityEnabledChange,
-  onExplainFeatureNamesCsvChange,
   onExplainModelFileChange,
   onExplainBackgroundFileChange,
   onFileChange,
@@ -110,22 +104,19 @@ export function LayerCreateDialog({
             activity={activity}
             modelName={modelName}
             modelVersion={modelVersion}
-            driverBandIndices={driverBandIndices}
-            bandLabelsCsv={bandLabelsCsv}
-            onBandLabelsCsvChange={onBandLabelsCsvChange}
-            explainabilityEnabled={explainabilityEnabled}
-            onExplainabilityEnabledChange={onExplainabilityEnabledChange}
-            explainFeatureNamesCsv={explainFeatureNamesCsv}
-            onExplainFeatureNamesCsvChange={onExplainFeatureNamesCsvChange}
-            explainModelFile={explainModelFile}
-            explainBackgroundFile={explainBackgroundFile}
-            onExplainModelFileChange={onExplainModelFileChange}
-            onExplainBackgroundFileChange={onExplainBackgroundFileChange}
             onSpeciesChange={onSpeciesChange}
             onActivityChange={onActivityChange}
             onModelNameChange={onModelNameChange}
             onModelVersionChange={onModelVersionChange}
-            onDriverBandIndicesChange={onDriverBandIndicesChange}
+            selectedEnvironmentalBands={selectedEnvironmentalBands}
+            onSelectedEnvironmentalBandsChange={onSelectedEnvironmentalBandsChange}
+            environmentalBandOptions={environmentalBandOptions}
+            explainabilityEnabled={explainabilityEnabled}
+            onExplainabilityEnabledChange={onExplainabilityEnabledChange}
+            explainModelFile={explainModelFile}
+            explainBackgroundFile={explainBackgroundFile}
+            onExplainModelFileChange={onExplainModelFileChange}
+            onExplainBackgroundFileChange={onExplainBackgroundFileChange}
             pendingFile={file}
             onFileChange={onFileChange}
             disabled={!canAddModel}

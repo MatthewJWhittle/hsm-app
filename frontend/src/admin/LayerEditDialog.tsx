@@ -1,6 +1,6 @@
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material'
 import type { Model } from '../types/model'
-import type { CatalogProject } from '../types/project'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import { MapLayerFormFields } from './MapLayerFormFields'
 
 type LayerEditDialogProps = {
@@ -15,10 +15,10 @@ type LayerEditDialogProps = {
   editActivity: string
   editName: string
   editVersion: string
-  editDriverBandIndices: string
-  editBandLabelsCsv: string
+  selectedEnvironmentalBands: EnvironmentalBandDefinition[]
+  onSelectedEnvironmentalBandsChange: (bands: EnvironmentalBandDefinition[]) => void
+  environmentalBandOptions: EnvironmentalBandDefinition[] | null
   editExplainabilityEnabled: boolean
-  editExplainFeatureNamesCsv: string
   editExplainModelFile: File | null
   editExplainBackgroundFile: File | null
   editExplainHasExistingArtifacts: boolean
@@ -27,10 +27,7 @@ type LayerEditDialogProps = {
   onEditActivityChange: (v: string) => void
   onEditNameChange: (v: string) => void
   onEditVersionChange: (v: string) => void
-  onEditDriverBandIndicesChange: (v: string) => void
-  onEditBandLabelsCsvChange: (v: string) => void
   onEditExplainabilityEnabledChange: (v: boolean) => void
-  onEditExplainFeatureNamesCsvChange: (v: string) => void
   onEditExplainModelFileChange: (f: File | null) => void
   onEditExplainBackgroundFileChange: (f: File | null) => void
   onEditFileChange: (f: File | null) => void
@@ -51,10 +48,10 @@ export function LayerEditDialog({
   editActivity,
   editName,
   editVersion,
-  editDriverBandIndices,
-  editBandLabelsCsv,
+  selectedEnvironmentalBands,
+  onSelectedEnvironmentalBandsChange,
+  environmentalBandOptions,
   editExplainabilityEnabled,
-  editExplainFeatureNamesCsv,
   editExplainModelFile,
   editExplainBackgroundFile,
   editExplainHasExistingArtifacts,
@@ -63,10 +60,7 @@ export function LayerEditDialog({
   onEditActivityChange,
   onEditNameChange,
   onEditVersionChange,
-  onEditDriverBandIndicesChange,
-  onEditBandLabelsCsvChange,
   onEditExplainabilityEnabledChange,
-  onEditExplainFeatureNamesCsvChange,
   onEditExplainModelFileChange,
   onEditExplainBackgroundFileChange,
   onEditFileChange,
@@ -96,23 +90,20 @@ export function LayerEditDialog({
             activity={editActivity}
             modelName={editName}
             modelVersion={editVersion}
-            driverBandIndices={editDriverBandIndices}
-            bandLabelsCsv={editBandLabelsCsv}
-            onBandLabelsCsvChange={onEditBandLabelsCsvChange}
+            onSpeciesChange={onEditSpeciesChange}
+            onActivityChange={onEditActivityChange}
+            onModelNameChange={onEditNameChange}
+            onModelVersionChange={onEditVersionChange}
+            selectedEnvironmentalBands={selectedEnvironmentalBands}
+            onSelectedEnvironmentalBandsChange={onSelectedEnvironmentalBandsChange}
+            environmentalBandOptions={environmentalBandOptions}
             explainabilityEnabled={editExplainabilityEnabled}
             onExplainabilityEnabledChange={onEditExplainabilityEnabledChange}
-            explainFeatureNamesCsv={editExplainFeatureNamesCsv}
-            onExplainFeatureNamesCsvChange={onEditExplainFeatureNamesCsvChange}
             explainModelFile={editExplainModelFile}
             explainBackgroundFile={editExplainBackgroundFile}
             onExplainModelFileChange={onEditExplainModelFileChange}
             onExplainBackgroundFileChange={onEditExplainBackgroundFileChange}
             explainHasExistingArtifacts={editExplainHasExistingArtifacts}
-            onSpeciesChange={onEditSpeciesChange}
-            onActivityChange={onEditActivityChange}
-            onModelNameChange={onEditNameChange}
-            onModelVersionChange={onEditVersionChange}
-            onDriverBandIndicesChange={onEditDriverBandIndicesChange}
             pendingFile={editFile}
             onFileChange={onEditFileChange}
             layerId={editModel?.id}

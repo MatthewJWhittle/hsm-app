@@ -7,6 +7,21 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+class EnvironmentalBandDefinition(BaseModel):
+    """One band in the project's shared multi-band environmental COG (0-based index)."""
+
+    index: int = Field(..., ge=0, description="0-based band index in the GeoTIFF")
+    name: str = Field(
+        ...,
+        min_length=1,
+        description="Stable column name (matches training / model feature order)",
+    )
+    label: str | None = Field(
+        default=None,
+        description="Optional human-readable label for UI and raw value display",
+    )
+
+
 class CatalogProject(BaseModel):
     """
     Admin-defined grouping: optional shared environmental (multi-band) COG per project
@@ -30,6 +45,10 @@ class CatalogProject(BaseModel):
     driver_cog_path: str | None = Field(
         default=None,
         description="Filename or path relative to driver_artifact_root",
+    )
+    environmental_band_definitions: list[EnvironmentalBandDefinition] | None = Field(
+        default=None,
+        description="Per-band names (and optional labels) for the environmental COG; set after upload.",
     )
     created_at: str | None = None
     updated_at: str | None = None

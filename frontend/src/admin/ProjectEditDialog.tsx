@@ -1,5 +1,5 @@
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material'
-import type { CatalogProject } from '../types/project'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import { ProjectFormFields } from './ProjectFormFields'
 
 type ProjectEditDialogProps = {
@@ -13,6 +13,8 @@ type ProjectEditDialogProps = {
   editProjAllowedUids: string
   editProjStatus: 'active' | 'archived'
   editProjFile: File | null
+  environmentalBandDefinitions: EnvironmentalBandDefinition[]
+  onEnvironmentalBandDefinitionsChange: (v: EnvironmentalBandDefinition[]) => void
   onEditProjNameChange: (v: string) => void
   onEditProjDescChange: (v: string) => void
   onEditProjVisibilityChange: (v: 'public' | 'private') => void
@@ -35,6 +37,8 @@ export function ProjectEditDialog({
   editProjAllowedUids,
   editProjStatus,
   editProjFile,
+  environmentalBandDefinitions,
+  onEnvironmentalBandDefinitionsChange,
   onEditProjNameChange,
   onEditProjDescChange,
   onEditProjVisibilityChange,
@@ -75,6 +79,8 @@ export function ProjectEditDialog({
             onFileChange={onEditProjFileChange}
             projectId={editingProject?.id}
             existingDriverPath={editingProject?.driver_cog_path ?? null}
+            environmentalBandDefinitions={environmentalBandDefinitions}
+            onEnvironmentalBandDefinitionsChange={onEnvironmentalBandDefinitionsChange}
           />
           {editProjError && (
             <Alert severity="error" sx={{ mt: 2 }}>
