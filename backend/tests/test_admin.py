@@ -9,10 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from backend_api.storage import (
-    EXPLAINABILITY_BACKGROUND_FILENAME,
-    EXPLAINABILITY_MODEL_FILENAME,
-)
+from backend_api.storage import SERIALIZED_MODEL_FILENAME
 from tests.helpers import mock_firestore_client_for_documents
 
 SAMPLE_PROJECT = {
@@ -150,12 +147,13 @@ def test_post_models_with_explainability_uploads(catalog_docs):
                     "project_id": "proj-1",
                     "species": "New species",
                     "activity": "Flight",
-                    "driver_band_indices": "[0, 1]",
-                    "driver_config": json.dumps({"feature_names": ["a", "b"]}),
+                    "metadata": json.dumps(
+                        {"analysis": {"feature_band_indices": [0, 1]}}
+                    ),
                 },
                 files={
                     "file": ("cog.tif", BytesIO(b"dummy"), "image/tiff"),
-                    "explainability_model_file": (
+                    "serialized_model_file": (
                         "m.pkl",
                         BytesIO(b"pk"),
                         "application/octet-stream",
@@ -164,15 +162,11 @@ def test_post_models_with_explainability_uploads(catalog_docs):
             )
     assert r.status_code == 201
     body = r.json()
-    assert body["driver_config"]["explainability_model_path"] == EXPLAINABILITY_MODEL_FILENAME
-    assert (
-        body["driver_config"]["explainability_background_path"]
-        == EXPLAINABILITY_BACKGROUND_FILENAME
-    )
-    assert body["driver_config"]["explainability_background_artifact_root"] == "/data/projects/proj-1"
+    assert body["metadata"]["analysis"]["serialized_model_path"] == SERIALIZED_MODEL_FILENAME
+    assert body["metadata"]["analysis"]["feature_band_indices"] == [0, 1]
     mid = body["id"]
     mock_storage.write_model_artifact.assert_any_call(
-        mid, EXPLAINABILITY_MODEL_FILENAME, b"pk"
+        mid, SERIALIZED_MODEL_FILENAME, b"pk"
     )
 
 

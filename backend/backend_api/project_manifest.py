@@ -1,9 +1,10 @@
-"""Align model ``driver_config`` with catalog project environmental band definitions."""
+"""Validate model band indices against the catalog project's environmental manifest."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from backend_api.model_effective_config import get_feature_band_indices
 from backend_api.schemas import Model
 
 if TYPE_CHECKING:
@@ -38,7 +39,7 @@ def validate_model_bands_against_project_manifest(model: Model, catalog: "Catalo
     Raises:
         ValueError: for HTTP 422 on admin save.
     """
-    indices = model.driver_band_indices
+    indices = get_feature_band_indices(model)
     if not indices or not model.project_id:
         return
     proj = catalog.get_project(model.project_id)
@@ -57,45 +58,3 @@ def validate_model_bands_against_project_manifest(model: Model, catalog: "Catalo
             raise ValueError(
                 f"driver_band_index {idx} is not in the project's environmental band definitions"
             )
-
-
-def enrich_model_driver_config_from_project(model: Model, catalog: "CatalogService") -> Model:
-    """
-    Set ``driver_config.feature_names`` and ``driver_config.band_labels`` from the project
-    manifest in the same order as ``driver_band_indices``.
-    """
-    indices = model.driver_band_indices
-    if not indices or not model.project_id:
-        return model
-    proj = catalog.get_project(model.project_id)
-    if not proj or not proj.environmental_band_definitions:
-        return model
-    by_idx = {d.index: d for d in proj.environmental_band_definitions}
-    names: list[str] = []
-    labels: list[str] = []
-    descriptions: list[str | None] = []
-    for idx in indices:
-        d = by_idx.get(idx)
-        if d is None:
-            continue
-        names.append(d.name)
-        labels.append(d.label.strip() if d.label else d.name)
-        if d.description is not None and str(d.description).strip():
-            descriptions.append(str(d.description).strip())
-        else:
-            descriptions.append(None)
-    if len(names) != len(indices):
-        return model
-    dc = dict(model.driver_config or {})
-    dc["feature_names"] = names
-    dc["band_labels"] = labels
-    if any(x is not None for x in descriptions):
-        dc["band_descriptions"] = descriptions
-    else:
-        dc.pop("band_descriptions", None)
-    if proj.explainability_background_path and proj.driver_artifact_root:
-        dc["explainability_background_path"] = proj.explainability_background_path
-        dc["explainability_background_artifact_root"] = proj.driver_artifact_root
-    else:
-        dc.pop("explainability_background_artifact_root", None)
-    return model.model_copy(update={"driver_config": dc})

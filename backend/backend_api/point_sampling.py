@@ -13,6 +13,7 @@ from rasterio.transform import rowcol
 from rasterio.warp import transform as transform_coords
 from rasterio.windows import Window
 
+from backend_api.model_effective_config import get_effective_driver_config, get_feature_band_indices
 from backend_api.schemas import DriverVariable, Model, PointInspection, RawEnvironmentalValue
 
 if TYPE_CHECKING:
@@ -52,7 +53,7 @@ def resolve_environmental_cog_path_for_model(
     """
     Absolute path to the multi-band environmental COG for driver sampling.
 
-    Prefer the catalog project's shared stack; else ``driver_config.driver_cog_path``
+    Prefer the catalog project's shared stack; else ``metadata.analysis.driver_cog_path``
     relative to ``artifact_root`` (see docs/data-models.md).
     """
     if model.project_id:
@@ -64,10 +65,17 @@ def resolve_environmental_cog_path_for_model(
                 return rel
             return f"{root}/{rel}"
 
-    dc = model.driver_config or {}
-    rel = dc.get("driver_cog_path")
-    if isinstance(rel, str) and rel.strip():
-        rel = rel.strip()
+    rel: str | None = None
+    if catalog is not None:
+        dc = get_effective_driver_config(model, catalog)
+        r = dc.get("driver_cog_path")
+        if isinstance(r, str) and r.strip():
+            rel = r.strip()
+    else:
+        a = model.metadata.analysis if model.metadata else None
+        if a and a.driver_cog_path and str(a.driver_cog_path).strip():
+            rel = str(a.driver_cog_path).strip()
+    if rel:
         if rel.startswith("/"):
             return rel
         root = model.artifact_root.rstrip("/")
@@ -83,7 +91,7 @@ def validate_driver_band_indices_for_model(model: Model, catalog: "CatalogServic
     Raises:
         ValueError: indices out of range (use for HTTP 422).
     """
-    indices = model.driver_band_indices
+    indices = get_feature_band_indices(model)
     if not indices:
         return
     path = resolve_environmental_cog_path_for_model(model, catalog)
@@ -94,11 +102,11 @@ def validate_driver_band_indices_for_model(model: Model, catalog: "CatalogServic
         return
     mx = max(indices)
     if min(indices) < 0:
-        raise ValueError("driver_band_indices must be non-negative")
+        raise ValueError("feature_band_indices must be non-negative")
     with rasterio.open(p) as src:
         if mx >= src.count:
             raise ValueError(
-                f"driver_band_indices: maximum index {mx} is out of range for "
+                f"feature_band_indices: maximum index {mx} is out of range for "
                 f"environmental raster with {src.count} band(s) (0-based indices)"
             )
 
@@ -207,11 +215,10 @@ def sample_environmental_bands_at_point(
 
 
 def build_raw_environmental_values(
-    model: Model, values: list[float]
+    model: Model, values: list[float], dc: dict
 ) -> list[RawEnvironmentalValue]:
     """Labels for sampled bands; prefers ``band_labels`` / ``band_names``, else ``feature_names``."""
-    indices = model.driver_band_indices or []
-    dc = model.driver_config or {}
+    indices = get_feature_band_indices(model)
     names = dc.get("band_labels") or dc.get("band_names")
     if not (isinstance(names, list) and len(names) == len(values)):
         fn = dc.get("feature_names")
@@ -258,16 +265,16 @@ def inspect_point(
     drivers_out: list[DriverVariable] | None = None  # None → serialize as empty list
     raw_out: list[RawEnvironmentalValue] | None = None
 
-    indices = model.driver_band_indices
+    indices = get_feature_band_indices(model)
     if catalog is not None and indices:
         env_path = resolve_environmental_cog_path_for_model(model, catalog)
         if env_path is not None:
+            dc = get_effective_driver_config(model, catalog)
             band_values = sample_environmental_bands_at_point(
                 env_path, lng, lat, indices
             )
-            raw_out = build_raw_environmental_values(model, band_values)
-            if explainability_configured(model):
-                dc = model.driver_config or {}
+            raw_out = build_raw_environmental_values(model, band_values, dc)
+            if explainability_configured(model, catalog):
                 fnames = dc.get("feature_names")
                 if not (
                     isinstance(fnames, list)
@@ -276,14 +283,14 @@ def inspect_point(
                 ):
                     raise PointSamplingError(
                         "explainability requires feature_names with the same length "
-                        "and order as driver_band_indices"
+                        "and order as feature_band_indices"
                     )
                 import pandas as pd
 
                 feature_df = pd.DataFrame(
                     [band_values], columns=[str(x) for x in fnames]
                 )
-                drivers_out = compute_shap_driver_variables(model, feature_df)
+                drivers_out = compute_shap_driver_variables(model, feature_df, dc)
 
     return PointInspection(
         value=value,

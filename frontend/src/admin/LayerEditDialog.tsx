@@ -1,6 +1,7 @@
 import { Alert, Box, Dialog, DialogContent, DialogTitle, Typography } from '@mui/material'
 import type { Model } from '../types/model'
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
+import type { ModelCardDraft } from './modelCardDraft'
 import { MapLayerFormFields } from './MapLayerFormFields'
 
 type LayerEditDialogProps = {
@@ -31,6 +32,8 @@ type LayerEditDialogProps = {
   onEditFileChange: (f: File | null) => void
   editError: string | null
   savingEdit: boolean
+  modelCardDraft: ModelCardDraft
+  onModelCardDraftChange: (draft: ModelCardDraft) => void
 }
 
 export function LayerEditDialog({
@@ -61,6 +64,8 @@ export function LayerEditDialog({
   onEditFileChange,
   editError,
   savingEdit,
+  modelCardDraft,
+  onModelCardDraftChange,
 }: LayerEditDialogProps) {
   return (
     <Dialog
@@ -104,6 +109,8 @@ export function LayerEditDialog({
             pendingFile={editFile}
             onFileChange={onEditFileChange}
             layerId={editModel?.id}
+            modelCardDraft={modelCardDraft}
+            onModelCardDraftChange={onModelCardDraftChange}
           />
           {editError && (
             <Alert severity="error" sx={{ mt: 2 }}>

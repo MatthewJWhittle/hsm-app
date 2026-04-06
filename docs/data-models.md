@@ -20,29 +20,33 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 | `suitability_cog_path` | string | Path to the suitability COG (absolute or relative to `artifact_root`). Frontend/TiTiler use this for tiles. |
 | `model_name` | string? | Optional. Model or run name (MVP: basic metadata). |
 | `model_version` | string? | Optional. Model version or date. |
-| `driver_band_indices` | int[]? | Optional typed subset: **0-based band indices** into the environmental COG (project stack or per-model file below). |
-| `driver_config` | object? | Optional. **Server-persisted** JSON (set via admin `POST/PUT /models` or ingest), not supplied by map clients. See **driver_config keys** below. Links this model to driver/feature paths and display metadata. Prefer **`driver_band_indices`** when the stack is project-scoped. |
+| `metadata` | object? | Optional structured description and analysis inputs. Not supplied by map clients for point queries. See **`metadata` shape** below. **Legacy** documents may still store `driver_band_indices` / `driver_config`; the API migrates those into `metadata.analysis` when loading a `Model`. |
 
 **Extensibility:** Add optional fields as needed (e.g. `taxon_id`, `meta` blob). Backend and frontend should ignore unknown keys so schema can evolve.
 
-#### `driver_config` keys (point inspection)
+#### `metadata` shape (catalog and admin)
 
-These fields are read by the backend for `GET /models/{id}/point`. **Band indices** select which raster bands to sample; **feature names** align model inputs with those bands in order.
+| Section | Purpose |
+|---------|---------|
+| `card` | Human-facing **model card** (Hugging Face–style): optional `title`, `summary`, `metrics`, `spatial_resolution_m`, `training_period`, `evaluation_notes`, `license`, `citation`. |
+| `extras` | Optional `Record<string, string>` for custom key/value labels. |
+| `analysis` | Training / point-pipeline inputs: **`feature_band_indices`** (0-based indices into the project environmental COG, feature order), **`serialized_model_path`** (pickled sklearn estimator **relative to `artifact_root`**, e.g. `serialized_model.pkl`), **`positive_class_index`** (for `predict_proba`; default `1` at runtime if omitted), optional **`driver_cog_path`** (per-model environmental COG override relative to `artifact_root`). |
 
-For models tied to a **catalog project** with `environmental_band_definitions`, the API **fills or refreshes** `feature_names` and `band_labels` (and related display strings) from that manifest whenever a model is saved, using the layer’s ordered `driver_band_indices`. Admin does not send separate CSVs for those keys.
+Admin `POST/PUT /models` sends `metadata` as a **JSON string** in the multipart form (same object shape). Optional multipart field **`serialized_model_file`** writes the pickle to the model folder and sets `metadata.analysis.serialized_model_path` to the fixed filename `serialized_model.pkl`.
 
-| Key | Type | Description |
-|-----|------|-------------|
-| `driver_cog_path` | string? | Optional. When the model does **not** use a project environmental stack (or to override), path to a multi-band COG **relative to `artifact_root`**, or absolute filesystem path in local dev. If omitted and `project_id` is set, the project’s `driver_artifact_root` + `driver_cog_path` is used. |
-| `band_labels` or `band_names` | string[]? | Optional. Human-readable names for each index in `driver_band_indices` (same length), used for `raw_environmental_values` labels. **Project-scoped models:** derived from the project band manifest. |
-| `band_units` | string[]? | Optional. Units per band (same length as indices) for display, e.g. `"m"`. |
-| `feature_names` | string[]? | **Required for SHAP explainability.** Column names for the trained model, **same length and order** as `driver_band_indices` (each index samples one band; values become one row in this column order). **Project-scoped models:** `name` values from the manifest in band order. |
-| `explainability_model_path` | string? | Path to pickled **sklearn** estimator **relative to the layer’s `artifact_root`**. Admin uploads use `explainability_model.pkl`. When set with `explainability_background_path`, `explainability_background_artifact_root` (for project-shared background), and `feature_names`, the API runs permutation SHAP and fills `PointInspection.drivers`. |
-| `explainability_background_path` | string? | Path to **Parquet** background matrix (fixed name `explainability_background.parquet`). For **project-scoped** models, this path is **relative to the project’s `driver_artifact_root`**; the API sets `explainability_background_artifact_root` on save. The file is **generated automatically** when the environmental COG is uploaded (random pixel sample across all bands; columns match band `name` values from the manifest). |
-| `explainability_background_artifact_root` | string? | **Set by the API** when the background Parquet lives under the catalog project (shared across layers). Point inspection resolves the Parquet using this root plus `explainability_background_path`. Omit for legacy per-model background files stored only under the layer folder. |
-| `explainability_positive_class` | int? | Optional. Index of the positive class for `predict_proba` (default `1`). |
+#### Effective driver config (point inspection; not persisted)
 
-Admin `POST/PUT /models` accepts an optional multipart field `explainability_model_file` (sklearn pickle under the layer folder). It validates band indices against the environmental COG when possible, enriches `feature_names` / `band_labels` and explainability paths from the project manifest when applicable, and—when explainability is configured—that artefacts exist and `feature_names` length matches `driver_band_indices`.
+For `GET /models/{id}/point`, the backend **does not** read a stored `driver_config` blob. It builds an **effective** configuration from **`metadata.analysis`** plus the **catalog project** (when `project_id` and `environmental_band_definitions` are present): `feature_names`, `band_labels`, optional `band_descriptions`, shared background paths, etc. That merged view matches the key names the point and SHAP code paths already expect internally (e.g. `explainability_model_path` is taken from `analysis.serialized_model_path`).
+
+| Key (runtime) | Source |
+|---------------|--------|
+| `feature_names`, `band_labels`, optional `band_descriptions` | Project manifest **`environmental_band_definitions`**, in the order of **`metadata.analysis.feature_band_indices`**. |
+| `driver_cog_path` | `metadata.analysis.driver_cog_path`, or the project’s environmental COG when unset. |
+| `explainability_model_path` | `metadata.analysis.serialized_model_path` (relative to `artifact_root`). |
+| `explainability_positive_class` | `metadata.analysis.positive_class_index` (default `1`). |
+| `explainability_background_path` / `explainability_background_artifact_root` | Project shared background Parquet when configured. |
+
+Validation on save checks band indices against the environmental raster when possible and, when explainability is configured, that artefacts exist and feature count matches the selected bands.
 
 ### Catalog project (shared environmental stack)
 
@@ -56,7 +60,7 @@ Admin `POST/PUT /models` accepts an optional multipart field `explainability_mod
 | `allowed_uids` | string[] | When `visibility` is `private`, these uids may read the project and its models (via optional `Authorization: Bearer` on `GET /projects` and `GET /models`). |
 | `driver_artifact_root` | string | Storage prefix for the project’s shared multi-band environmental COG. |
 | `driver_cog_path` | string | Filename or path relative to `driver_artifact_root` (e.g. `environmental_cog.tif`). |
-| `environmental_band_definitions` | `{ index, name, label }[]`? | **Optional.** One entry per raster band in the environmental COG: **0-based `index`**, machine **`name`**, and human **`label`**. Populated when the COG is uploaded (defaults like `band_0`, …) and editable in the admin project form. This is the **single manifest** for band identity; the API derives `driver_config.feature_names` and `driver_config.band_labels` for each model from the layer’s ordered `driver_band_indices` and this list. |
+| `environmental_band_definitions` | `{ index, name, label }[]`? | **Optional.** One entry per raster band in the environmental COG: **0-based `index`**, machine **`name`**, and human **`label`**. Populated when the COG is uploaded (defaults like `band_0`, …) and editable in the admin project form. This is the **single manifest** for band identity; at **point-inspection time** the API resolves `feature_names` / `band_labels` for each model from **`metadata.analysis.feature_band_indices`** and this list (see **Effective driver config** above). |
 | `explainability_background_path` | string? | **Optional.** `explainability_background.parquet` under `driver_artifact_root`, built automatically when the environmental COG is uploaded (sampled pixels for SHAP; shared by all models in the project). |
 
 **Admin — replace the full band manifest:** `PATCH /projects/{project_id}/environmental-band-definitions` with a JSON **array** body (same shape as `environmental_band_definitions`, one object per band, indices `0..n-1`). Requires an existing environmental COG on the server; the band count must match the raster.
@@ -77,7 +81,7 @@ Human-readable **species** and **activity** belong in the **catalog** (Firestore
 
 1. **One prefix per model** — Set `artifact_root` to a dedicated prefix for that model only, e.g. `gs://{bucket}/models/{model_id}/` (trailing slash implied in conventions below).
 2. **Fixed blob names inside that prefix** — Use the **same basename** for the main suitability COG in every model folder, e.g. **`suitability_cog.tif`**. Uniqueness comes from **`model_id` in the path**, not from encoding the species in the filename. Store `suitability_cog_path` as the full object path or as relative to `artifact_root` (e.g. `suitability_cog.tif`), consistently.
-3. **Optional sidecar files in the same prefix** — e.g. `drivers_cog.tif`, `metadata.json`, or other artifacts; reference them from `driver_config` or optional fields so names stay stable and discoverable.
+3. **Optional sidecar files in the same prefix** — e.g. `drivers_cog.tif`, `serialized_model.pkl`, or other artifacts; reference paths in **`metadata.analysis`** (or project manifest for shared stacks) so names stay stable and discoverable.
 
 This supports many models, retrains (new `model_id` or new version segment), and tooling that always looks for `…/suitability_cog.tif` under a known root.
 
@@ -110,7 +114,7 @@ The repo may use a **flat** folder of COGs and a generated Firestore snapshot JS
 
 ### Upload validation (COG format and CRS)
 
-Uploaded suitability rasters (and driver rasters referenced from `driver_config`) should be **validated before** the backend writes the final object and commits the `Model` to the catalog. Otherwise the map tiles, legend, and point inspection can fail in opaque ways.
+Uploaded suitability rasters (and driver rasters referenced from **`metadata.analysis`** or the project environmental COG) should be **validated before** the backend writes the final object and commits the `Model` to the catalog. Otherwise the map tiles, legend, and point inspection can fail in opaque ways.
 
 #### Must pass (reject or quarantine if not met)
 
@@ -123,7 +127,7 @@ Uploaded suitability rasters (and driver rasters referenced from `driver_config`
 
 - **Overviews** — Present for COGs used at multiple zoom levels (typical COG creation includes overviews).
 - **Compression** — Sensible compression (e.g. DEFLATE/LZW) and predictors where appropriate; avoids huge uncompressed objects in GCS.
-- **Band count** — Suitability layer: usually **one** interpretable band for the main map; multi-band files need a defined **which band** is suitability (record in metadata or `driver_config`).
+- **Band count** — Suitability layer: usually **one** interpretable band for the main map; multi-band files need a defined **which band** is suitability (record in **`metadata`** or app conventions).
 
 #### Expected artifact size (MVP)
 
@@ -140,8 +144,8 @@ Target **under ~100 MB** per suitability COG so direct upload + validation on Cl
 Drivers must be available to the API for point inspection. Each model is tied to a **specific set of features** (the environment variables / inputs that model was built with). Design options to capture in the data model:
 
 - **Single multi-band COG:** One COG contains all driver variables (e.g. one band per feature). The model document specifies which **band names or feature ids** belong to this model. For `GET /models/{id}/point`, the API reads that subset at the requested location and returns DriverVariables. The “environment” (feature set) and the model are linked via this subset.
-- **Per-model driver raster or lookup:** Each model has its own driver dataset (path in `driver_config`); no shared COG.
-- **Shared multi-band environmental stack (common case for scaling):** A **single raster** (or stack) of environmental variables may be **shared** — e.g. scoped to a **project** or **reused across projects** — while each **model** still references only the **subset of bands/features** it uses via `driver_config`. Suitability outputs remain **per-model** under each model’s artifact prefix; driver **inputs** can point at shared storage without duplicating rasters per model.
+- **Per-model driver raster or lookup:** Each model has its own driver dataset (path in **`metadata.analysis.driver_cog_path`**); no shared COG.
+- **Shared multi-band environmental stack (common case for scaling):** A **single raster** (or stack) of environmental variables may be **shared** — e.g. scoped to a **project** or **reused across projects** — while each **model** still references only the **subset of bands/features** it uses via **`metadata.analysis.feature_band_indices`**. Suitability outputs remain **per-model** under each model’s artifact prefix; driver **inputs** can point at shared storage without duplicating rasters per model.
 
 The data model should record enough for the API to resolve “this model → these features at this point” (e.g. `driver_cog_path` + `feature_ids` or `band_names`). Exact shape can be refined when driver data format is fixed. See [Admin scope decisions](admin-scope-decisions.md) for steering.
 
@@ -216,7 +220,7 @@ Returned by `GET /models/{id}/point?lng=&lat=` when the user clicks the map or r
 
 | Model | Where used | MVP priority |
 |-------|------------|--------------|
-| **Model** | Catalog; `GET /models`, `GET /models/{id}`; admin POST/PUT | Required: `id`, species, activity, `artifact_root`, `suitability_cog_path`; optional model_name, model_version, driver_config. |
+| **Model** | Catalog; `GET /models`, `GET /models/{id}`; admin POST/PUT | Required: `id`, species, activity, `artifact_root`, `suitability_cog_path`; optional model_name, model_version, **`metadata`**. |
 | **Catalog** | Firestore `models` collection or local JSON `documents[]` snapshot | Stored list of Model; id required. |
 | **RasterMetadata** | `GET /models/{id}/raster/metadata` when needed | Optional in MVP. |
 | **PointInspection** | Response of `GET /models/{id}/point` | Required for MVP. |

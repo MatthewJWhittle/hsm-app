@@ -20,7 +20,9 @@ import {
 import { useEffect, useState } from 'react'
 
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
+import type { ModelCardDraft } from './modelCardDraft'
 import { COG_REPLACE_HINT, EXPLAINABILITY_HELP, FIELD_HELP } from './catalogFormConstants'
+import { ModelCardFormFields } from './ModelCardFormFields'
 
 export interface MapLayerFormFieldsProps {
   mode: 'create' | 'edit'
@@ -55,6 +57,9 @@ export interface MapLayerFormFieldsProps {
   disabled?: boolean
   /** Edit: show layer id */
   layerId?: string
+  /** Optional model card (metadata.card / extras); when set, shows the card editor. */
+  modelCardDraft?: ModelCardDraft
+  onModelCardDraftChange?: (draft: ModelCardDraft) => void
 }
 
 export function MapLayerFormFields({
@@ -84,6 +89,8 @@ export function MapLayerFormFields({
   onFileChange,
   disabled = false,
   layerId,
+  modelCardDraft,
+  onModelCardDraftChange,
 }: MapLayerFormFieldsProps) {
   const isEdit = mode === 'edit'
   const opts = environmentalBandOptions ?? []
@@ -203,6 +210,18 @@ export function MapLayerFormFields({
           disabled={disabled}
         />
       </Stack>
+
+      {modelCardDraft != null && onModelCardDraftChange != null && (
+        <>
+          <Divider sx={{ my: 0.5 }} />
+          <ModelCardFormFields
+            maxWidth={maxWidth}
+            draft={modelCardDraft}
+            onDraftChange={onModelCardDraftChange}
+            disabled={disabled}
+          />
+        </>
+      )}
 
       {showEnvSection && (
         <>

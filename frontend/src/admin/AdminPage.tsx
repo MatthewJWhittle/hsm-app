@@ -16,11 +16,12 @@ import { fetchModelCatalog } from '../api/catalog'
 import { fetchProjectCatalog } from '../api/projects'
 import { useAuth } from '../auth/useAuth'
 import { Navbar } from '../components/Navbar'
-import type { Model } from '../types/model'
+import { type Model, getFeatureBandIndices } from '../types/model'
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 
 import { bandsFromDriverIndices, environmentalBandsForProject } from './adminBandSelect'
-import { explainabilityConfiguredInCatalog, mergeDriverConfigForSubmit } from './adminExplainability'
+import { buildModelMetadataForSubmit, explainabilityConfiguredInCatalog } from './adminExplainability'
+import { emptyModelCardDraft, modelToCardDraft, parseModelCardDraft, type ModelCardDraft } from './modelCardDraft'
 import { AdminCatalogHeader } from './AdminCatalogHeader'
 import { AdminTabPanel } from './AdminTabPanel'
 import { LayerCreateDialog } from './LayerCreateDialog'
@@ -70,6 +71,7 @@ export function AdminPage() {
   const [createError, setCreateError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [layerCreateOpen, setLayerCreateOpen] = useState(false)
+  const [createCardDraft, setCreateCardDraft] = useState<ModelCardDraft>(() => emptyModelCardDraft())
 
   const [editOpen, setEditOpen] = useState(false)
   const [editModel, setEditModel] = useState<Model | null>(null)
@@ -82,6 +84,7 @@ export function AdminPage() {
   const [editSelectedEnvBands, setEditSelectedEnvBands] = useState<EnvironmentalBandDefinition[]>([])
   const [editExplainEnabled, setEditExplainEnabled] = useState(false)
   const [editExplainModelFile, setEditExplainModelFile] = useState<File | null>(null)
+  const [editCardDraft, setEditCardDraft] = useState<ModelCardDraft>(() => emptyModelCardDraft())
   const [editError, setEditError] = useState<string | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
 
@@ -166,9 +169,16 @@ export function AdminPage() {
 
   const buildLayerEditSnapshot = useCallback(() => {
     if (!editModel) return ''
-    const driverConfigJson = mergeDriverConfigForSubmit(editModel.driver_config ?? null, {
-      enabled: editExplainEnabled,
-    })
+    const parsed = parseModelCardDraft(editCardDraft)
+    const metadataJson =
+      parsed.ok
+        ? buildModelMetadataForSubmit({
+            base: editModel,
+            explainEnabled: editExplainEnabled,
+            selectedBands: editSelectedEnvBands,
+            cardPatch: { card: parsed.card, extras: parsed.extras },
+          }) ?? '{}'
+        : ''
     return layerFormSnapshot({
       species: editSpecies,
       activity: editActivity,
@@ -177,7 +187,8 @@ export function AdminPage() {
       modelVersion: editVersion,
       bandDefs: editSelectedEnvBands,
       explainEnabled: editExplainEnabled,
-      driverConfigJson,
+      metadataJson,
+      cardDraftJson: JSON.stringify(editCardDraft),
       suitabilityFileName: editFile?.name ?? null,
       explainModelFileName: editExplainModelFile?.name ?? null,
     })
@@ -192,6 +203,7 @@ export function AdminPage() {
     editExplainEnabled,
     editFile,
     editExplainModelFile,
+    editCardDraft,
   ])
 
   useLayoutEffect(() => {
@@ -207,6 +219,7 @@ export function AdminPage() {
   }, [editOpen, editModel?.id, layerEditSession])
 
   const canPersistLayerEdit = useCallback(() => {
+    if (!parseModelCardDraft(editCardDraft).ok) return false
     if (!editSpecies.trim() || !editActivity.trim()) return false
     if (editExplainEnabled) {
       if (editSelectedEnvBands.length === 0) return false
@@ -214,7 +227,15 @@ export function AdminPage() {
       if (!hadArtifacts && !editExplainModelFile) return false
     }
     return true
-  }, [editSpecies, editActivity, editExplainEnabled, editSelectedEnvBands, editExplainModelFile, editModel])
+  }, [
+    editCardDraft,
+    editSpecies,
+    editActivity,
+    editExplainEnabled,
+    editSelectedEnvBands,
+    editExplainModelFile,
+    editModel,
+  ])
 
   const persistProjectEdit = useCallback(async () => {
     if (!editingProject || savingProjectEdit) return
@@ -304,9 +325,18 @@ export function AdminPage() {
       return
     }
 
-    const driverConfigJson = mergeDriverConfigForSubmit(editModel.driver_config ?? null, {
-      enabled: editExplainEnabled,
-    })
+    const parsedCard = parseModelCardDraft(editCardDraft)
+    if (!parsedCard.ok) {
+      setEditError(parsedCard.message)
+      return
+    }
+    const metadataJson =
+      buildModelMetadataForSubmit({
+        base: editModel,
+        explainEnabled: editExplainEnabled,
+        selectedBands: editSelectedEnvBands,
+        cardPatch: { card: parsedCard.card, extras: parsedCard.extras },
+      }) ?? '{}'
 
     setSavingEdit(true)
     try {
@@ -319,14 +349,11 @@ export function AdminPage() {
         modelVersion: editVersion || null,
         file: editFile ?? undefined,
         projectId: editProjectId || undefined,
-        driverBandIndicesJson:
-          editSelectedEnvBands.length > 0
-            ? JSON.stringify(editSelectedEnvBands.map((b) => b.index))
-            : '',
-        driverConfigJson,
-        explainabilityModelFile: editExplainModelFile ?? undefined,
+        metadataJson,
+        serializedModelFile: editExplainModelFile ?? undefined,
       })
       setEditModel(updated)
+      setEditCardDraft(modelToCardDraft(updated))
       setEditFile(null)
       setEditExplainModelFile(null)
       setModels((prev) => {
@@ -338,6 +365,7 @@ export function AdminPage() {
       })
       setListError(null)
       setLastRefreshedAt(new Date())
+      const parsedAfter = parseModelCardDraft(editCardDraft)
       layerEditBaselineRef.current = layerFormSnapshot({
         species: editSpecies,
         activity: editActivity,
@@ -346,9 +374,16 @@ export function AdminPage() {
         modelVersion: editVersion,
         bandDefs: editSelectedEnvBands,
         explainEnabled: editExplainEnabled,
-        driverConfigJson: mergeDriverConfigForSubmit(updated.driver_config ?? null, {
-          enabled: editExplainEnabled,
-        }),
+        metadataJson:
+          parsedAfter.ok
+            ? buildModelMetadataForSubmit({
+                base: updated,
+                explainEnabled: editExplainEnabled,
+                selectedBands: editSelectedEnvBands,
+                cardPatch: { card: parsedAfter.card, extras: parsedAfter.extras },
+              }) ?? '{}'
+            : '',
+        cardDraftJson: JSON.stringify(editCardDraft),
         suitabilityFileName: null,
         explainModelFileName: null,
       })
@@ -371,6 +406,7 @@ export function AdminPage() {
     editExplainEnabled,
     editFile,
     editExplainModelFile,
+    editCardDraft,
     getIdToken,
   ])
 
@@ -379,7 +415,7 @@ export function AdminPage() {
       setEditProjectId(id)
       if (editModel) {
         const defs = id ? environmentalBandsForProject(id, projects) : null
-        setEditSelectedEnvBands(bandsFromDriverIndices(editModel.driver_band_indices, defs))
+        setEditSelectedEnvBands(bandsFromDriverIndices(getFeatureBandIndices(editModel) ?? undefined, defs))
       }
     },
     [editModel, projects],
@@ -387,6 +423,7 @@ export function AdminPage() {
 
   const openLayerCreateDialog = useCallback(() => {
     setLayerCreateOpen(true)
+    setCreateCardDraft(emptyModelCardDraft())
     setSelectedEnvBands([])
     setExplainEnabled(false)
     setExplainModelFile(null)
@@ -515,13 +552,14 @@ export function AdminPage() {
 
   const openEdit = (m: Model) => {
     setEditModel(m)
+    setEditCardDraft(modelToCardDraft(m))
     setEditSpecies(m.species)
     setEditActivity(m.activity)
     setEditName(m.model_name ?? '')
     setEditVersion(m.model_version ?? '')
     setEditProjectId(m.project_id ?? '')
     const defs = m.project_id ? environmentalBandsForProject(m.project_id, projects) : null
-    setEditSelectedEnvBands(bandsFromDriverIndices(m.driver_band_indices, defs))
+    setEditSelectedEnvBands(bandsFromDriverIndices(getFeatureBandIndices(m) ?? undefined, defs))
     setEditExplainEnabled(explainabilityConfiguredInCatalog(m))
     setEditExplainModelFile(null)
     setEditFile(null)
@@ -640,6 +678,7 @@ export function AdminPage() {
     editExplainEnabled,
     editFile,
     editExplainModelFile,
+    editCardDraft,
     buildLayerEditSnapshot,
     persistLayerEdit,
     canPersistLayerEdit,
@@ -714,10 +753,18 @@ export function AdminPage() {
       return
     }
 
-    const driverConfigJson = mergeDriverConfigForSubmit(null, {
-      enabled: explainEnabled,
-    })
-    const hasDriverConfig = Object.keys(JSON.parse(driverConfigJson)).length > 0
+    const parsedCard = parseModelCardDraft(createCardDraft)
+    if (!parsedCard.ok) {
+      setCreateError(parsedCard.message)
+      return
+    }
+    const metadataJson =
+      buildModelMetadataForSubmit({
+        base: null,
+        explainEnabled,
+        selectedBands: selectedEnvBands,
+        cardPatch: { card: parsedCard.card, extras: parsedCard.extras },
+      }) ?? '{}'
 
     if (explainEnabled) {
       if (selectedEnvBands.length === 0) {
@@ -744,10 +791,8 @@ export function AdminPage() {
         file,
         modelName: modelName || undefined,
         modelVersion: modelVersion || undefined,
-        driverBandIndicesJson:
-          selectedEnvBands.length > 0 ? JSON.stringify(selectedEnvBands.map((b) => b.index)) : undefined,
-        driverConfigJson: hasDriverConfig ? driverConfigJson : undefined,
-        explainabilityModelFile: explainEnabled ? explainModelFile : undefined,
+        metadataJson,
+        serializedModelFile: explainEnabled ? explainModelFile : undefined,
       })
       setSpecies('')
       setActivity('')
@@ -756,6 +801,7 @@ export function AdminPage() {
       setSelectedEnvBands([])
       setExplainEnabled(false)
       setExplainModelFile(null)
+      setCreateCardDraft(emptyModelCardDraft())
       setFile(null)
       setLayerCreateOpen(false)
       await refreshList()
@@ -986,6 +1032,8 @@ export function AdminPage() {
             onExplainabilityEnabledChange={setExplainEnabled}
             onExplainModelFileChange={setExplainModelFile}
             onFileChange={setFile}
+            modelCardDraft={createCardDraft}
+            onModelCardDraftChange={setCreateCardDraft}
           />
 
           <ProjectEditDialog
@@ -1047,6 +1095,8 @@ export function AdminPage() {
             onEditFileChange={setEditFile}
             editError={editError}
             savingEdit={savingEdit}
+            modelCardDraft={editCardDraft}
+            onModelCardDraftChange={setEditCardDraft}
           />
         </Container>
       </Box>

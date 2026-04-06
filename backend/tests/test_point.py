@@ -258,6 +258,11 @@ def test_point_returns_raw_environmental_values(tmp_path):
             "name": "Test project",
             "driver_artifact_root": str(env_cog.parent),
             "driver_cog_path": "environmental_cog.tif",
+            "environmental_band_definitions": [
+                {"index": 0, "name": "a", "label": "forest"},
+                {"index": 1, "name": "b", "label": "mid"},
+                {"index": 2, "name": "c", "label": "water"},
+            ],
         }
     ]
     documents = [
@@ -268,8 +273,7 @@ def test_point_returns_raw_environmental_values(tmp_path):
             "artifact_root": str(tmp_path),
             "suitability_cog_path": "suitability_cog.tif",
             "project_id": project_id,
-            "driver_band_indices": [0, 2],
-            "driver_config": {"band_labels": ["forest", "water"]},
+            "metadata": {"analysis": {"feature_band_indices": [0, 2]}},
         }
     ]
     mock_client = mock_firestore_client_for_documents(documents, project_documents=project_documents)
@@ -296,7 +300,7 @@ def test_point_returns_raw_environmental_values(tmp_path):
 
 
 def test_point_drivers_empty_when_not_configured(point_client):
-    """No driver_band_indices → drivers empty (existing behaviour)."""
+    """No feature_band_indices → drivers empty (existing behaviour)."""
     client, bounds = point_client
     lng, lat = _center_wgs84(bounds)
     r = client.get(
@@ -308,7 +312,7 @@ def test_point_drivers_empty_when_not_configured(point_client):
 
 
 def test_point_env_raster_missing_503_when_drivers_configured(tmp_path):
-    """driver_band_indices set but environmental file missing → 503 after suitability OK."""
+    """feature_band_indices set but environmental file missing → 503 after suitability OK."""
     bounds = (-200_000.0, 7_000_000.0, -199_000.0, 7_000_500.0)
     cog = tmp_path / "suitability_cog.tif"
     _write_test_cog(cog, bounds, fill=0.5)
@@ -329,7 +333,7 @@ def test_point_env_raster_missing_503_when_drivers_configured(tmp_path):
             "artifact_root": str(tmp_path),
             "suitability_cog_path": "suitability_cog.tif",
             "project_id": project_id,
-            "driver_band_indices": [0],
+            "metadata": {"analysis": {"feature_band_indices": [0]}},
         }
     ]
     mock_client = mock_firestore_client_for_documents(documents, project_documents=project_documents)
@@ -373,6 +377,10 @@ def test_point_returns_shap_influence(tmp_path):
             "driver_artifact_root": str(env_cog.parent),
             "driver_cog_path": "environmental_cog.tif",
             "explainability_background_path": "explainability_background.parquet",
+            "environmental_band_definitions": [
+                {"index": 0, "name": "f0", "label": "f0"},
+                {"index": 1, "name": "f1", "label": "f1"},
+            ],
         }
     ]
     documents = [
@@ -383,13 +391,11 @@ def test_point_returns_shap_influence(tmp_path):
             "artifact_root": str(tmp_path),
             "suitability_cog_path": "suitability_cog.tif",
             "project_id": project_id,
-            "driver_band_indices": [0, 1],
-            "driver_config": {
-                "feature_names": ["f0", "f1"],
-                "explainability_model_path": "mdl.pkl",
-                "explainability_background_path": "explainability_background.parquet",
-                "explainability_background_artifact_root": str(env_cog.parent),
-                "band_labels": ["f0", "f1"],
+            "metadata": {
+                "analysis": {
+                    "feature_band_indices": [0, 1],
+                    "serialized_model_path": "mdl.pkl",
+                }
             },
         }
     ]

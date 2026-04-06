@@ -40,18 +40,15 @@ from backend_api.point_sampling import (
     inspect_point,
     validate_driver_band_indices_for_model,
 )
-from backend_api.project_manifest import (
-    enrich_model_driver_config_from_project,
-    validate_model_bands_against_project_manifest,
-)
-from backend_api.schemas import Model, PointInspection
-from backend_api.schemas_admin import parse_driver_config_form
+from backend_api.project_manifest import validate_model_bands_against_project_manifest
+from backend_api.schemas import Model, ModelAnalysis, ModelMetadata, PointInspection
+from backend_api.schemas_admin import parse_metadata_form
 from backend_api.routers.catalog_upload_utils import (
     reload_catalog_threaded,
     validate_cog_bytes_threaded,
 )
 from backend_api.settings import Settings
-from backend_api.storage import EXPLAINABILITY_MODEL_FILENAME, ObjectStorage
+from backend_api.storage import SERIALIZED_MODEL_FILENAME, ObjectStorage
 
 router = APIRouter()
 
@@ -60,67 +57,47 @@ _ADMIN_WRITE_RESPONSES: dict[int | str, dict[str, str]] = {
     status.HTTP_403_FORBIDDEN: {"description": "Valid token but admin claim not set"},
     status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {"description": "Upload exceeds MAX_UPLOAD_BYTES"},
     status.HTTP_422_UNPROCESSABLE_ENTITY: {
-        "description": "Empty file, invalid COG/CRS, or bad driver_config JSON",
+        "description": "Empty file, invalid COG/CRS, or bad metadata JSON",
     },
     status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Storage or Firestore failure"},
 }
 
 
-def _parse_driver_config_http(raw: str | None) -> dict | None:
+def _parse_metadata_http(raw: str | None) -> ModelMetadata | None:
     try:
-        return parse_driver_config_form(raw)
+        return parse_metadata_form(raw)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
 
-async def _merge_explainability_model_upload(
+async def _merge_serialized_model_upload(
     *,
     storage: ObjectStorage,
     settings: Settings,
     model_id: str,
-    dc: dict | None,
-    explainability_model_file: UploadFile | None,
-) -> dict | None:
-    """Write optional sklearn upload and set fixed ``driver_config`` path (background is project-level)."""
-    if explainability_model_file is None:
-        return dc
-    out = dict(dc) if dc else {}
-    content = await explainability_model_file.read()
+    metadata: ModelMetadata | None,
+    serialized_model_file: UploadFile | None,
+) -> ModelMetadata | None:
+    """Write optional sklearn upload and set ``metadata.analysis.serialized_model_path``."""
+    if serialized_model_file is None:
+        return metadata
+    content = await serialized_model_file.read()
     if not content:
-        raise HTTPException(
-            status_code=422, detail="explainability_model_file is empty"
-        )
+        raise HTTPException(status_code=422, detail="serialized_model_file is empty")
     if len(content) > settings.max_upload_bytes:
         raise HTTPException(
             status_code=413,
-            detail=f"explainability_model_file exceeds max size {settings.max_upload_bytes} bytes",
+            detail=f"serialized_model_file exceeds max size {settings.max_upload_bytes} bytes",
         )
 
     def _write_m() -> None:
-        storage.write_model_artifact(model_id, EXPLAINABILITY_MODEL_FILENAME, content)
+        storage.write_model_artifact(model_id, SERIALIZED_MODEL_FILENAME, content)
 
     await run_in_threadpool(_write_m)
-    out["explainability_model_path"] = EXPLAINABILITY_MODEL_FILENAME
-    return out
-
-
-def _parse_driver_band_indices(raw: str | None) -> list[int] | None:
-    if raw is None or not str(raw).strip():
-        return None
-    try:
-        data = json.loads(raw.strip())
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=422, detail=f"driver_band_indices: {e}") from e
-    if not isinstance(data, list):
-        raise HTTPException(
-            status_code=422, detail="driver_band_indices must be a JSON array of integers"
-        )
-    try:
-        return [int(x) for x in data]
-    except (TypeError, ValueError) as e:
-        raise HTTPException(
-            status_code=422, detail="driver_band_indices must be integers"
-        ) from e
+    analysis = (metadata.analysis if metadata else None) or ModelAnalysis()
+    analysis = analysis.model_copy(update={"serialized_model_path": SERIALIZED_MODEL_FILENAME})
+    base = metadata or ModelMetadata()
+    return base.model_copy(update={"analysis": analysis})
 
 
 @router.get("/models", response_model=list[Model], tags=["catalog"])
@@ -155,12 +132,9 @@ async def get_model_point(
     """
     Suitability value at a WGS84 point (band 1 of the model COG).
 
-    When the model has ``driver_band_indices`` and a resolvable environmental COG,
-    returns ``raw_environmental_values`` at the point. When ``driver_config`` includes
-    explainability artefacts (trained model under the layer + project reference sample + ``feature_names``), returns
-    SHAP-style influence in ``drivers``. Configuration is read from the catalog model only.
-
-    Returns 422 if the point is outside the raster, nodata, or the file CRS is not EPSG:3857.
+    When the model has ``metadata.analysis.feature_band_indices`` and a resolvable environmental COG,
+    returns ``raw_environmental_values`` at the point. When a serialized sklearn model and project
+    background sample are configured, returns SHAP-style influence in ``drivers``.
     """
 
     def _run() -> PointInspection:
@@ -194,14 +168,12 @@ async def create_model(
     file: Annotated[UploadFile, File()],
     model_name: Annotated[str | None, Form()] = None,
     model_version: Annotated[str | None, Form()] = None,
-    driver_band_indices: Annotated[str | None, Form()] = None,
-    driver_config: Annotated[str | None, Form()] = None,
-    explainability_model_file: Annotated[UploadFile | None, File()] = None,
+    metadata: Annotated[str | None, Form()] = None,
+    serialized_model_file: Annotated[UploadFile | None, File()] = None,
 ):
     """Create a catalog entry and store the suitability COG (admin only)."""
     if catalog.get_project(project_id.strip()) is None:
         raise HTTPException(status_code=422, detail="unknown project_id")
-    band_indices = _parse_driver_band_indices(driver_band_indices)
     content = await file.read()
     if not content:
         raise HTTPException(status_code=422, detail="empty file")
@@ -231,14 +203,15 @@ async def create_model(
             detail=f"could not store file: {e}",
         ) from e
 
-    dc = _parse_driver_config_http(driver_config)
-    dc = await _merge_explainability_model_upload(
+    meta_in = _parse_metadata_http(metadata)
+    meta_in = await _merge_serialized_model_upload(
         storage=storage,
         settings=settings,
         model_id=model_id,
-        dc=dc,
-        explainability_model_file=explainability_model_file,
+        metadata=meta_in,
+        serialized_model_file=serialized_model_file,
     )
+
     model = Model(
         id=model_id,
         project_id=project_id.strip(),
@@ -248,16 +221,14 @@ async def create_model(
         suitability_cog_path=suitability_cog_path,
         model_name=model_name.strip() if model_name else None,
         model_version=model_version.strip() if model_version else None,
-        driver_band_indices=band_indices,
-        driver_config=dc,
+        metadata=meta_in,
     )
 
     def _validate_and_enrich() -> Model:
         validate_model_bands_against_project_manifest(model, catalog)
-        m = enrich_model_driver_config_from_project(model, catalog)
-        validate_driver_band_indices_for_model(m, catalog)
-        validate_explainability_artifacts_for_model(m)
-        return m
+        validate_driver_band_indices_for_model(model, catalog)
+        validate_explainability_artifacts_for_model(model, catalog)
+        return model
 
     try:
         model = await run_in_threadpool(_validate_and_enrich)
@@ -299,9 +270,8 @@ async def update_model(
     model_name: Annotated[str | None, Form()] = None,
     model_version: Annotated[str | None, Form()] = None,
     project_id: Annotated[str | None, Form()] = None,
-    driver_band_indices: Annotated[str | None, Form()] = None,
-    driver_config: Annotated[str | None, Form()] = None,
-    explainability_model_file: Annotated[UploadFile | None, File()] = None,
+    metadata: Annotated[str | None, Form()] = None,
+    serialized_model_file: Annotated[UploadFile | None, File()] = None,
 ):
     """Update metadata and/or replace the suitability COG (admin only)."""
     model_id = existing.id
@@ -347,19 +317,6 @@ async def update_model(
         new_ver = stripped_v if stripped_v else None
     else:
         new_ver = existing.model_version
-    if driver_config is not None:
-        new_driver = _parse_driver_config_http(driver_config)
-    else:
-        new_driver = existing.driver_config
-
-    merged_driver = await _merge_explainability_model_upload(
-        storage=storage,
-        settings=settings,
-        model_id=model_id,
-        dc=new_driver,
-        explainability_model_file=explainability_model_file,
-    )
-    new_driver = merged_driver
 
     new_project_id = existing.project_id
     if project_id is not None:
@@ -368,9 +325,18 @@ async def update_model(
             raise HTTPException(status_code=422, detail="unknown project_id")
         new_project_id = pid
 
-    new_band_indices = existing.driver_band_indices
-    if driver_band_indices is not None:
-        new_band_indices = _parse_driver_band_indices(driver_band_indices)
+    if metadata is not None:
+        new_metadata = _parse_metadata_http(metadata)
+    else:
+        new_metadata = existing.metadata
+
+    new_metadata = await _merge_serialized_model_upload(
+        storage=storage,
+        settings=settings,
+        model_id=model_id,
+        metadata=new_metadata,
+        serialized_model_file=serialized_model_file,
+    )
 
     model = Model(
         id=model_id,
@@ -381,16 +347,14 @@ async def update_model(
         suitability_cog_path=suitability_cog_path,
         model_name=new_name,
         model_version=new_ver,
-        driver_band_indices=new_band_indices,
-        driver_config=new_driver,
+        metadata=new_metadata,
     )
 
     def _validate_and_enrich() -> Model:
         validate_model_bands_against_project_manifest(model, catalog)
-        m = enrich_model_driver_config_from_project(model, catalog)
-        validate_driver_band_indices_for_model(m, catalog)
-        validate_explainability_artifacts_for_model(m)
-        return m
+        validate_driver_band_indices_for_model(model, catalog)
+        validate_explainability_artifacts_for_model(model, catalog)
+        return model
 
     try:
         model = await run_in_threadpool(_validate_and_enrich)

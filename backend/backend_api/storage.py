@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 SUITABILITY_FILENAME = "suitability_cog.tif"
 ENVIRONMENTAL_DRIVER_FILENAME = "environmental_cog.tif"
 
-# Fixed names under each model's artifact folder (see driver_config explainability_*_path).
-EXPLAINABILITY_MODEL_FILENAME = "explainability_model.pkl"
+# Fixed names under each model's artifact folder (see ``metadata.analysis.serialized_model_path``).
+SERIALIZED_MODEL_FILENAME = "serialized_model.pkl"
+EXPLAINABILITY_MODEL_FILENAME = SERIALIZED_MODEL_FILENAME  # legacy alias
 EXPLAINABILITY_BACKGROUND_FILENAME = "explainability_background.parquet"
 
 

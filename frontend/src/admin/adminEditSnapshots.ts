@@ -36,7 +36,9 @@ export function layerFormSnapshot(params: {
   modelVersion: string
   bandDefs: EnvironmentalBandDefinition[]
   explainEnabled: boolean
-  driverConfigJson: string
+  metadataJson: string
+  /** Serialized model card draft (JSON) for dirty detection. */
+  cardDraftJson: string
   suitabilityFileName: string | null
   explainModelFileName: string | null
 }): string {
@@ -48,7 +50,8 @@ export function layerFormSnapshot(params: {
     modelVersion: params.modelVersion,
     bands: serializeBandDefinitions(params.bandDefs),
     explain: params.explainEnabled,
-    driverConfig: params.driverConfigJson,
+    metadata: params.metadataJson,
+    cardDraft: params.cardDraftJson,
     suitabilityFile: params.suitabilityFileName,
     explainFile: params.explainModelFileName,
   })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { explainabilityConfiguredInCatalog, mergeDriverConfigForSubmit } from './adminExplainability'
+import { buildModelMetadataForSubmit, explainabilityConfiguredInCatalog } from './adminExplainability'
 import type { Model } from '../types/model'
 
 const minimalModel = (over: Partial<Model>): Model => ({
@@ -14,12 +14,13 @@ const minimalModel = (over: Partial<Model>): Model => ({
 })
 
 describe('explainabilityConfiguredInCatalog', () => {
-  it('returns true when model, background, and feature_names are set', () => {
+  it('returns true when serialized model path and feature indices are set', () => {
     const m = minimalModel({
-      driver_config: {
-        explainability_model_path: 'explainability_model.pkl',
-        explainability_background_path: 'explainability_background.parquet',
-        feature_names: ['a', 'b'],
+      metadata: {
+        analysis: {
+          serialized_model_path: 'serialized_model.pkl',
+          feature_band_indices: [0, 1],
+        },
       },
     })
     expect(explainabilityConfiguredInCatalog(m)).toBe(true)
@@ -28,37 +29,69 @@ describe('explainabilityConfiguredInCatalog', () => {
   it('returns false when incomplete', () => {
     expect(
       explainabilityConfiguredInCatalog(
-        minimalModel({ driver_config: { feature_names: ['a'] } }),
+        minimalModel({
+          metadata: { analysis: { feature_band_indices: [0] } },
+        }),
       ),
     ).toBe(false)
   })
 })
 
-describe('mergeDriverConfigForSubmit', () => {
-  it('strips explainability path keys when disabled but keeps other driver_config keys', () => {
-    const s = mergeDriverConfigForSubmit(
-      {
-        explainability_model_path: 'm.pkl',
-        explainability_background_path: 'b.parquet',
-        explainability_background_artifact_root: '/proj',
-        feature_names: ['x'],
-        band_labels: ['old'],
-      },
-      { enabled: false },
-    )
-    expect(JSON.parse(s)).toEqual({ feature_names: ['x'], band_labels: ['old'] })
+describe('buildModelMetadataForSubmit', () => {
+  it('strips analysis when disabled', () => {
+    const s = buildModelMetadataForSubmit({
+      base: minimalModel({
+        metadata: {
+          card: { title: 'T' },
+          analysis: {
+            serialized_model_path: 'm.pkl',
+            feature_band_indices: [0, 1],
+          },
+        },
+      }),
+      explainEnabled: false,
+      selectedBands: [],
+    })
+    expect(JSON.parse(s!)).toEqual({ card: { title: 'T' } })
   })
 
-  it('passes through existing config when enabled (feature_names come from the API after save)', () => {
-    const s = mergeDriverConfigForSubmit(
-      { explainability_model_path: 'm.pkl', feature_names: ['a', 'b'] },
-      { enabled: true },
-    )
-    expect(JSON.parse(s)).toEqual({ explainability_model_path: 'm.pkl', feature_names: ['a', 'b'] })
+  it('sets feature_band_indices when enabled', () => {
+    const bands = [
+      { index: 0, name: 'a' },
+      { index: 2, name: 'c' },
+    ] as import('../types/project').EnvironmentalBandDefinition[]
+    const s = buildModelMetadataForSubmit({
+      base: null,
+      explainEnabled: true,
+      selectedBands: bands,
+    })
+    expect(JSON.parse(s!)).toEqual({
+      analysis: { feature_band_indices: [0, 2] },
+    })
   })
 
-  it('returns empty object when no existing config and enabled', () => {
-    const s = mergeDriverConfigForSubmit(null, { enabled: true })
-    expect(JSON.parse(s)).toEqual({})
+  it('returns undefined when disabled and empty metadata', () => {
+    expect(
+      buildModelMetadataForSubmit({
+        base: null,
+        explainEnabled: false,
+        selectedBands: [],
+      }),
+    ).toBeUndefined()
+  })
+
+  it('applies cardPatch over base metadata', () => {
+    const s = buildModelMetadataForSubmit({
+      base: minimalModel({
+        metadata: {
+          card: { title: 'Old' },
+          analysis: { feature_band_indices: [0], serialized_model_path: 'm.pkl' },
+        },
+      }),
+      explainEnabled: false,
+      selectedBands: [],
+      cardPatch: { card: { title: 'New', summary: 'S' }, extras: null },
+    })
+    expect(JSON.parse(s!)).toEqual({ card: { title: 'New', summary: 'S' } })
   })
 })

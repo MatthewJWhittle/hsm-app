@@ -1,17 +1,22 @@
-"""Point-level SHAP explainability (issue #13) — model + background from ``driver_config``."""
+"""Point-level SHAP explainability — model + background from effective config (``metadata.analysis`` + project)."""
 
 from __future__ import annotations
 
 import logging
 import pickle
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 import shap
 
+from backend_api.model_effective_config import get_effective_driver_config, get_feature_band_indices
 from backend_api.point_sampling import PointSamplingError
 from backend_api.schemas import DriverVariable, Model
+
+if TYPE_CHECKING:
+    from backend_api.catalog_service import CatalogService
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +46,9 @@ def _resolve_artifact_file(artifact_root: str, rel: str) -> Path:
     return p
 
 
-def explainability_configured(model: Model) -> bool:
-    """True when ``driver_config`` has paths and ``feature_names`` for SHAP."""
-    dc = model.driver_config or {}
+def explainability_configured(model: Model, catalog: "CatalogService") -> bool:
+    """True when serialized model + background + feature_names are available for SHAP."""
+    dc = get_effective_driver_config(model, catalog)
     mp = dc.get("explainability_model_path")
     bp = dc.get("explainability_background_path")
     fn = dc.get("feature_names")
@@ -61,6 +66,7 @@ def explainability_configured(model: Model) -> bool:
 def compute_shap_driver_variables(
     model: Model,
     feature_row: pd.DataFrame,
+    dc: dict,
 ) -> list[DriverVariable]:
     """
     Load sklearn pipeline + background from ``artifact_root``, run permutation SHAP
@@ -68,7 +74,6 @@ def compute_shap_driver_variables(
 
     ``feature_row`` columns must match training feature order (``feature_names``).
     """
-    dc = model.driver_config or {}
     mp = dc.get("explainability_model_path")
     bp = dc.get("explainability_background_path")
     if not isinstance(mp, str) or not isinstance(bp, str):
@@ -170,29 +175,31 @@ def compute_shap_driver_variables(
     return drivers
 
 
-def validate_explainability_artifacts_for_model(model: Model) -> None:
+def validate_explainability_artifacts_for_model(
+    model: Model, catalog: "CatalogService"
+) -> None:
     """
     When explainability is configured, ensure feature list aligns with bands and files exist.
 
     Raises:
         ValueError: for HTTP 422 on admin save.
     """
-    if not explainability_configured(model):
+    if not explainability_configured(model, catalog):
         return
-    indices = model.driver_band_indices or []
-    dc = model.driver_config or {}
+    indices = get_feature_band_indices(model)
+    dc = get_effective_driver_config(model, catalog)
     fnames = dc.get("feature_names")
     if not isinstance(fnames, list) or len(fnames) != len(indices):
         raise ValueError(
-            "explainability requires feature_names with the same length as driver_band_indices"
+            "explainability requires feature_names with the same length as feature_band_indices"
         )
     mp = dc.get("explainability_model_path")
     bp = dc.get("explainability_background_path")
     if not isinstance(mp, str) or not isinstance(bp, str):
-        raise ValueError("explainability_model_path and explainability_background_path must be strings")
+        raise ValueError("serialized model path and explainability background path must be strings")
     mpath = _resolve_artifact_file(model.artifact_root, mp)
     bpath = _resolve_artifact_file(_background_storage_root(model, dc), bp)
     if not mpath.is_file():
-        raise ValueError(f"explainability model file not found at {mp!r}")
+        raise ValueError(f"serialized model file not found at {mp!r}")
     if not bpath.is_file():
         raise ValueError(f"explainability background file not found at {bp!r}")

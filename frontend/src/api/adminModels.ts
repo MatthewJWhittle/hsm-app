@@ -11,9 +11,9 @@ export async function createModel(params: {
   file: File
   modelName?: string
   modelVersion?: string
-  driverBandIndicesJson?: string
-  driverConfigJson?: string
-  explainabilityModelFile?: File | null
+  /** JSON string: ``ModelMetadata`` (e.g. ``analysis.feature_band_indices``). */
+  metadataJson?: string
+  serializedModelFile?: File | null
 }): Promise<Model> {
   const form = new FormData()
   form.append('project_id', params.projectId)
@@ -22,14 +22,9 @@ export async function createModel(params: {
   form.append('file', params.file)
   if (params.modelName) form.append('model_name', params.modelName)
   if (params.modelVersion) form.append('model_version', params.modelVersion)
-  if (params.driverBandIndicesJson) {
-    form.append('driver_band_indices', params.driverBandIndicesJson)
-  }
-  if (params.driverConfigJson) {
-    form.append('driver_config', params.driverConfigJson)
-  }
-  if (params.explainabilityModelFile) {
-    form.append('explainability_model_file', params.explainabilityModelFile)
+  if (params.metadataJson) form.append('metadata', params.metadataJson)
+  if (params.serializedModelFile) {
+    form.append('serialized_model_file', params.serializedModelFile)
   }
 
   const r = await fetch(`${apiBase()}/models`, {
@@ -53,9 +48,8 @@ export async function updateModel(params: {
   modelName: string | null
   modelVersion: string | null
   projectId?: string | null
-  driverBandIndicesJson?: string | null
-  driverConfigJson?: string | null
-  explainabilityModelFile?: File | null
+  metadataJson?: string | null
+  serializedModelFile?: File | null
 }): Promise<Model> {
   const form = new FormData()
   form.append('species', params.species)
@@ -66,14 +60,11 @@ export async function updateModel(params: {
   if (params.projectId) {
     form.append('project_id', params.projectId)
   }
-  if (params.driverBandIndicesJson !== undefined && params.driverBandIndicesJson !== null) {
-    form.append('driver_band_indices', params.driverBandIndicesJson)
+  if (params.metadataJson !== undefined && params.metadataJson !== null) {
+    form.append('metadata', params.metadataJson)
   }
-  if (params.driverConfigJson !== undefined && params.driverConfigJson !== null) {
-    form.append('driver_config', params.driverConfigJson)
-  }
-  if (params.explainabilityModelFile) {
-    form.append('explainability_model_file', params.explainabilityModelFile)
+  if (params.serializedModelFile) {
+    form.append('serialized_model_file', params.serializedModelFile)
   }
 
   const r = await fetch(`${apiBase()}/models/${encodeURIComponent(params.modelId)}`, {

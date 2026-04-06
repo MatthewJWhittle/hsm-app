@@ -34,29 +34,34 @@ describe('parseModel', () => {
     expect(parseModel({ ...minimalValid, project_id: 123 })).toBeNull()
   })
 
-  it('parses driver_band_indices and driver_config', () => {
+  it('parses metadata.analysis', () => {
     const m = parseModel({
       ...minimalValid,
-      driver_band_indices: [1, 2, 3],
-      driver_config: { bands: { forest: 0 } },
+      metadata: {
+        analysis: {
+          feature_band_indices: [1, 2, 3],
+          serialized_model_path: 'serialized_model.pkl',
+        },
+        card: { title: 'My layer' },
+      },
     })
-    expect(m!.driver_band_indices).toEqual([1, 2, 3])
-    expect(m!.driver_config).toEqual({ bands: { forest: 0 } })
+    expect(m!.metadata?.analysis?.feature_band_indices).toEqual([1, 2, 3])
+    expect(m!.metadata?.analysis?.serialized_model_path).toBe('serialized_model.pkl')
+    expect(m!.metadata?.card?.title).toBe('My layer')
   })
 
-  it('accepts null driver_band_indices', () => {
-    const m = parseModel({ ...minimalValid, driver_band_indices: null })
-    expect(m!.driver_band_indices).toBeNull()
+  it('accepts null metadata', () => {
+    const m = parseModel({ ...minimalValid, metadata: null })
+    expect(m!.metadata).toBeNull()
   })
 
-  it('rejects non-integer driver_band_indices arrays', () => {
+  it('rejects invalid metadata.analysis.feature_band_indices', () => {
     expect(
-      parseModel({ ...minimalValid, driver_band_indices: [1, 'x'] as unknown as number[] }),
+      parseModel({
+        ...minimalValid,
+        metadata: { analysis: { feature_band_indices: [1, 'x'] } },
+      }),
     ).toBeNull()
-  })
-
-  it('rejects non-record driver_config', () => {
-    expect(parseModel({ ...minimalValid, driver_config: 'x' })).toBeNull()
   })
 
   it('parses model_name and model_version', () => {

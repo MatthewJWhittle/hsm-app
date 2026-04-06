@@ -1,5 +1,6 @@
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material'
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
+import type { ModelCardDraft } from './modelCardDraft'
 import { COG_REQUIREMENTS_INFO } from './catalogFormConstants'
 import { MapLayerFormFields } from './MapLayerFormFields'
 
@@ -33,6 +34,8 @@ type LayerCreateDialogProps = {
   onExplainabilityEnabledChange: (v: boolean) => void
   onExplainModelFileChange: (f: File | null) => void
   onFileChange: (f: File | null) => void
+  modelCardDraft: ModelCardDraft
+  onModelCardDraftChange: (draft: ModelCardDraft) => void
 }
 
 export function LayerCreateDialog({
@@ -63,6 +66,8 @@ export function LayerCreateDialog({
   onExplainabilityEnabledChange,
   onExplainModelFileChange,
   onFileChange,
+  modelCardDraft,
+  onModelCardDraftChange,
 }: LayerCreateDialogProps) {
   return (
     <Dialog
@@ -114,6 +119,8 @@ export function LayerCreateDialog({
             pendingFile={file}
             onFileChange={onFileChange}
             disabled={!canAddModel}
+            modelCardDraft={modelCardDraft}
+            onModelCardDraftChange={onModelCardDraftChange}
           />
           {createError && (
             <Alert severity="error" sx={{ mt: 2, maxWidth: formMaxWidth }}>
