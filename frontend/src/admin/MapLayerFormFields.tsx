@@ -15,7 +15,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ClipboardEvent } from 'react'
 
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import type { ModelCardDraft } from './modelCardDraft'
@@ -91,17 +91,15 @@ export function MapLayerFormFields({
   const showEnvSection = Boolean(projectId)
   const noManifest = showEnvSection && opts.length === 0
 
-  const [pasteInput, setPasteInput] = useState('')
   const [pasteUnknown, setPasteUnknown] = useState<string[]>([])
 
-  /** Reset paste text when switching layers or project (bands reloaded from parent). */
+  /** Clear unknown-name hints when switching layer or project. */
   useEffect(() => {
-    setPasteInput(selectedEnvironmentalBands.map((b) => b.name).join(', '))
     setPasteUnknown([])
   }, [layerId, projectId])
 
-  const applyPastedFeatures = () => {
-    const tokens = tokenizeFeaturePaste(pasteInput)
+  const applyPastedFeatureText = (raw: string) => {
+    const tokens = tokenizeFeaturePaste(raw)
     if (tokens.length === 0) {
       onSelectedEnvironmentalBandsChange([])
       setPasteUnknown([])
@@ -110,6 +108,13 @@ export function MapLayerFormFields({
     const { matched, unknown } = bandsFromPasteTokens(tokens, opts)
     setPasteUnknown(unknown)
     onSelectedEnvironmentalBandsChange(matched)
+  }
+
+  const handleFeatureInputPaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text/plain')
+    if (!text.trim()) return
+    e.preventDefault()
+    applyPastedFeatureText(text)
   }
 
   const featureCount = selectedEnvironmentalBands.length
@@ -243,37 +248,14 @@ export function MapLayerFormFields({
                 </Alert>
               ) : (
                 <>
-                  <TextField
-                    label="Feature names (paste comma-separated)"
-                    value={pasteInput}
-                    onChange={(e) => setPasteInput(e.target.value)}
-                    size="small"
-                    fullWidth
-                    multiline
-                    minRows={2}
-                    disabled={disabled}
-                    placeholder="e.g. band_0, band_1, temperature"
-                    helperText="Paste or type band machine names in training order, same as Outlook separating emails—then Apply. Names must match this project’s environmental manifest."
-                  />
-                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                    <Button variant="outlined" size="small" onClick={applyPastedFeatures} disabled={disabled}>
-                      Apply pasted list
-                    </Button>
-                    {pasteUnknown.length > 0 && (
-                      <Typography variant="caption" color="warning.main">
-                        Unknown names (not applied): {pasteUnknown.join(', ')}
-                      </Typography>
-                    )}
-                  </Stack>
-
                   <Autocomplete
                     multiple
                     disableCloseOnSelect
+                    disabled={disabled}
                     options={opts}
                     value={selectedEnvironmentalBands}
                     onChange={(_e, v) => {
                       onSelectedEnvironmentalBandsChange(v)
-                      setPasteInput(v.map((b) => b.name).join(', '))
                       setPasteUnknown([])
                     }}
                     getOptionLabel={(o) => (o.label?.trim() ? `${o.name} (${o.label})` : o.name)}
@@ -282,11 +264,21 @@ export function MapLayerFormFields({
                       <TextField
                         {...params}
                         size="small"
-                        label="Or pick features (chips preserve order)"
-                        helperText="Order = column order for your trained model and SHAP."
+                        label="Environmental features (column order)"
+                        placeholder="Pick from the list or paste a comma-separated list…"
+                        helperText="Order must match your trained model and SHAP. Pasting a list replaces the current selection (names from this project’s manifest)."
+                        inputProps={{
+                          ...params.inputProps,
+                          onPaste: handleFeatureInputPaste,
+                        }}
                       />
                     )}
                   />
+                  {pasteUnknown.length > 0 && (
+                    <Typography variant="caption" color="warning.main" display="block">
+                      Unknown names (skipped): {pasteUnknown.join(', ')}
+                    </Typography>
+                  )}
 
                   <Box>
                     <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75 }}>
