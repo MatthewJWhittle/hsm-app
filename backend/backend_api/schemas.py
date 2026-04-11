@@ -171,11 +171,39 @@ class RawEnvironmentalValue(BaseModel):
     )
 
 
+class PointInspectionCapabilities(BaseModel):
+    """Which parts of the inspection payload are populated (and why others may be empty)."""
+
+    suitability_available: bool = Field(
+        True,
+        description="Always true when GET /models/{id}/point returns 200.",
+    )
+    environmental_values_available: bool = Field(
+        False,
+        description="True when raw per-band environmental values were sampled at this point.",
+    )
+    driver_influence_available: bool = Field(
+        False,
+        description="True when SHAP-style ranked drivers are present.",
+    )
+    notes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Plain-language reasons when environmental values or drivers are absent; "
+            "this is usually configuration, not a failure."
+        ),
+    )
+
+
 class PointInspection(BaseModel):
     """Suitability value, optional influence drivers, and optional raw env values at a location."""
 
     value: float
     unit: str | None = None
+    capabilities: PointInspectionCapabilities = Field(
+        default_factory=PointInspectionCapabilities,
+        description="What was computed vs skipped for this model configuration.",
+    )
     drivers: list[DriverVariable] = Field(
         default_factory=list,
         description="Ranked variable influence (e.g. SHAP); empty when explainability is not configured.",

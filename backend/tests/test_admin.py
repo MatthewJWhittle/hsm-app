@@ -200,6 +200,34 @@ def test_post_models_unknown_feature_band_names_400(catalog_docs):
     assert "not_in_manifest" in detail["unknown_feature_band_names"]
 
 
+def test_post_models_duplicate_409(catalog_docs):
+    """Same project_id + species + activity as an existing model returns 409."""
+    mock_storage = MagicMock()
+    mock_storage.write_suitability_cog.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
+    with _admin_client(
+        catalog_docs,
+        mock_storage,
+        project_documents=[SAMPLE_PROJECT],
+    ) as c:
+        r = c.post(
+            "/models",
+            headers={"Authorization": "Bearer fake.token"},
+            data={
+                "project_id": "proj-1",
+                "species": "Bat",
+                "activity": "Roost",
+            },
+            files={"file": ("cog.tif", BytesIO(b"dummy"), "image/tiff")},
+        )
+    assert r.status_code == 409
+    body = r.json()["detail"]
+    assert body["code"] == "MODEL_DUPLICATE"
+    assert body["context"]["existing_model_id"] == "existing-id"
+
+
 def test_post_models_201_creates_model(catalog_docs):
     mock_storage = MagicMock()
     mock_storage.write_suitability_cog.return_value = (

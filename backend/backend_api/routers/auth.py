@@ -45,6 +45,13 @@ async def post_auth_token(body: AuthTokenRequest, request: Request):
     Identity Toolkit calls from the client). Use ``id_token`` as
     ``Authorization: Bearer`` for admin routes.
 
+    **Lifetime:** Firebase ID tokens expire after roughly one hour; the response includes
+    ``expires_in`` (seconds) and ``refresh_token`` for Firebase's token refresh flow, or
+    call this endpoint again for long-running scripts.
+
+    **Security:** Invalid credentials receive a generic **401** (no account enumeration).
+    Do not log raw request bodies in production; enforce rate limits at the proxy.
+
     Set ``admin_only`` to require the ``admin: true`` custom claim (403 otherwise).
     """
     settings: Settings = request.app.state.settings

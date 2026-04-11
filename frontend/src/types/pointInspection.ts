@@ -19,9 +19,19 @@ export interface RawEnvironmentalValue {
   description?: string | null
 }
 
+/** Explains which parts of the inspection are populated (see GET /models/{id}/point). */
+export interface PointInspectionCapabilities {
+  suitability_available?: boolean
+  environmental_values_available?: boolean
+  driver_influence_available?: boolean
+  notes?: string[]
+}
+
 export interface PointInspection {
   value: number
   unit?: string | null
+  /** Which subsystems contributed (and why drivers/env may be empty). */
+  capabilities?: PointInspectionCapabilities | null
   /** Variable influence (e.g. SHAP); empty array when explainability is off. */
   drivers?: DriverVariable[] | null
   /** Raw raster values at the click for configured bands. */

@@ -17,6 +17,14 @@ from sklearn.linear_model import LogisticRegression
 from tests.helpers import mock_firestore_client_for_documents
 
 
+def _detail_msg(payload: dict) -> str:
+    """Normalize FastAPI error detail (string or structured dict)."""
+    d = payload.get("detail")
+    if isinstance(d, dict):
+        return str(d.get("message", "")).lower()
+    return str(d).lower()
+
+
 def _write_test_cog(path, bounds_3857: tuple[float, float, float, float], fill: float) -> None:
     """Small EPSG:3857 GeoTIFF with constant value."""
     width, height = 8, 8
@@ -164,7 +172,8 @@ def test_point_outside_raster_422(point_client):
         params={"lng": 0.0, "lat": 0.0},
     )
     assert r.status_code == 422
-    assert "outside" in r.json()["detail"].lower() or "extent" in r.json()["detail"].lower()
+    dm = _detail_msg(r.json())
+    assert "outside" in dm or "extent" in dm
 
 
 def test_point_unknown_model_404(point_client):
@@ -209,7 +218,9 @@ def test_point_missing_cog_503(tmp_path):
                 params={"lng": -2.5, "lat": 53.0},
             )
     assert r.status_code == 503
-    assert r.json()["detail"] == "suitability raster not found on server"
+    d = r.json()["detail"]
+    assert isinstance(d, dict) and d.get("code") == "RASTER_NOT_FOUND"
+    assert "not found" in d.get("message", "").lower()
 
 
 def test_point_nodata_pixel_422(tmp_path):
@@ -239,7 +250,7 @@ def test_point_nodata_pixel_422(tmp_path):
                 params={"lng": lng, "lat": lat},
             )
     assert r.status_code == 422
-    assert "nodata" in r.json()["detail"].lower()
+    assert "nodata" in _detail_msg(r.json())
 
 
 def test_point_returns_raw_environmental_values(tmp_path):
@@ -351,7 +362,7 @@ def test_point_env_raster_missing_503_when_drivers_configured(tmp_path):
                 params={"lng": lng, "lat": lat},
             )
     assert r.status_code == 503
-    assert "environmental" in r.json()["detail"].lower()
+    assert "environmental" in _detail_msg(r.json())
 
 
 def test_point_returns_shap_influence(tmp_path):
@@ -449,5 +460,5 @@ def test_point_wrong_crs_422(tmp_path):
                 params={"lng": lng, "lat": lat},
             )
     assert r.status_code == 422
-    detail = r.json()["detail"].lower()
+    detail = _detail_msg(r.json())
     assert "3857" in detail or "crs" in detail

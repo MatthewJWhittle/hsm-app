@@ -70,6 +70,21 @@ describe('parsePointInspection', () => {
     expect(parsePointInspection('x')).toBeNull()
   })
 
+  it('parses capabilities and notes', () => {
+    const p = parsePointInspection({
+      value: 0.5,
+      capabilities: {
+        suitability_available: true,
+        environmental_values_available: false,
+        driver_influence_available: false,
+        notes: ['Explainability not fully configured.'],
+      },
+      drivers: [],
+    })
+    expect(p!.capabilities?.driver_influence_available).toBe(false)
+    expect(p!.capabilities?.notes?.[0]).toContain('Explainability')
+  })
+
   it('parses raw_environmental_values', () => {
     const p = parsePointInspection({
       value: 0.5,

@@ -14,7 +14,13 @@ from rasterio.warp import transform as transform_coords
 from rasterio.windows import Window
 
 from backend_api.model_effective_config import get_effective_driver_config, get_feature_band_indices
-from backend_api.schemas import DriverVariable, Model, PointInspection, RawEnvironmentalValue
+from backend_api.schemas import (
+    DriverVariable,
+    Model,
+    PointInspection,
+    PointInspectionCapabilities,
+    RawEnvironmentalValue,
+)
 
 if TYPE_CHECKING:
     from backend_api.catalog_service import CatalogService
@@ -25,8 +31,9 @@ EXPECTED_SUITABILITY_CRS = CRS.from_epsg(3857)
 class PointSamplingError(Exception):
     """Expected failure (e.g. out of bounds, nodata); maps to HTTP 422."""
 
-    def __init__(self, detail: str) -> None:
+    def __init__(self, detail: str, *, code: str = "POINT_SAMPLING") -> None:
         self.detail = detail
+        self.code = code
         super().__init__(detail)
 
 
@@ -132,30 +139,46 @@ def sample_suitability(cog_path: str, lng: float, lat: float) -> float:
 
     with rasterio.open(path) as src:
         if not src.crs:
-            raise PointSamplingError("raster has no CRS; expected EPSG:3857")
+            raise PointSamplingError(
+                "raster has no CRS; expected EPSG:3857",
+                code="POINT_CRS_INVALID",
+            )
         if src.crs != EXPECTED_SUITABILITY_CRS:
             raise PointSamplingError(
-                f"raster CRS must be EPSG:3857 for point inspection; got {src.crs}"
+                f"raster CRS must be EPSG:3857 for point inspection; got {src.crs}",
+                code="POINT_CRS_MISMATCH",
             )
 
         xs, ys = transform_coords("EPSG:4326", src.crs, [lng], [lat])
         x, y = float(xs[0]), float(ys[0])
         if not all(math.isfinite(v) for v in (x, y)):
-            raise PointSamplingError("could not project coordinates to raster CRS")
+            raise PointSamplingError(
+                "could not project coordinates to raster CRS",
+                code="POINT_COORD_TRANSFORM_FAILED",
+            )
 
         row_i, col_i = rowcol(src.transform, x, y)
         row_i = int(row_i)
         col_i = int(col_i)
         if row_i < 0 or row_i >= src.height or col_i < 0 or col_i >= src.width:
-            raise PointSamplingError("point is outside the raster extent")
+            raise PointSamplingError(
+                "point is outside the raster extent",
+                code="POINT_OUTSIDE_EXTENT",
+            )
 
         window = Window(col_i, row_i, 1, 1)
         data = src.read(1, window=window, masked=True)
         if np.ma.getmaskarray(data).any():
-            raise PointSamplingError("no suitability value at this location (nodata)")
+            raise PointSamplingError(
+                "no suitability value at this location (nodata)",
+                code="POINT_NODATA",
+            )
         raw = float(data[0, 0])
         if not math.isfinite(raw):
-            raise PointSamplingError("no suitability value at this location (nodata)")
+            raise PointSamplingError(
+                "no suitability value at this location (nodata)",
+                code="POINT_NODATA",
+            )
         return raw
 
 
@@ -180,23 +203,31 @@ def sample_environmental_bands_at_point(
     with rasterio.open(path) as src:
         if not src.crs:
             raise PointSamplingError(
-                "environmental raster has no CRS; expected EPSG:3857 for point inspection"
+                "environmental raster has no CRS; expected EPSG:3857 for point inspection",
+                code="POINT_ENV_CRS_INVALID",
             )
         if src.crs != EXPECTED_SUITABILITY_CRS:
             raise PointSamplingError(
-                f"environmental raster CRS must be EPSG:3857 for point inspection; got {src.crs}"
+                f"environmental raster CRS must be EPSG:3857 for point inspection; got {src.crs}",
+                code="POINT_ENV_CRS_MISMATCH",
             )
 
         xs, ys = transform_coords("EPSG:4326", src.crs, [lng], [lat])
         x, y = float(xs[0]), float(ys[0])
         if not all(math.isfinite(v) for v in (x, y)):
-            raise PointSamplingError("could not project coordinates to raster CRS")
+            raise PointSamplingError(
+                "could not project coordinates to raster CRS",
+                code="POINT_COORD_TRANSFORM_FAILED",
+            )
 
         row_i, col_i = rowcol(src.transform, x, y)
         row_i = int(row_i)
         col_i = int(col_i)
         if row_i < 0 or row_i >= src.height or col_i < 0 or col_i >= src.width:
-            raise PointSamplingError("point is outside the environmental raster extent")
+            raise PointSamplingError(
+                "point is outside the environmental raster extent",
+                code="POINT_ENV_OUTSIDE_EXTENT",
+            )
 
         window = Window(col_i, row_i, 1, 1)
 
@@ -204,18 +235,21 @@ def sample_environmental_bands_at_point(
             if bi < 0 or bi >= src.count:
                 raise PointSamplingError(
                     f"environmental raster has no band index {bi} (0-based); "
-                    f"file has {src.count} band(s)"
+                    f"file has {src.count} band(s)",
+                    code="POINT_ENV_BAND_INDEX",
                 )
             ri = bi + 1
             data = src.read(ri, window=window, masked=True)
             if np.ma.getmaskarray(data).any():
                 raise PointSamplingError(
-                    "no environmental value at this location (nodata) for one or more driver bands"
+                    "no environmental value at this location (nodata) for one or more driver bands",
+                    code="POINT_ENV_NODATA",
                 )
             raw = float(data[0, 0])
             if not math.isfinite(raw):
                 raise PointSamplingError(
-                    "no environmental value at this location (nodata) for one or more driver bands"
+                    "no environmental value at this location (nodata) for one or more driver bands",
+                    code="POINT_ENV_NODATA",
                 )
             out.append(raw)
     return out
@@ -282,17 +316,21 @@ def inspect_point(
             indices = get_feature_band_indices(model, catalog)
         except FeatureBandNamesValidationError:
             raise PointSamplingError(
-                "feature_band_names do not match the project environmental manifest"
+                "feature_band_names do not match the project environmental manifest",
+                code="FEATURE_BAND_MANIFEST_MISMATCH",
             ) from None
 
+    env_path_for_notes: str | None = None
     if catalog is not None and indices:
         env_path = resolve_environmental_cog_path_for_model(model, catalog)
+        env_path_for_notes = env_path
         if env_path is not None:
             try:
                 dc = get_effective_driver_config(model, catalog)
             except FeatureBandNamesValidationError:
                 raise PointSamplingError(
-                    "feature_band_names do not match the project environmental manifest"
+                    "feature_band_names do not match the project environmental manifest",
+                    code="FEATURE_BAND_MANIFEST_MISMATCH",
                 ) from None
             band_values = sample_environmental_bands_at_point(
                 env_path, lng, lat, indices
@@ -309,7 +347,8 @@ def inspect_point(
                 ):
                     raise PointSamplingError(
                         "explainability requires feature_names with the same length "
-                        "and order as feature_band_names"
+                        "and order as feature_band_names",
+                        code="EXPLAINABILITY_FEATURE_MISMATCH",
                     )
                 import pandas as pd
 
@@ -318,9 +357,42 @@ def inspect_point(
                 )
                 drivers_out = compute_shap_driver_variables(model, feature_df, dc)
 
+    drivers_final = drivers_out or []
+    raw_list = raw_out
+    has_raw = raw_list is not None and len(raw_list) > 0
+    has_drivers = len(drivers_final) > 0
+    notes: list[str] = []
+    if catalog is None:
+        notes.append(
+            "Catalog was not provided; only suitability was computed at this point."
+        )
+    elif not indices:
+        notes.append(
+            "feature_band_names are unset or could not be matched to the project manifest; "
+            "environmental values and driver influence are omitted."
+        )
+    elif env_path_for_notes is None:
+        notes.append(
+            "No environmental COG path for this model/project; environmental values and drivers are omitted."
+        )
+    elif has_raw and not has_drivers:
+        if catalog is not None and not explainability_configured(model, catalog):
+            notes.append(
+                "Driver influence is omitted: explainability is not fully configured "
+                "(serialized model, background Parquet, and feature_names aligned to bands)."
+            )
+
+    caps = PointInspectionCapabilities(
+        suitability_available=True,
+        environmental_values_available=has_raw,
+        driver_influence_available=has_drivers,
+        notes=notes,
+    )
+
     return PointInspection(
         value=value,
         unit="suitability (0–1)",
-        drivers=drivers_out or [],
-        raw_environmental_values=raw_out,
+        capabilities=caps,
+        drivers=drivers_final,
+        raw_environmental_values=raw_list,
     )

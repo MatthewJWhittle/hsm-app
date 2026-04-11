@@ -4,11 +4,11 @@ export const FIELD_HELP = {
   species: 'Shown in the layer list and map legend.',
   activity: 'Together with species, identifies this layer (e.g. roosting, in flight).',
   suitabilityCog:
-    'Cloud-optimized GeoTIFF in Web Mercator (EPSG:3857). This raster is what the map tiles and suitability values come from.',
+    'Cloud-optimized GeoTIFF in Web Mercator (EPSG:3857). Rasters in other CRS (e.g. EPSG:27700) must be reprojected first — see docs/data-models.md.',
 } as const
 
 export const COG_REQUIREMENTS_INFO =
-  'Upload a GeoTIFF in COG format, in Web Mercator (EPSG:3857). The server checks format, coordinate system, and file size.'
+  'Upload a GeoTIFF in COG format, in Web Mercator (EPSG:3857). Other CRS (e.g. UK EPSG:27700) are rejected — reproject with gdalwarp or rio before upload. The server checks tiling, CRS, and size.'
 
 export const DRIVER_COG_INFO =
   'Optional: one shared environmental raster for this project (several bands in one file). Same format rules as suitability uploads. You can add or replace it later when editing the project.'

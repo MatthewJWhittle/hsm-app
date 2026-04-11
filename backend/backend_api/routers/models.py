@@ -16,6 +16,7 @@ from fastapi import (
 )
 from starlette.concurrency import run_in_threadpool
 
+from backend_api.api_errors import validation_error
 from backend_api.auth_deps import optional_id_token_claims, require_admin_claims
 from backend_api.catalog_service import CatalogService
 from backend_api.catalog_write import upsert_model
@@ -44,11 +45,32 @@ from backend_api.routers.catalog_upload_utils import (
     reload_catalog_threaded,
     validate_cog_bytes_threaded,
 )
+from backend_api.routers.models_openapi import OPENAPI_POST_MODELS, OPENAPI_PUT_MODEL
 from backend_api.settings import Settings
 from backend_api.storage import SERIALIZED_MODEL_FILENAME, ObjectStorage
 from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
 
 router = APIRouter()
+
+
+def _find_model_by_triplet(
+    catalog: CatalogService,
+    project_id: str,
+    species: str,
+    activity: str,
+) -> Model | None:
+    """Return an existing model with the same project, species, and activity (if any)."""
+    for m in catalog.models:
+        if m.project_id == project_id and m.species == species and m.activity == activity:
+            return m
+    return None
+
+
+def _cog_validation_422(exc: CogValidationError) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail=validation_error(exc.code, exc.message, context=exc.context or None),
+    )
 
 
 def _form_str(form: FormData, key: str) -> str | None:
@@ -59,9 +81,11 @@ def _form_str(form: FormData, key: str) -> str | None:
     if isinstance(v, StarletteUploadFile):
         raise HTTPException(
             status_code=422,
-            detail=(
+            detail=validation_error(
+                "FORM_FIELD_TYPE",
                 f"Field {key!r} must be plain text. "
-                "For metadata JSON, append a Blob with Content-Type application/json."
+                "For metadata JSON, append a Blob with Content-Type application/json.",
+                context={"field": key},
             ),
         )
     s = str(v)
@@ -71,7 +95,10 @@ def _form_str(form: FormData, key: str) -> str | None:
 def _form_require_str(form: FormData, key: str) -> str:
     s = _form_str(form, key)
     if not s:
-        raise HTTPException(status_code=422, detail=f"missing {key}")
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error("MISSING_FIELD", f"Missing form field {key!r}.", context={"field": key}),
+        )
     return s.strip()
 
 
@@ -84,9 +111,19 @@ _ADMIN_WRITE_RESPONSES: dict[int | str, dict[str, str]] = {
     status.HTTP_403_FORBIDDEN: {"description": "Valid token but admin claim not set"},
     status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {"description": "Upload exceeds MAX_UPLOAD_BYTES"},
     status.HTTP_422_UNPROCESSABLE_ENTITY: {
-        "description": "Empty file, invalid COG/CRS, or bad metadata JSON",
+        "description": (
+            "Validation failed. Response detail is a JSON object with "
+            "`code`, `message`, and optional `context` (e.g. COG_CRS_MISMATCH, MISSING_FIELD)."
+        ),
     },
     status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Storage or Firestore failure"},
+}
+
+_ADMIN_POST_MODELS_RESPONSES: dict[int | str, dict[str, str]] = {
+    **_ADMIN_WRITE_RESPONSES,
+    status.HTTP_409_CONFLICT: {
+        "description": "Another model already exists for the same project_id + species + activity",
+    },
 }
 
 
@@ -103,7 +140,14 @@ async def _merge_serialized_model_upload(
         return metadata
     content = await serialized_model_file.read()
     if not content:
-        raise HTTPException(status_code=422, detail="serialized_model_file is empty")
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "EMPTY_FILE",
+                "serialized_model_file is empty.",
+                context={"field": "serialized_model_file"},
+            ),
+        )
     if len(content) > settings.max_upload_bytes:
         raise HTTPException(
             status_code=413,
@@ -152,10 +196,15 @@ async def get_model_point(
     """
     Suitability value at a WGS84 point (band 1 of the model COG).
 
-    When the model has ``metadata.analysis.feature_band_names`` (resolved via the project manifest)
-    and a resolvable environmental COG, returns ``raw_environmental_values`` at the point. When a
-    serialized sklearn model and project background sample are configured, returns SHAP-style
-    influence in ``drivers``.
+    **Always returned:** ``value`` (and ``capabilities.suitability_available``).
+
+    **Conditionally returned:** ``raw_environmental_values`` when ``feature_band_names`` match the
+    project manifest and an environmental COG path resolves. ``drivers`` (SHAP-style) only when
+    explainability is fully configured (serialized model, background Parquet, aligned
+    ``feature_names``). Use ``capabilities.notes`` to tell “not configured” from a hard error.
+
+    Empty ``drivers`` with a numeric ``value`` usually means explainability is incomplete, not
+    that the endpoint failed.
     """
 
     def _run() -> PointInspection:
@@ -164,9 +213,15 @@ async def get_model_point(
     try:
         return await run_in_threadpool(_run)
     except PointSamplingError as e:
-        raise HTTPException(status_code=422, detail=e.detail) from e
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(e.code, e.detail),
+        ) from e
     except RasterNotFoundError as e:
-        raise HTTPException(status_code=503, detail=e.detail) from e
+        raise HTTPException(
+            status_code=503,
+            detail=validation_error("RASTER_NOT_FOUND", e.detail),
+        ) from e
 
 
 @router.post(
@@ -174,8 +229,9 @@ async def get_model_point(
     response_model=Model,
     status_code=201,
     tags=["admin"],
-    responses=_ADMIN_WRITE_RESPONSES,
+    responses=_ADMIN_POST_MODELS_RESPONSES,
     summary="Create catalog entry and upload suitability COG",
+    openapi_extra=OPENAPI_POST_MODELS,
 )
 async def create_model(
     request: Request,
@@ -184,21 +240,63 @@ async def create_model(
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
 ):
-    """Create a catalog entry and store the suitability COG (admin only)."""
+    """Create a catalog entry and store the suitability COG (admin only).
+
+    Suitability rasters must be **EPSG:3857** tiled COGs. **409** if a model with the same
+    ``project_id``, ``species``, and ``activity`` already exists (use ``PUT /models/{id}`` to update).
+    """
     form = await request.form()
     project_id = _form_require_str(form, "project_id")
     species = _form_require_str(form, "species")
     activity = _form_require_str(form, "activity")
+    if catalog.get_project(project_id) is None:
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "UNKNOWN_PROJECT",
+                "project_id does not match a catalog project.",
+                context={"project_id": project_id},
+            ),
+        )
+    dup = _find_model_by_triplet(catalog, project_id, species, activity)
+    if dup is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=validation_error(
+                "MODEL_DUPLICATE",
+                "A model with this project_id, species, and activity already exists.",
+                context={"existing_model_id": dup.id},
+            ),
+        )
     file_part = form.get("file")
     if isinstance(file_part, str):
-        raise HTTPException(status_code=422, detail="file must be a file upload, not a text field")
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "FORM_FIELD_TYPE",
+                "file must be a file upload, not a text field.",
+                context={"field": "file"},
+            ),
+        )
     if not isinstance(file_part, StarletteUploadFile):
-        raise HTTPException(status_code=422, detail="file is required")
-    if catalog.get_project(project_id) is None:
-        raise HTTPException(status_code=422, detail="unknown project_id")
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "MISSING_FIELD",
+                "file is required.",
+                context={"field": "file"},
+            ),
+        )
     content = await file_part.read()
     if not content:
-        raise HTTPException(status_code=422, detail="empty file")
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "EMPTY_FILE",
+                "file is empty.",
+                context={"field": "file"},
+            ),
+        )
     if len(content) > settings.max_upload_bytes:
         raise HTTPException(
             status_code=413,
@@ -208,7 +306,7 @@ async def create_model(
     try:
         await validate_cog_bytes_threaded(content)
     except CogValidationError as e:
-        raise HTTPException(status_code=422, detail=e.message) from e
+        raise _cog_validation_422(e) from e
 
     model_id = str(uuid.uuid4())
 
@@ -228,7 +326,10 @@ async def create_model(
     try:
         meta_in = await parse_metadata_multipart_part(form.get("metadata"))
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error("METADATA_INVALID", str(e)),
+        ) from e
     sm_part = form.get("serialized_model_file")
     serialized_model_file = sm_part if isinstance(sm_part, StarletteUploadFile) else None
     meta_in = await _merge_serialized_model_upload(
@@ -262,7 +363,10 @@ async def create_model(
     try:
         model = await run_in_threadpool(_validate_and_enrich)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error("MODEL_VALIDATION", str(e)),
+        ) from e
 
     def _persist() -> None:
         upsert_model(settings, model)
@@ -285,6 +389,7 @@ async def create_model(
     tags=["admin"],
     responses=_ADMIN_WRITE_RESPONSES,
     summary="Update model metadata and/or replace COG",
+    openapi_extra=OPENAPI_PUT_MODEL,
 )
 async def update_model(
     request: Request,
@@ -294,7 +399,10 @@ async def update_model(
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
     existing: Annotated[Model, Depends(get_model_or_404)],
 ):
-    """Update metadata and/or replace the suitability COG (admin only)."""
+    """Update metadata and/or replace the suitability COG (admin only).
+
+    Replacement COGs must be **EPSG:3857** tiled GeoTIFFs (same as POST).
+    """
     form = await request.form()
     model_id = existing.id
     artifact_root = existing.artifact_root
@@ -302,11 +410,25 @@ async def update_model(
 
     file_part = form.get("file")
     if file_part is not None and not isinstance(file_part, StarletteUploadFile):
-        raise HTTPException(status_code=422, detail="file must be a file upload")
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "FORM_FIELD_TYPE",
+                "file must be a file upload.",
+                context={"field": "file"},
+            ),
+        )
     if isinstance(file_part, StarletteUploadFile):
         content = await file_part.read()
         if not content:
-            raise HTTPException(status_code=422, detail="empty file")
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(
+                    "EMPTY_FILE",
+                    "file is empty.",
+                    context={"field": "file"},
+                ),
+            )
         if len(content) > settings.max_upload_bytes:
             raise HTTPException(
                 status_code=413,
@@ -315,7 +437,7 @@ async def update_model(
         try:
             await validate_cog_bytes_threaded(content)
         except CogValidationError as e:
-            raise HTTPException(status_code=422, detail=e.message) from e
+            raise _cog_validation_422(e) from e
 
         def _write() -> tuple[str, str]:
             return storage.write_suitability_cog(model_id, content)
@@ -338,14 +460,24 @@ async def update_model(
     project_id_f = _form_str(form, "project_id")
     if project_id_f is not None:
         if catalog.get_project(project_id_f) is None:
-            raise HTTPException(status_code=422, detail="unknown project_id")
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(
+                    "UNKNOWN_PROJECT",
+                    "project_id does not match a catalog project.",
+                    context={"project_id": project_id_f},
+                ),
+            )
         new_project_id = project_id_f
 
     if "metadata" in form:
         try:
             new_metadata = await parse_metadata_multipart_part(form.get("metadata"))
         except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e)) from e
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error("METADATA_INVALID", str(e)),
+            ) from e
     else:
         new_metadata = existing.metadata
 
@@ -384,7 +516,10 @@ async def update_model(
     try:
         model = await run_in_threadpool(_validate_and_enrich)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error("MODEL_VALIDATION", str(e)),
+        ) from e
 
     def _persist() -> None:
         upsert_model(settings, model)

@@ -30,7 +30,7 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 | `extras` | Optional `Record<string, string>` for custom key/value labels. |
 | `analysis` | Training / point-pipeline inputs: **`feature_band_names`** — ordered list of **machine names** matching `environmental_band_definitions[].name` on the parent project (same order as the estimator’s feature matrix). The server resolves names to band indices. Also **`serialized_model_path`** (pickled sklearn estimator **relative to `artifact_root`**, e.g. `serialized_model.pkl`), **`positive_class_index`** (for `predict_proba`; default `1` at runtime if omitted), optional **`driver_cog_path`** (per-model environmental COG override relative to `artifact_root`). Invalid or duplicate names on create/update return **400** with `unknown_feature_band_names` / `duplicate_feature_band_names`. |
 
-Admin `POST/PUT /models` sends `metadata` as a **JSON string** in the multipart form (same object shape). Optional multipart field **`serialized_model_file`** writes the pickle to the model folder and sets `metadata.analysis.serialized_model_path` to the fixed filename `serialized_model.pkl`.
+Admin `POST/PUT /models` sends `metadata` as a multipart part with **`Content-Type: application/json`** (preferred) or a legacy **plain string** field with the same JSON text. Optional multipart field **`serialized_model_file`** writes the pickle to the model folder and sets `metadata.analysis.serialized_model_path` to the fixed filename `serialized_model.pkl`.
 
 #### Effective driver config (point inspection; not persisted)
 
@@ -121,6 +121,15 @@ Uploaded suitability rasters (and driver rasters referenced from **`metadata.ana
    - *Rationale:* One expected CRS keeps tile URLs, bounds, and point-inspection alignment predictable. Local prep in this repo reprojects to 3857 before COG creation (see `convert_to_cog.sh`).  
    - If a source model is in another CRS (e.g. **EPSG:27700** for UK grids), **reproject to 3857 offline** (or in a dedicated ingest job) *before* validation passes — do not rely on the viewer to guess.
 
+   **Example (GDAL):** reproject a UK grid raster to Web Mercator, then build a COG:
+
+   ```bash
+   gdalwarp -t_srs EPSG:3857 -r bilinear -dstnodata -9999 input_27700.tif warped_3857.tif
+   gdal_translate -of COG -co COMPRESS=DEFLATE warped_3857.tif suitability_cog.tif
+   ```
+
+   **Example (rio-cogeo):** after warping to 3857, `rio cogeo create warped_3857.tif suitability_cog.tif`.
+
 #### Should pass (warn or block depending on policy)
 
 - **Overviews** — Present for COGs used at multiple zoom levels (typical COG creation includes overviews).
@@ -133,8 +142,9 @@ Target **under ~100 MB** per suitability COG so direct upload + validation on Cl
 
 #### API behaviour
 
-- **`POST /models` / file upload:** Run validation **after** upload to a temporary object or **before** promoting to `models/{model_id}/suitability_cog.tif`. On failure, return **4xx** with a **clear message** (e.g. “not a valid COG”, “CRS must be EPSG:3857, got EPSG:27700”). Do not register the `Model` until validation succeeds.
-- **`PUT /models/{id}`** replacing the COG: same checks.
+- **`POST /models` / file upload:** Run validation **after** upload to a temporary object or **before** promoting to `models/{model_id}/suitability_cog.tif`. On failure, return **422** with a structured **`detail`** object: `{ "code", "message", "context"? }` (e.g. **`code`: `COG_CRS_MISMATCH`**, **`context`**: `expected_epsg`, `got_crs`). Do not register the `Model` until validation succeeds.
+- **`POST /models`:** If another model already exists with the same **`project_id` + `species` + `activity`**, the API returns **409** with **`code`: `MODEL_DUPLICATE`** and **`existing_model_id`** in **`context`**. Use **`PUT /models/{id}`** to update an existing row, or choose a distinct activity/species string if you intentionally need two layers.
+- **`PUT /models/{id}`** replacing the COG: same validation and structured errors as POST.
 - Optionally store validation timestamp or checksum on the model document for audit.
 
 ### Driver and feature linkage
@@ -189,6 +199,7 @@ Returned by `GET /models/{id}/point?lng=&lat=` when the user clicks the map or r
 |-------|------|-------------|
 | `value` | number | Suitability at the point. |
 | `unit` | string? | e.g. "suitability (0–1)" or "relative". |
+| `capabilities` | object | **`suitability_available`**, **`environmental_values_available`**, **`driver_influence_available`** (booleans), and **`notes`** (string[]): explains which subsystems ran and why **`drivers`** / **`raw_environmental_values`** may be empty (usually configuration, not an error). |
 | `drivers` | DriverVariable[] | Variable **influence** at this location (e.g. SHAP contribution); empty when explainability artefacts are not configured. |
 | `raw_environmental_values` | RawEnvironmentalValue[]? | Optional sampled **raw** raster values for each configured band (secondary detail for the UI). |
 
@@ -209,12 +220,13 @@ Returned by `GET /models/{id}/point?lng=&lat=` when the user clicks the map or r
 | `label` | string? | Short display string (e.g. formatted contribution). |
 | `magnitude` | number? | Signed contribution (e.g. SHAP value). |
 
-**MVP:** PointInspection with `value`, optional `drivers` (influence), optional `raw_environmental_values`.
+**MVP:** PointInspection with `value`, optional `capabilities`, optional `drivers` (influence), optional `raw_environmental_values`. A numeric **`value`** with **`drivers: []`** usually means explainability is not fully wired, not that SHAP “failed” silently — check **`capabilities.notes`**.
 
 ### Modeller checklist (admin uploads)
 
-- **Auth:** Admin `POST`/`PUT` routes require `Authorization: Bearer` with the Firebase ID token and **`admin: true`** custom claim (see OpenAPI **HTTPBearer** on `admin`-tagged operations). Obtain tokens with **`POST /auth/token`** (email/password JSON) instead of calling Identity Toolkit directly; use optional **`admin_only: true`** when you need a token that is guaranteed to carry the admin claim.
-- **Suitability COG:** Must be a valid **Cloud Optimized GeoTIFF** in **EPSG:3857**; the API rejects others with a clear validation message.
+- **Auth:** Admin `POST`/`PUT` routes require `Authorization: Bearer` with the Firebase ID token and **`admin: true`** custom claim (see OpenAPI **HTTPBearer** on `admin`-tagged operations). Obtain tokens with **`POST /auth/token`** (email/password JSON) instead of calling Identity Toolkit directly; use optional **`admin_only: true`** when you need a token that is guaranteed to carry the admin claim. **Ops:** do not log request bodies for **`POST /auth/token`** in production; apply **rate limiting** at the proxy (e.g. Cloud Run + API Gateway / Cloud Armor). Firebase **ID tokens** expire after roughly an hour — for long jobs, use the returned **`refresh_token`** with Firebase’s token refresh endpoint, or call **`POST /auth/token`** again.
+- **Idempotency:** **`POST /models`** always creates a **new** `id`. Retries with the same form fields can yield **409** if **`project_id` + `species` + `activity`** already exist; use **`GET /models`** to find the row, then **`PUT /models/{id}`**.
+- **Suitability COG:** Must be a valid **Cloud Optimized GeoTIFF** in **EPSG:3857**; failed validation returns structured **`422`** **`detail`** with a **`code`** (e.g. **`COG_CRS_MISMATCH`**).
 - **Environmental stack:** Shared project environmental COG should align in CRS/extent with how you trained; **`feature_band_names`** must be a subset of **`environmental_band_definitions[].name`** on that project, in training column order.
 - **Multipart `metadata`:** Send as a part with **`Content-Type: application/json`** (raw JSON object body; e.g. `FormData.append` with a `Blob` in the browser). The server still accepts a legacy **plain string** field containing the same JSON text.
 

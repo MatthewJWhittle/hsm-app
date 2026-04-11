@@ -50,12 +50,38 @@ function parseRawEnvironmentalValue(value: unknown): RawEnvironmentalValue | nul
   return out
 }
 
+function parseCapabilities(value: unknown): NonNullable<PointInspection['capabilities']> | null {
+  if (value === null || value === undefined) return {}
+  if (!isRecord(value)) return null
+  const cap: NonNullable<PointInspection['capabilities']> = {}
+  for (const k of ['suitability_available', 'environmental_values_available', 'driver_influence_available'] as const) {
+    if (k in value && typeof value[k] === 'boolean') {
+      cap[k] = value[k]
+    }
+  }
+  if ('notes' in value && Array.isArray(value.notes)) {
+    const notes: string[] = []
+    for (const n of value.notes) {
+      if (typeof n !== 'string') return null
+      notes.push(n)
+    }
+    cap.notes = notes
+  }
+  return cap
+}
+
 export function parsePointInspection(value: unknown): PointInspection | null {
   if (!isRecord(value)) return null
   const val = value.value
   if (typeof val !== 'number' || !Number.isFinite(val)) return null
 
   const out: PointInspection = { value: val }
+
+  if ('capabilities' in value) {
+    const c = parseCapabilities(value.capabilities)
+    if (c === null) return null
+    out.capabilities = c
+  }
 
   if ('unit' in value) {
     const u = value.unit

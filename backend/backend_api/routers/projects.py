@@ -24,6 +24,7 @@ from starlette.concurrency import run_in_threadpool
 from backend_api.auth_deps import optional_id_token_claims, require_admin_claims
 from backend_api.catalog_service import CatalogService
 from backend_api.catalog_write import upsert_project
+from backend_api.api_errors import validation_error
 from backend_api.cog_validation import CogValidationError
 from backend_api.deps.catalog import get_object_storage, require_catalog_ready
 from backend_api.env_background_sample import write_project_explainability_background_parquet
@@ -408,7 +409,10 @@ async def create_project(
         try:
             await validate_cog_bytes_threaded(content)
         except CogValidationError as e:
-            raise HTTPException(status_code=422, detail=e.message) from e
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(e.code, e.message, context=e.context or None),
+            ) from e
 
         def _write() -> tuple[str, str]:
             return storage.write_project_driver_cog(project_id, content)
@@ -550,7 +554,10 @@ async def update_project(
         try:
             await validate_cog_bytes_threaded(content)
         except CogValidationError as e:
-            raise HTTPException(status_code=422, detail=e.message) from e
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(e.code, e.message, context=e.context or None),
+            ) from e
 
         def _write() -> tuple[str, str]:
             return storage.write_project_driver_cog(project_id, content)
