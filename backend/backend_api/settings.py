@@ -60,6 +60,16 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("FIREBASE_AUTH_EMULATOR_HOST"),
     )
 
+    firebase_web_api_key: str | None = Field(
+        default=None,
+        description=(
+            "Firebase Web API key (Identity Toolkit). Required for POST /auth/token "
+            "against production Auth; optional in dev when using the Auth emulator "
+            "(defaults to a placeholder if unset)."
+        ),
+        validation_alias=AliasChoices("FIREBASE_WEB_API_KEY", "VITE_FIREBASE_API_KEY"),
+    )
+
     storage_backend: str = Field(
         default="local",
         description="Object storage for admin uploads: 'local' or 'gcs'.",

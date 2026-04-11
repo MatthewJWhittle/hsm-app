@@ -4,6 +4,7 @@
   export HSM_API_BASE=http://127.0.0.1:8000
   export HSM_PROJECT_ID=<uuid>
   export HSM_ID_TOKEN=<Firebase ID token with admin>
+  # Obtain a token: POST /auth/token with email/password and "admin_only": true, then use id_token.
 
   python3 scripts/apply_band_label_updates.py scripts/data/environmental_band_label_updates.json
 """

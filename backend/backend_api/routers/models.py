@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated
@@ -10,12 +9,9 @@ from typing import Annotated
 from fastapi import (
     APIRouter,
     Depends,
-    File,
-    Form,
     HTTPException,
     Query,
     Request,
-    UploadFile,
     status,
 )
 from starlette.concurrency import run_in_threadpool
@@ -43,15 +39,40 @@ from backend_api.point_sampling import (
 )
 from backend_api.project_manifest import validate_model_feature_bands_for_admin
 from backend_api.schemas import Model, ModelAnalysis, ModelMetadata, PointInspection
-from backend_api.schemas_admin import parse_metadata_form
+from backend_api.schemas_admin import parse_metadata_multipart_part
 from backend_api.routers.catalog_upload_utils import (
     reload_catalog_threaded,
     validate_cog_bytes_threaded,
 )
 from backend_api.settings import Settings
 from backend_api.storage import SERIALIZED_MODEL_FILENAME, ObjectStorage
+from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
 
 router = APIRouter()
+
+
+def _form_str(form: FormData, key: str) -> str | None:
+    """Return a text form field, or None if missing/blank. Rejects accidental file parts."""
+    v = form.get(key)
+    if v is None:
+        return None
+    if isinstance(v, StarletteUploadFile):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Field {key!r} must be plain text. "
+                "For metadata JSON, append a Blob with Content-Type application/json."
+            ),
+        )
+    s = str(v)
+    return s if s.strip() else None
+
+
+def _form_require_str(form: FormData, key: str) -> str:
+    s = _form_str(form, key)
+    if not s:
+        raise HTTPException(status_code=422, detail=f"missing {key}")
+    return s.strip()
 
 
 def _utc_now_iso() -> str:
@@ -69,20 +90,13 @@ _ADMIN_WRITE_RESPONSES: dict[int | str, dict[str, str]] = {
 }
 
 
-def _parse_metadata_http(raw: str | None) -> ModelMetadata | None:
-    try:
-        return parse_metadata_form(raw)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-
-
 async def _merge_serialized_model_upload(
     *,
     storage: ObjectStorage,
     settings: Settings,
     model_id: str,
     metadata: ModelMetadata | None,
-    serialized_model_file: UploadFile | None,
+    serialized_model_file: StarletteUploadFile | None,
 ) -> ModelMetadata | None:
     """Write optional sklearn upload and set ``metadata.analysis.serialized_model_path``."""
     if serialized_model_file is None:
@@ -169,17 +183,20 @@ async def create_model(
     _claims: Annotated[dict, Depends(require_admin_claims)],
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
-    project_id: Annotated[str, Form()],
-    species: Annotated[str, Form()],
-    activity: Annotated[str, Form()],
-    file: Annotated[UploadFile, File()],
-    metadata: Annotated[str | None, Form()] = None,
-    serialized_model_file: Annotated[UploadFile | None, File()] = None,
 ):
     """Create a catalog entry and store the suitability COG (admin only)."""
-    if catalog.get_project(project_id.strip()) is None:
+    form = await request.form()
+    project_id = _form_require_str(form, "project_id")
+    species = _form_require_str(form, "species")
+    activity = _form_require_str(form, "activity")
+    file_part = form.get("file")
+    if isinstance(file_part, str):
+        raise HTTPException(status_code=422, detail="file must be a file upload, not a text field")
+    if not isinstance(file_part, StarletteUploadFile):
+        raise HTTPException(status_code=422, detail="file is required")
+    if catalog.get_project(project_id) is None:
         raise HTTPException(status_code=422, detail="unknown project_id")
-    content = await file.read()
+    content = await file_part.read()
     if not content:
         raise HTTPException(status_code=422, detail="empty file")
     if len(content) > settings.max_upload_bytes:
@@ -208,7 +225,12 @@ async def create_model(
             detail=f"could not store file: {e}",
         ) from e
 
-    meta_in = _parse_metadata_http(metadata)
+    try:
+        meta_in = await parse_metadata_multipart_part(form.get("metadata"))
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    sm_part = form.get("serialized_model_file")
+    serialized_model_file = sm_part if isinstance(sm_part, StarletteUploadFile) else None
     meta_in = await _merge_serialized_model_upload(
         storage=storage,
         settings=settings,
@@ -220,9 +242,9 @@ async def create_model(
     ts = _utc_now_iso()
     model = Model(
         id=model_id,
-        project_id=project_id.strip(),
-        species=species.strip(),
-        activity=activity.strip(),
+        project_id=project_id,
+        species=species,
+        activity=activity,
         artifact_root=artifact_root,
         suitability_cog_path=suitability_cog_path,
         created_at=ts,
@@ -271,20 +293,18 @@ async def update_model(
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
     existing: Annotated[Model, Depends(get_model_or_404)],
-    species: Annotated[str | None, Form()] = None,
-    activity: Annotated[str | None, Form()] = None,
-    file: Annotated[UploadFile | None, File()] = None,
-    project_id: Annotated[str | None, Form()] = None,
-    metadata: Annotated[str | None, Form()] = None,
-    serialized_model_file: Annotated[UploadFile | None, File()] = None,
 ):
     """Update metadata and/or replace the suitability COG (admin only)."""
+    form = await request.form()
     model_id = existing.id
     artifact_root = existing.artifact_root
     suitability_cog_path = existing.suitability_cog_path
 
-    if file is not None:
-        content = await file.read()
+    file_part = form.get("file")
+    if file_part is not None and not isinstance(file_part, StarletteUploadFile):
+        raise HTTPException(status_code=422, detail="file must be a file upload")
+    if isinstance(file_part, StarletteUploadFile):
+        content = await file_part.read()
         if not content:
             raise HTTPException(status_code=422, detail="empty file")
         if len(content) > settings.max_upload_bytes:
@@ -310,19 +330,27 @@ async def update_model(
                 detail=f"could not store file: {e}",
             ) from e
 
-    new_species = species.strip() if species is not None else existing.species
-    new_activity = activity.strip() if activity is not None else existing.activity
+    species_s = _form_str(form, "species")
+    activity_s = _form_str(form, "activity")
+    new_species = species_s if species_s is not None else existing.species
+    new_activity = activity_s if activity_s is not None else existing.activity
     new_project_id = existing.project_id
-    if project_id is not None:
-        pid = project_id.strip()
-        if catalog.get_project(pid) is None:
+    project_id_f = _form_str(form, "project_id")
+    if project_id_f is not None:
+        if catalog.get_project(project_id_f) is None:
             raise HTTPException(status_code=422, detail="unknown project_id")
-        new_project_id = pid
+        new_project_id = project_id_f
 
-    if metadata is not None:
-        new_metadata = _parse_metadata_http(metadata)
+    if "metadata" in form:
+        try:
+            new_metadata = await parse_metadata_multipart_part(form.get("metadata"))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
     else:
         new_metadata = existing.metadata
+
+    sm_part = form.get("serialized_model_file")
+    serialized_model_file = sm_part if isinstance(sm_part, StarletteUploadFile) else None
 
     new_metadata = await _merge_serialized_model_upload(
         storage=storage,

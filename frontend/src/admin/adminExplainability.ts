@@ -10,7 +10,7 @@ export function explainabilityConfiguredInCatalog(model: Model): boolean {
 }
 
 /**
- * Build ``metadata`` JSON for POST/PUT /models. Strips analysis fields when explainability is off;
+ * Build ``metadata`` for POST/PUT /models. Strips analysis fields when explainability is off;
  * sets ``feature_band_names`` from the current band selection when on.
  * When ``cardPatch`` is set, it replaces ``metadata.card`` / ``metadata.extras`` from the form (null = omit).
  */
@@ -20,7 +20,7 @@ export function buildModelMetadataForSubmit(params: {
   selectedBands: EnvironmentalBandDefinition[]
   /** When provided (create/edit with model card UI), overrides card/extras on the cloned base metadata. */
   cardPatch?: { card: ModelCard | null; extras: Record<string, string> | null } | null
-}): string | undefined {
+}): ModelMetadata | undefined {
   const raw = params.base?.metadata
   const meta: ModelMetadata = raw
     ? (JSON.parse(JSON.stringify(raw)) as ModelMetadata)
@@ -42,15 +42,15 @@ export function buildModelMetadataForSubmit(params: {
   if (!params.explainEnabled) {
     if (meta.analysis) {
       const { analysis: _a, ...rest } = meta
-      const cleaned = { ...rest }
-      return Object.keys(cleaned).length ? JSON.stringify(cleaned) : undefined
+      const cleaned = { ...rest } as ModelMetadata
+      return Object.keys(cleaned).length ? cleaned : undefined
     }
-    return Object.keys(meta).length ? JSON.stringify(meta) : undefined
+    return Object.keys(meta).length ? meta : undefined
   }
 
   meta.analysis = {
     ...meta.analysis,
     feature_band_names: params.selectedBands.map((b) => b.name),
   }
-  return JSON.stringify(meta)
+  return meta
 }

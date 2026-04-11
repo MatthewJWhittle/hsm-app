@@ -166,15 +166,16 @@ export function AdminPage() {
   const buildLayerEditSnapshot = useCallback(() => {
     if (!editModel) return ''
     const parsed = parseModelCardDraft(editCardDraft)
-    const metadataJson =
+    const metaForSnap =
       parsed.ok
         ? buildModelMetadataForSubmit({
             base: editModel,
             explainEnabled: editExplainEnabled,
             selectedBands: editSelectedEnvBands,
             cardPatch: { card: parsed.card, extras: parsed.extras },
-          }) ?? '{}'
-        : ''
+          })
+        : undefined
+    const metadataJson = metaForSnap ? JSON.stringify(metaForSnap) : ''
     return layerFormSnapshot({
       species: editSpecies,
       activity: editActivity,
@@ -322,13 +323,13 @@ export function AdminPage() {
       setEditError(parsedCard.message)
       return
     }
-    const metadataJson =
+    const metadata =
       buildModelMetadataForSubmit({
         base: editModel,
         explainEnabled: editExplainEnabled,
         selectedBands: editSelectedEnvBands,
         cardPatch: { card: parsedCard.card, extras: parsedCard.extras },
-      }) ?? '{}'
+      }) ?? {}
 
     setSavingEdit(true)
     try {
@@ -339,7 +340,7 @@ export function AdminPage() {
         activity: editActivity,
         file: editFile ?? undefined,
         projectId: editProjectId || undefined,
-        metadataJson,
+        metadata,
         serializedModelFile: editExplainModelFile ?? undefined,
       })
       setEditModel(updated)
@@ -364,12 +365,14 @@ export function AdminPage() {
         explainEnabled: editExplainEnabled,
         metadataJson:
           parsedAfter.ok
-            ? buildModelMetadataForSubmit({
-                base: updated,
-                explainEnabled: editExplainEnabled,
-                selectedBands: editSelectedEnvBands,
-                cardPatch: { card: parsedAfter.card, extras: parsedAfter.extras },
-              }) ?? '{}'
+            ? JSON.stringify(
+                buildModelMetadataForSubmit({
+                  base: updated,
+                  explainEnabled: editExplainEnabled,
+                  selectedBands: editSelectedEnvBands,
+                  cardPatch: { card: parsedAfter.card, extras: parsedAfter.extras },
+                }) ?? {},
+              )
             : '',
         cardDraftJson: JSON.stringify(editCardDraft),
         suitabilityFileName: null,
@@ -738,13 +741,13 @@ export function AdminPage() {
       setCreateError(parsedCard.message)
       return
     }
-    const metadataJson =
+    const metadata =
       buildModelMetadataForSubmit({
         base: null,
         explainEnabled,
         selectedBands: selectedEnvBands,
         cardPatch: { card: parsedCard.card, extras: parsedCard.extras },
-      }) ?? '{}'
+      }) ?? {}
 
     if (explainEnabled) {
       if (selectedEnvBands.length === 0) {
@@ -769,7 +772,7 @@ export function AdminPage() {
         species,
         activity,
         file,
-        metadataJson,
+        metadata,
         serializedModelFile: explainEnabled ? explainModelFile : undefined,
       })
       setSpecies('')

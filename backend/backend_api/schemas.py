@@ -191,3 +191,28 @@ class AuthMeResponse(BaseModel):
 
     uid: str
     email: str | None = None
+
+
+class AuthTokenRequest(BaseModel):
+    """Credentials for Identity Toolkit sign-in (same as Firebase email/password)."""
+
+    email: str
+    password: str
+    admin_only: bool = Field(
+        default=False,
+        description=(
+            "If true, only return tokens when the user has Firebase custom claim "
+            "`admin: true` (else 403)."
+        ),
+    )
+
+
+class AuthTokenResponse(BaseModel):
+    """Firebase ID token and refresh token from Identity Toolkit."""
+
+    token_type: Literal["Bearer"] = "Bearer"
+    id_token: str
+    refresh_token: str
+    expires_in: str = Field(
+        description="Lifetime of the ID token in seconds (string per Identity Toolkit).",
+    )

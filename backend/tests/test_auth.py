@@ -48,6 +48,93 @@ def test_auth_me_returns_uid_and_email(client):
     assert data["email"] == "dev@example.com"
 
 
+def test_auth_token_returns_id_token(client):
+    with patch("backend_api.routers.auth.sign_in_with_password") as m:
+        m.return_value = {
+            "idToken": "fake.id.token",
+            "refreshToken": "rt",
+            "expiresIn": "3600",
+        }
+        r = client.post(
+            "/auth/token",
+            json={"email": "dev@example.com", "password": "secret"},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["id_token"] == "fake.id.token"
+        assert data["refresh_token"] == "rt"
+        assert data["token_type"] == "Bearer"
+        m.assert_called_once()
+
+
+def test_auth_token_invalid_password_401(client):
+    from backend_api.firebase_identity_toolkit import IdentityToolkitError
+
+    with patch(
+        "backend_api.routers.auth.sign_in_with_password",
+        side_effect=IdentityToolkitError("INVALID_PASSWORD"),
+    ):
+        r = client.post(
+            "/auth/token",
+            json={"email": "dev@example.com", "password": "wrong"},
+        )
+    assert r.status_code == 401
+    assert r.json()["detail"] == "Invalid email or password"
+
+
+def test_auth_token_admin_only_requires_admin_claim(client):
+    with (
+        patch(
+            "backend_api.routers.auth.sign_in_with_password",
+            return_value={
+                "idToken": "fake.id.token",
+                "refreshToken": "rt",
+                "expiresIn": "3600",
+            },
+        ),
+        patch(
+            "backend_api.routers.auth.auth.verify_id_token",
+            return_value={"uid": "u1", "admin": False},
+        ),
+    ):
+        r = client.post(
+            "/auth/token",
+            json={
+                "email": "dev@example.com",
+                "password": "secret",
+                "admin_only": True,
+            },
+        )
+    assert r.status_code == 403
+
+
+def test_auth_token_admin_only_ok_when_admin(client):
+    with (
+        patch(
+            "backend_api.routers.auth.sign_in_with_password",
+            return_value={
+                "idToken": "fake.id.token",
+                "refreshToken": "rt",
+                "expiresIn": "3600",
+            },
+        ),
+        patch(
+            "backend_api.routers.auth.auth.verify_id_token",
+            return_value={"uid": "u1", "admin": True},
+        ),
+    ):
+        r = client.post(
+            "/auth/token",
+            json={
+                "email": "dev@example.com",
+                "password": "secret",
+                "admin_only": True,
+            },
+        )
+    assert r.status_code == 200
+    assert r.json()["id_token"] == "fake.id.token"
+
+
 def test_auth_me_invalid_token_401():
     documents = [
         {

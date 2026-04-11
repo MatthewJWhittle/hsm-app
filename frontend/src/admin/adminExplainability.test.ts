@@ -39,7 +39,7 @@ describe('explainabilityConfiguredInCatalog', () => {
 
 describe('buildModelMetadataForSubmit', () => {
   it('strips analysis when disabled', () => {
-    const s = buildModelMetadataForSubmit({
+    const m = buildModelMetadataForSubmit({
       base: minimalModel({
         metadata: {
           card: { title: 'T' },
@@ -52,7 +52,7 @@ describe('buildModelMetadataForSubmit', () => {
       explainEnabled: false,
       selectedBands: [],
     })
-    expect(JSON.parse(s!)).toEqual({ card: { title: 'T' } })
+    expect(m).toEqual({ card: { title: 'T' } })
   })
 
   it('sets feature_band_names when enabled', () => {
@@ -60,12 +60,12 @@ describe('buildModelMetadataForSubmit', () => {
       { index: 0, name: 'a' },
       { index: 2, name: 'c' },
     ] as import('../types/project').EnvironmentalBandDefinition[]
-    const s = buildModelMetadataForSubmit({
+    const m = buildModelMetadataForSubmit({
       base: null,
       explainEnabled: true,
       selectedBands: bands,
     })
-    expect(JSON.parse(s!)).toEqual({
+    expect(m).toEqual({
       analysis: { feature_band_names: ['a', 'c'] },
     })
   })
@@ -81,7 +81,7 @@ describe('buildModelMetadataForSubmit', () => {
   })
 
   it('applies cardPatch over base metadata', () => {
-    const s = buildModelMetadataForSubmit({
+    const m = buildModelMetadataForSubmit({
       base: minimalModel({
         metadata: {
           card: { title: 'Old' },
@@ -92,6 +92,6 @@ describe('buildModelMetadataForSubmit', () => {
       selectedBands: [],
       cardPatch: { card: { title: 'New', summary: 'S' }, extras: null },
     })
-    expect(JSON.parse(s!)).toEqual({ card: { title: 'New', summary: 'S' } })
+    expect(m).toEqual({ card: { title: 'New', summary: 'S' } })
   })
 })

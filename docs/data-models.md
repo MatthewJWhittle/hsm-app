@@ -213,10 +213,10 @@ Returned by `GET /models/{id}/point?lng=&lat=` when the user clicks the map or r
 
 ### Modeller checklist (admin uploads)
 
-- **Auth:** Admin `POST`/`PUT` routes require `Authorization: Bearer` with the Firebase ID token and **`admin: true`** custom claim (see OpenAPI **HTTPBearer** on `admin`-tagged operations).
+- **Auth:** Admin `POST`/`PUT` routes require `Authorization: Bearer` with the Firebase ID token and **`admin: true`** custom claim (see OpenAPI **HTTPBearer** on `admin`-tagged operations). Obtain tokens with **`POST /auth/token`** (email/password JSON) instead of calling Identity Toolkit directly; use optional **`admin_only: true`** when you need a token that is guaranteed to carry the admin claim.
 - **Suitability COG:** Must be a valid **Cloud Optimized GeoTIFF** in **EPSG:3857**; the API rejects others with a clear validation message.
 - **Environmental stack:** Shared project environmental COG should align in CRS/extent with how you trained; **`feature_band_names`** must be a subset of **`environmental_band_definitions[].name`** on that project, in training column order.
-- **Multipart `metadata`:** Send as a JSON **string** field in the form (same shape as `ModelMetadata`).
+- **Multipart `metadata`:** Send as a part with **`Content-Type: application/json`** (raw JSON object body; e.g. `FormData.append` with a `Blob` in the browser). The server still accepts a legacy **plain string** field containing the same JSON text.
 
 ---
 

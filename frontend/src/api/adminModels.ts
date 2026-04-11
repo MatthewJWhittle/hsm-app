@@ -1,7 +1,14 @@
-import type { Model } from '../types/model'
+import type { Model, ModelMetadata } from '../types/model'
 import { apiBase } from '../utils/apiBase'
 import { readFetchErrorDetail } from './errors'
 import { parseModel } from './models'
+
+function appendMetadataJsonPart(form: FormData, metadata: ModelMetadata) {
+  form.append(
+    'metadata',
+    new Blob([JSON.stringify(metadata)], { type: 'application/json' }),
+  )
+}
 
 export async function createModel(params: {
   token: string
@@ -9,8 +16,8 @@ export async function createModel(params: {
   species: string
   activity: string
   file: File
-  /** JSON string: ``ModelMetadata`` (e.g. ``card``, ``analysis.feature_band_names``). */
-  metadataJson?: string
+  /** Sent as a multipart part with ``Content-Type: application/json`` (not a double-encoded string). */
+  metadata?: ModelMetadata
   serializedModelFile?: File | null
 }): Promise<Model> {
   const form = new FormData()
@@ -18,7 +25,9 @@ export async function createModel(params: {
   form.append('species', params.species)
   form.append('activity', params.activity)
   form.append('file', params.file)
-  if (params.metadataJson) form.append('metadata', params.metadataJson)
+  if (params.metadata !== undefined) {
+    appendMetadataJsonPart(form, params.metadata)
+  }
   if (params.serializedModelFile) {
     form.append('serialized_model_file', params.serializedModelFile)
   }
@@ -42,18 +51,21 @@ export async function updateModel(params: {
   activity: string
   file?: File | null
   projectId?: string | null
-  metadataJson?: string | null
+  /** When set, replaces catalog metadata; omit to leave unchanged. */
+  metadata?: ModelMetadata | null
   serializedModelFile?: File | null
 }): Promise<Model> {
   const form = new FormData()
   form.append('species', params.species)
   form.append('activity', params.activity)
-  if (params.file) form.append('file', params.file)
+  if (params.file) {
+    form.append('file', params.file)
+  }
   if (params.projectId) {
     form.append('project_id', params.projectId)
   }
-  if (params.metadataJson !== undefined && params.metadataJson !== null) {
-    form.append('metadata', params.metadataJson)
+  if (params.metadata !== undefined && params.metadata !== null) {
+    appendMetadataJsonPart(form, params.metadata)
   }
   if (params.serializedModelFile) {
     form.append('serialized_model_file', params.serializedModelFile)
