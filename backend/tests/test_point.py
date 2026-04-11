@@ -273,7 +273,7 @@ def test_point_returns_raw_environmental_values(tmp_path):
             "artifact_root": str(tmp_path),
             "suitability_cog_path": "suitability_cog.tif",
             "project_id": project_id,
-            "metadata": {"analysis": {"feature_band_indices": [0, 2]}},
+            "metadata": {"analysis": {"feature_band_names": ["a", "c"]}},
         }
     ]
     mock_client = mock_firestore_client_for_documents(documents, project_documents=project_documents)
@@ -300,7 +300,7 @@ def test_point_returns_raw_environmental_values(tmp_path):
 
 
 def test_point_drivers_empty_when_not_configured(point_client):
-    """No feature_band_indices → drivers empty (existing behaviour)."""
+    """No feature_band_names → drivers empty (existing behaviour)."""
     client, bounds = point_client
     lng, lat = _center_wgs84(bounds)
     r = client.get(
@@ -312,7 +312,7 @@ def test_point_drivers_empty_when_not_configured(point_client):
 
 
 def test_point_env_raster_missing_503_when_drivers_configured(tmp_path):
-    """feature_band_indices set but environmental file missing → 503 after suitability OK."""
+    """feature_band_names set but environmental file missing → 503 after suitability OK."""
     bounds = (-200_000.0, 7_000_000.0, -199_000.0, 7_000_500.0)
     cog = tmp_path / "suitability_cog.tif"
     _write_test_cog(cog, bounds, fill=0.5)
@@ -323,6 +323,9 @@ def test_point_env_raster_missing_503_when_drivers_configured(tmp_path):
             "name": "P",
             "driver_artifact_root": str(tmp_path / "missing"),
             "driver_cog_path": "environmental_cog.tif",
+            "environmental_band_definitions": [
+                {"index": 0, "name": "only", "label": "Only"},
+            ],
         }
     ]
     documents = [
@@ -333,7 +336,7 @@ def test_point_env_raster_missing_503_when_drivers_configured(tmp_path):
             "artifact_root": str(tmp_path),
             "suitability_cog_path": "suitability_cog.tif",
             "project_id": project_id,
-            "metadata": {"analysis": {"feature_band_indices": [0]}},
+            "metadata": {"analysis": {"feature_band_names": ["only"]}},
         }
     ]
     mock_client = mock_firestore_client_for_documents(documents, project_documents=project_documents)
@@ -393,7 +396,7 @@ def test_point_returns_shap_influence(tmp_path):
             "project_id": project_id,
             "metadata": {
                 "analysis": {
-                    "feature_band_indices": [0, 1],
+                    "feature_band_names": ["f0", "f1"],
                     "serialized_model_path": "mdl.pkl",
                 }
             },

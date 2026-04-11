@@ -1,10 +1,15 @@
-"""Validate model band indices against the catalog project's environmental manifest."""
+"""Validate model feature band names against the catalog project's environmental manifest."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from backend_api.model_effective_config import get_feature_band_indices
+from fastapi import HTTPException
+
+from backend_api.feature_band_names import (
+    FeatureBandNamesValidationError,
+    resolve_feature_band_names_to_indices,
+)
 from backend_api.schemas import Model
 
 if TYPE_CHECKING:
@@ -31,30 +36,38 @@ def resolve_env_cog_path_from_parts(
     return f"{root}/{rel}"
 
 
-def validate_model_bands_against_project_manifest(model: Model, catalog: "CatalogService") -> None:
+def validate_model_feature_bands_for_admin(model: Model, catalog: "CatalogService") -> None:
     """
-    If the model uses a project environmental stack and lists driver bands, require a
-    project band manifest and indices that exist in it.
+    When ``metadata.analysis.feature_band_names`` is set, ensure names resolve against the
+    project manifest. Raises ``HTTPException`` 400 with structured detail when invalid.
 
     Raises:
-        ValueError: for HTTP 422 on admin save.
+        ValueError: for HTTP 422 on admin save (missing manifest when COG exists, etc.).
     """
-    indices = get_feature_band_indices(model)
-    if not indices or not model.project_id:
+    analysis = model.metadata.analysis if model.metadata else None
+    names = analysis.feature_band_names if analysis else None
+    if not names:
         return
+    if not model.project_id:
+        raise ValueError("feature_band_names requires project_id")
     proj = catalog.get_project(model.project_id)
     if proj is None:
         return
-    if not proj.driver_cog_path:
-        return
-    if not proj.environmental_band_definitions:
+    if proj.driver_cog_path and not proj.environmental_band_definitions:
         raise ValueError(
             "This project has an environmental COG but no band definitions yet. "
             "Edit the project in Admin and save band names for each raster band."
         )
-    by_idx = {d.index: d for d in proj.environmental_band_definitions}
-    for idx in indices:
-        if idx not in by_idx:
-            raise ValueError(
-                f"driver_band_index {idx} is not in the project's environmental band definitions"
-            )
+    if not proj.environmental_band_definitions:
+        raise ValueError(
+            "feature_band_names requires project environmental_band_definitions on the parent project"
+        )
+    try:
+        resolve_feature_band_names_to_indices(names, proj.environmental_band_definitions)
+    except FeatureBandNamesValidationError as e:
+        raise HTTPException(status_code=400, detail=e.detail) from e
+
+
+def validate_model_bands_against_project_manifest(model: Model, catalog: "CatalogService") -> None:
+    """Backward-compatible alias for :func:`validate_model_feature_bands_for_admin`."""
+    validate_model_feature_bands_for_admin(model, catalog)

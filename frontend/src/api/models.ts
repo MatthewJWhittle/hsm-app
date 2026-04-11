@@ -46,14 +46,14 @@ function parseModelAnalysis(value: unknown): ModelAnalysis | null {
   if (value === undefined || value === null) return null
   if (!isRecord(value)) return null
   const out: ModelAnalysis = {}
-  if (value.feature_band_indices !== undefined) {
-    if (value.feature_band_indices === null) {
-      out.feature_band_indices = null
+  if (value.feature_band_names !== undefined) {
+    if (value.feature_band_names === null) {
+      out.feature_band_names = null
     } else if (
-      Array.isArray(value.feature_band_indices) &&
-      value.feature_band_indices.every((x) => typeof x === 'number')
+      Array.isArray(value.feature_band_names) &&
+      value.feature_band_names.every((x) => typeof x === 'string')
     ) {
-      out.feature_band_indices = value.feature_band_indices
+      out.feature_band_names = value.feature_band_names
     } else {
       return null
     }

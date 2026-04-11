@@ -103,6 +103,16 @@ def validate_band_definitions_match_raster(
             msg += f"; unexpected indices: {extra!r}"
         raise ValueError(msg)
 
+    seen_lower: set[str] = set()
+    for d in defs:
+        k = d.name.lower()
+        if k in seen_lower:
+            raise ValueError(
+                f"duplicate environmental band machine name {d.name!r} "
+                "(names must be unique per project, case-insensitive)"
+            )
+        seen_lower.add(k)
+
 
 def parse_band_definitions_json(raw: str | None) -> list[EnvironmentalBandDefinition] | None:
     """Parse optional JSON array from multipart form; raise ValueError on bad input."""

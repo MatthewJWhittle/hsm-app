@@ -14,12 +14,12 @@ const minimalModel = (over: Partial<Model>): Model => ({
 })
 
 describe('explainabilityConfiguredInCatalog', () => {
-  it('returns true when serialized model path and feature indices are set', () => {
+  it('returns true when serialized model path and feature names are set', () => {
     const m = minimalModel({
       metadata: {
         analysis: {
           serialized_model_path: 'serialized_model.pkl',
-          feature_band_indices: [0, 1],
+          feature_band_names: ['a', 'b'],
         },
       },
     })
@@ -30,7 +30,7 @@ describe('explainabilityConfiguredInCatalog', () => {
     expect(
       explainabilityConfiguredInCatalog(
         minimalModel({
-          metadata: { analysis: { feature_band_indices: [0] } },
+          metadata: { analysis: { feature_band_names: ['a'] } },
         }),
       ),
     ).toBe(false)
@@ -45,7 +45,7 @@ describe('buildModelMetadataForSubmit', () => {
           card: { title: 'T' },
           analysis: {
             serialized_model_path: 'm.pkl',
-            feature_band_indices: [0, 1],
+            feature_band_names: ['a', 'b'],
           },
         },
       }),
@@ -55,7 +55,7 @@ describe('buildModelMetadataForSubmit', () => {
     expect(JSON.parse(s!)).toEqual({ card: { title: 'T' } })
   })
 
-  it('sets feature_band_indices when enabled', () => {
+  it('sets feature_band_names when enabled', () => {
     const bands = [
       { index: 0, name: 'a' },
       { index: 2, name: 'c' },
@@ -66,7 +66,7 @@ describe('buildModelMetadataForSubmit', () => {
       selectedBands: bands,
     })
     expect(JSON.parse(s!)).toEqual({
-      analysis: { feature_band_indices: [0, 2] },
+      analysis: { feature_band_names: ['a', 'c'] },
     })
   })
 
@@ -85,7 +85,7 @@ describe('buildModelMetadataForSubmit', () => {
       base: minimalModel({
         metadata: {
           card: { title: 'Old' },
-          analysis: { feature_band_indices: [0], serialized_model_path: 'm.pkl' },
+          analysis: { feature_band_names: ['x'], serialized_model_path: 'm.pkl' },
         },
       }),
       explainEnabled: false,

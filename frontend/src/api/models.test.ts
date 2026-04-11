@@ -39,13 +39,13 @@ describe('parseModel', () => {
       ...minimalValid,
       metadata: {
         analysis: {
-          feature_band_indices: [1, 2, 3],
+          feature_band_names: ['a', 'b', 'c'],
           serialized_model_path: 'serialized_model.pkl',
         },
         card: { title: 'My layer' },
       },
     })
-    expect(m!.metadata?.analysis?.feature_band_indices).toEqual([1, 2, 3])
+    expect(m!.metadata?.analysis?.feature_band_names).toEqual(['a', 'b', 'c'])
     expect(m!.metadata?.analysis?.serialized_model_path).toBe('serialized_model.pkl')
     expect(m!.metadata?.card?.title).toBe('My layer')
   })
@@ -55,11 +55,11 @@ describe('parseModel', () => {
     expect(m!.metadata).toBeNull()
   })
 
-  it('rejects invalid metadata.analysis.feature_band_indices', () => {
+  it('rejects invalid metadata.analysis.feature_band_names', () => {
     expect(
       parseModel({
         ...minimalValid,
-        metadata: { analysis: { feature_band_indices: [1, 'x'] } },
+        metadata: { analysis: { feature_band_names: [1, 'x'] } },
       }),
     ).toBeNull()
   })

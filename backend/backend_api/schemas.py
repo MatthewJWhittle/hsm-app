@@ -30,9 +30,14 @@ class ModelCard(BaseModel):
 class ModelAnalysis(BaseModel):
     """Training / inference inputs: band subset, serialized estimator, optional overrides."""
 
-    feature_band_indices: list[int] | None = Field(
+    model_config = ConfigDict(extra="ignore")
+
+    feature_band_names: list[str] | None = Field(
         default=None,
-        description="0-based indices into the project environmental COG (feature order).",
+        description=(
+            "Ordered machine names matching ``environmental_band_definitions[].name`` on the parent "
+            "project (same order as the estimator feature matrix). The server resolves these to band indices."
+        ),
     )
     serialized_model_path: str | None = Field(
         default=None,
@@ -98,8 +103,7 @@ class Model(BaseModel):
             data.pop("driver_config", None)
         else:
             analysis: dict[str, Any] = {}
-            if data.get("driver_band_indices") is not None:
-                analysis["feature_band_indices"] = data["driver_band_indices"]
+            # Legacy driver_band_indices removed — clients must send metadata.analysis.feature_band_names.
             dc = data.get("driver_config")
             if isinstance(dc, dict):
                 mp = dc.get("explainability_model_path")

@@ -85,13 +85,20 @@ def resolve_environmental_cog_path_for_model(
 
 def validate_driver_band_indices_for_model(model: Model, catalog: "CatalogService") -> None:
     """
-    If the model lists driver bands and an environmental COG path resolves and exists,
-    ensure every index is in range for that file (0-based band index < band count).
+    If the model lists ``feature_band_names`` and an environmental COG path resolves and exists,
+    ensure resolved indices are in range for that file (0-based band index < band count).
 
     Raises:
-        ValueError: indices out of range (use for HTTP 422).
+        ValueError: names cannot be resolved or indices out of range (use for HTTP 422 on admin save).
     """
-    indices = get_feature_band_indices(model)
+    from backend_api.feature_band_names import FeatureBandNamesValidationError
+
+    try:
+        indices = get_feature_band_indices(model, catalog)
+    except FeatureBandNamesValidationError as e:
+        raise ValueError(
+            "feature_band_names do not match the project environmental manifest"
+        ) from e
     if not indices:
         return
     path = resolve_environmental_cog_path_for_model(model, catalog)
@@ -102,11 +109,11 @@ def validate_driver_band_indices_for_model(model: Model, catalog: "CatalogServic
         return
     mx = max(indices)
     if min(indices) < 0:
-        raise ValueError("feature_band_indices must be non-negative")
+        raise ValueError("resolved environmental band indices must be non-negative")
     with rasterio.open(p) as src:
         if mx >= src.count:
             raise ValueError(
-                f"feature_band_indices: maximum index {mx} is out of range for "
+                f"resolved band index {mx} is out of range for "
                 f"environmental raster with {src.count} band(s) (0-based indices)"
             )
 
@@ -215,17 +222,20 @@ def sample_environmental_bands_at_point(
 
 
 def build_raw_environmental_values(
-    model: Model, values: list[float], dc: dict
+    model: Model,
+    values: list[float],
+    dc: dict,
+    *,
+    band_indices_0based: list[int],
 ) -> list[RawEnvironmentalValue]:
     """Labels for sampled bands; prefers ``band_labels`` / ``band_names``, else ``feature_names``."""
-    indices = get_feature_band_indices(model)
     names = dc.get("band_labels") or dc.get("band_names")
     if not (isinstance(names, list) and len(names) == len(values)):
         fn = dc.get("feature_names")
         if isinstance(fn, list) and len(fn) == len(values):
             names = [str(x) for x in fn]
         else:
-            names = [f"band_{indices[i]}" for i in range(len(values))]
+            names = [f"band_{band_indices_0based[i]}" for i in range(len(values))]
     else:
         names = [str(x) for x in names]
     units = dc.get("band_units")
@@ -254,6 +264,7 @@ def inspect_point(
     catalog: "CatalogService | None" = None,
 ) -> PointInspection:
     """Sample suitability; optional raw env values and SHAP influence when configured."""
+    from backend_api.feature_band_names import FeatureBandNamesValidationError
     from backend_api.point_explainability import (
         compute_shap_driver_variables,
         explainability_configured,
@@ -265,15 +276,30 @@ def inspect_point(
     drivers_out: list[DriverVariable] | None = None  # None → serialize as empty list
     raw_out: list[RawEnvironmentalValue] | None = None
 
-    indices = get_feature_band_indices(model)
+    indices: list[int] = []
+    if catalog is not None:
+        try:
+            indices = get_feature_band_indices(model, catalog)
+        except FeatureBandNamesValidationError:
+            raise PointSamplingError(
+                "feature_band_names do not match the project environmental manifest"
+            ) from None
+
     if catalog is not None and indices:
         env_path = resolve_environmental_cog_path_for_model(model, catalog)
         if env_path is not None:
-            dc = get_effective_driver_config(model, catalog)
+            try:
+                dc = get_effective_driver_config(model, catalog)
+            except FeatureBandNamesValidationError:
+                raise PointSamplingError(
+                    "feature_band_names do not match the project environmental manifest"
+                ) from None
             band_values = sample_environmental_bands_at_point(
                 env_path, lng, lat, indices
             )
-            raw_out = build_raw_environmental_values(model, band_values, dc)
+            raw_out = build_raw_environmental_values(
+                model, band_values, dc, band_indices_0based=indices
+            )
             if explainability_configured(model, catalog):
                 fnames = dc.get("feature_names")
                 if not (
@@ -283,7 +309,7 @@ def inspect_point(
                 ):
                     raise PointSamplingError(
                         "explainability requires feature_names with the same length "
-                        "and order as feature_band_indices"
+                        "and order as feature_band_names"
                     )
                 import pandas as pd
 

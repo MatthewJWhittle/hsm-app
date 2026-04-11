@@ -148,7 +148,7 @@ def test_post_models_with_explainability_uploads(catalog_docs):
                     "species": "New species",
                     "activity": "Flight",
                     "metadata": json.dumps(
-                        {"analysis": {"feature_band_indices": [0, 1]}}
+                        {"analysis": {"feature_band_names": ["a", "b"]}}
                     ),
                 },
                 files={
@@ -163,11 +163,41 @@ def test_post_models_with_explainability_uploads(catalog_docs):
     assert r.status_code == 201
     body = r.json()
     assert body["metadata"]["analysis"]["serialized_model_path"] == SERIALIZED_MODEL_FILENAME
-    assert body["metadata"]["analysis"]["feature_band_indices"] == [0, 1]
+    assert body["metadata"]["analysis"]["feature_band_names"] == ["a", "b"]
     mid = body["id"]
     mock_storage.write_model_artifact.assert_any_call(
         mid, SERIALIZED_MODEL_FILENAME, b"pk"
     )
+
+
+def test_post_models_unknown_feature_band_names_400(catalog_docs):
+    mock_storage = MagicMock()
+    mock_storage.write_suitability_cog.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
+    with _admin_client(
+        catalog_docs,
+        mock_storage,
+        project_documents=[SAMPLE_PROJECT],
+    ) as c:
+        r = c.post(
+            "/models",
+            headers={"Authorization": "Bearer fake.token"},
+            data={
+                "project_id": "proj-1",
+                "species": "Sp",
+                "activity": "Act",
+                "metadata": json.dumps(
+                    {"analysis": {"feature_band_names": ["a", "not_in_manifest"]}}
+                ),
+            },
+            files={"file": ("cog.tif", BytesIO(b"dummy"), "image/tiff")},
+        )
+    assert r.status_code == 400
+    detail = r.json()["detail"]
+    assert detail["error"] == "invalid_feature_band_names"
+    assert "not_in_manifest" in detail["unknown_feature_band_names"]
 
 
 def test_post_models_201_creates_model(catalog_docs):

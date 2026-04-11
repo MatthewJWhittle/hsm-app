@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 
 from backend_api.firebase_admin_app import init_firebase_admin
 from backend_api.routers import auth, models, projects, root
@@ -63,6 +64,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth.router)
     app.include_router(projects.router)
     app.include_router(models.router)
+
+    if settings.openapi_enabled:
+
+        def custom_openapi() -> dict:
+            if app.openapi_schema:
+                return app.openapi_schema
+            openapi_schema = get_openapi(
+                title=app.title,
+                version=app.version,
+                openapi_version=app.openapi_version,
+                description=str(app.description),
+                routes=app.routes,
+            )
+            openapi_schema.setdefault("components", {}).setdefault("securitySchemes", {})[
+                "HTTPBearer"
+            ] = {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": (
+                    "Firebase ID token in `Authorization: Bearer <token>`. "
+                    "Required for routes tagged `admin`; optional on public catalog reads."
+                ),
+            }
+            for path_item in openapi_schema.get("paths", {}).values():
+                for op in path_item.values():
+                    if isinstance(op, dict) and "admin" in op.get("tags", []):
+                        op["security"] = [{"HTTPBearer": []}]
+            app.openapi_schema = openapi_schema
+            return app.openapi_schema
+
+        app.openapi = custom_openapi  # type: ignore[method-assign]
+
     return app
 
 

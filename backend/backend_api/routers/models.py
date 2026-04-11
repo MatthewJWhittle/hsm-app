@@ -41,7 +41,7 @@ from backend_api.point_sampling import (
     inspect_point,
     validate_driver_band_indices_for_model,
 )
-from backend_api.project_manifest import validate_model_bands_against_project_manifest
+from backend_api.project_manifest import validate_model_feature_bands_for_admin
 from backend_api.schemas import Model, ModelAnalysis, ModelMetadata, PointInspection
 from backend_api.schemas_admin import parse_metadata_form
 from backend_api.routers.catalog_upload_utils import (
@@ -138,9 +138,10 @@ async def get_model_point(
     """
     Suitability value at a WGS84 point (band 1 of the model COG).
 
-    When the model has ``metadata.analysis.feature_band_indices`` and a resolvable environmental COG,
-    returns ``raw_environmental_values`` at the point. When a serialized sklearn model and project
-    background sample are configured, returns SHAP-style influence in ``drivers``.
+    When the model has ``metadata.analysis.feature_band_names`` (resolved via the project manifest)
+    and a resolvable environmental COG, returns ``raw_environmental_values`` at the point. When a
+    serialized sklearn model and project background sample are configured, returns SHAP-style
+    influence in ``drivers``.
     """
 
     def _run() -> PointInspection:
@@ -229,8 +230,9 @@ async def create_model(
         metadata=meta_in,
     )
 
+    validate_model_feature_bands_for_admin(model, catalog)
+
     def _validate_and_enrich() -> Model:
-        validate_model_bands_against_project_manifest(model, catalog)
         validate_driver_band_indices_for_model(model, catalog)
         validate_explainability_artifacts_for_model(model, catalog)
         return model
@@ -344,8 +346,9 @@ async def update_model(
         metadata=new_metadata,
     )
 
+    validate_model_feature_bands_for_admin(model, catalog)
+
     def _validate_and_enrich() -> Model:
-        validate_model_bands_against_project_manifest(model, catalog)
         validate_driver_band_indices_for_model(model, catalog)
         validate_explainability_artifacts_for_model(model, catalog)
         return model

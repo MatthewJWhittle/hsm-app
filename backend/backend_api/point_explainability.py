@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import shap
 
+from backend_api.feature_band_names import FeatureBandNamesValidationError
 from backend_api.model_effective_config import get_effective_driver_config, get_feature_band_indices
 from backend_api.point_sampling import PointSamplingError
 from backend_api.schemas import DriverVariable, Model
@@ -186,12 +187,17 @@ def validate_explainability_artifacts_for_model(
     """
     if not explainability_configured(model, catalog):
         return
-    indices = get_feature_band_indices(model)
+    try:
+        indices = get_feature_band_indices(model, catalog)
+    except FeatureBandNamesValidationError as e:
+        raise ValueError(
+            "feature_band_names do not match the project environmental manifest"
+        ) from e
     dc = get_effective_driver_config(model, catalog)
     fnames = dc.get("feature_names")
     if not isinstance(fnames, list) or len(fnames) != len(indices):
         raise ValueError(
-            "explainability requires feature_names with the same length as feature_band_indices"
+            "explainability requires feature_names with the same length as feature_band_names"
         )
     mp = dc.get("explainability_model_path")
     bp = dc.get("explainability_background_path")

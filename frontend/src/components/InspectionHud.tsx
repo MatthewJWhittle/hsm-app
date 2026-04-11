@@ -20,7 +20,8 @@ import type { DriverVariable, PointInspection as PointInspectionData } from '../
 export interface InspectionTechnicalDetails {
   modelId: string
   projectId?: string | null
-  driverBandIndices?: number[] | null
+  /** Ordered ``metadata.analysis.feature_band_names`` (machine names). */
+  driverFeatureBandNames?: string[] | null
 }
 
 interface InspectionHudProps {
@@ -502,8 +503,9 @@ export function InspectionHud({
               </Typography>
               <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5, mt: 0.5 }}>
                 <strong>Environmental bands used</strong>{' '}
-                {technicalDetails.driverBandIndices != null && technicalDetails.driverBandIndices.length > 0
-                  ? `[${technicalDetails.driverBandIndices.join(', ')}]`
+                {technicalDetails.driverFeatureBandNames != null &&
+                technicalDetails.driverFeatureBandNames.length > 0
+                  ? `[${technicalDetails.driverFeatureBandNames.join(', ')}]`
                   : '—'}
               </Typography>
             </Box>

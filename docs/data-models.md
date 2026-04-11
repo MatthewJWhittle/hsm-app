@@ -28,7 +28,7 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 |---------|---------|
 | `card` | Human-facing **model card** (Hugging Face–style): optional `title`, `version` (revision label, e.g. date or run id), `summary`, `metrics`, `spatial_resolution_m`, `training_period`, `evaluation_notes`, `license`, `citation`. |
 | `extras` | Optional `Record<string, string>` for custom key/value labels. |
-| `analysis` | Training / point-pipeline inputs: **`feature_band_indices`** (0-based indices into the project environmental COG, feature order), **`serialized_model_path`** (pickled sklearn estimator **relative to `artifact_root`**, e.g. `serialized_model.pkl`), **`positive_class_index`** (for `predict_proba`; default `1` at runtime if omitted), optional **`driver_cog_path`** (per-model environmental COG override relative to `artifact_root`). |
+| `analysis` | Training / point-pipeline inputs: **`feature_band_names`** — ordered list of **machine names** matching `environmental_band_definitions[].name` on the parent project (same order as the estimator’s feature matrix). The server resolves names to band indices. Also **`serialized_model_path`** (pickled sklearn estimator **relative to `artifact_root`**, e.g. `serialized_model.pkl`), **`positive_class_index`** (for `predict_proba`; default `1` at runtime if omitted), optional **`driver_cog_path`** (per-model environmental COG override relative to `artifact_root`). Invalid or duplicate names on create/update return **400** with `unknown_feature_band_names` / `duplicate_feature_band_names`. |
 
 Admin `POST/PUT /models` sends `metadata` as a **JSON string** in the multipart form (same object shape). Optional multipart field **`serialized_model_file`** writes the pickle to the model folder and sets `metadata.analysis.serialized_model_path` to the fixed filename `serialized_model.pkl`.
 
@@ -38,13 +38,13 @@ For `GET /models/{id}/point`, the backend **does not** read a stored `driver_con
 
 | Key (runtime) | Source |
 |---------------|--------|
-| `feature_names`, `band_labels`, optional `band_descriptions` | Project manifest **`environmental_band_definitions`**, in the order of **`metadata.analysis.feature_band_indices`**. |
+| `feature_names`, `band_labels`, optional `band_descriptions` | Project manifest **`environmental_band_definitions`**, in the order of **`metadata.analysis.feature_band_names`** (after name→index resolution). |
 | `driver_cog_path` | `metadata.analysis.driver_cog_path`, or the project’s environmental COG when unset. |
 | `explainability_model_path` | `metadata.analysis.serialized_model_path` (relative to `artifact_root`). |
 | `explainability_positive_class` | `metadata.analysis.positive_class_index` (default `1`). |
 | `explainability_background_path` / `explainability_background_artifact_root` | Project shared background Parquet when configured. |
 
-Validation on save checks band indices against the environmental raster when possible and, when explainability is configured, that artefacts exist and feature count matches the selected bands.
+Validation on save resolves **`feature_band_names`** against the project manifest, checks resolved indices against the environmental raster band count when the file exists, and (when explainability is configured) that artefacts exist and feature count matches the selected bands.
 
 ### Catalog project (shared environmental stack)
 
@@ -58,7 +58,7 @@ Validation on save checks band indices against the environmental raster when pos
 | `allowed_uids` | string[] | When `visibility` is `private`, these uids may read the project and its models (via optional `Authorization: Bearer` on `GET /projects` and `GET /models`). |
 | `driver_artifact_root` | string | Storage prefix for the project’s shared multi-band environmental COG. |
 | `driver_cog_path` | string | Filename or path relative to `driver_artifact_root` (e.g. `environmental_cog.tif`). |
-| `environmental_band_definitions` | `{ index, name, label }[]`? | **Optional.** One entry per raster band in the environmental COG: **0-based `index`**, machine **`name`**, and human **`label`**. Populated when the COG is uploaded (defaults like `band_0`, …) and editable in the admin project form. This is the **single manifest** for band identity; at **point-inspection time** the API resolves `feature_names` / `band_labels` for each model from **`metadata.analysis.feature_band_indices`** and this list (see **Effective driver config** above). |
+| `environmental_band_definitions` | `{ index, name, label }[]`? | **Optional.** One entry per raster band in the environmental COG: **0-based `index`** (band order in the file), machine **`name`** (unique per project, case-insensitive), and human **`label`**. Populated when the COG is uploaded (defaults like `band_0`, …) and editable in the admin project form. **`name`** is the join key for **`metadata.analysis.feature_band_names`** on models. At point-inspection time the API resolves those names to indices and joins labels from this list (see **Effective driver config** above). |
 | `explainability_background_path` | string? | **Optional.** `explainability_background.parquet` under `driver_artifact_root`, built automatically when the environmental COG is uploaded (sampled pixels for SHAP; shared by all models in the project). |
 
 **Admin — replace the full band manifest:** `PATCH /projects/{project_id}/environmental-band-definitions` with a JSON **array** body (same shape as `environmental_band_definitions`, one object per band, indices `0..n-1`). Requires an existing environmental COG on the server; the band count must match the raster.
@@ -143,9 +143,16 @@ Drivers must be available to the API for point inspection. Each model is tied to
 
 - **Single multi-band COG:** One COG contains all driver variables (e.g. one band per feature). The model document specifies which **band names or feature ids** belong to this model. For `GET /models/{id}/point`, the API reads that subset at the requested location and returns DriverVariables. The “environment” (feature set) and the model are linked via this subset.
 - **Per-model driver raster or lookup:** Each model has its own driver dataset (path in **`metadata.analysis.driver_cog_path`**); no shared COG.
-- **Shared multi-band environmental stack (common case for scaling):** A **single raster** (or stack) of environmental variables may be **shared** — e.g. scoped to a **project** or **reused across projects** — while each **model** still references only the **subset of bands/features** it uses via **`metadata.analysis.feature_band_indices`**. Suitability outputs remain **per-model** under each model’s artifact prefix; driver **inputs** can point at shared storage without duplicating rasters per model.
+- **Shared multi-band environmental stack (common case for scaling):** A **single raster** (or stack) of environmental variables may be **shared** — e.g. scoped to a **catalog project** — while each **model** references only the **subset of features** it uses via **`metadata.analysis.feature_band_names`** (ordered machine names). Suitability outputs remain **per-model** under each model’s artifact prefix; driver **inputs** can point at shared storage without duplicating rasters per model.
 
-The data model should record enough for the API to resolve “this model → these features at this point” (e.g. `driver_cog_path` + `feature_ids` or `band_names`). Exact shape can be refined when driver data format is fixed. See [Admin scope decisions](admin-scope-decisions.md) for steering.
+The data model records **`feature_band_names`** so the API can resolve “this model → these features at this point” without clients sending raster band indices. See [Admin scope decisions](admin-scope-decisions.md) for steering.
+
+### `GET /models/{id}/point` — feature vector and explainability
+
+1. Read suitability from the **model’s** suitability COG (band 1), Web Mercator.
+2. If **`metadata.analysis.feature_band_names`** is set and the parent project has an environmental COG + manifest: resolve each name to a band index; sample those bands at the click from the **project** environmental COG (same CRS/extent contract as upload validation).
+3. **`raw_environmental_values`** lists those samples with labels from the manifest.
+4. If **`metadata.analysis.serialized_model_path`** is set **and** the project has **`explainability_background.parquet`**, the server loads the pickle (scikit-learn), builds a one-row **pandas** `DataFrame` with columns = resolved **machine** `feature_names`, runs **permutation SHAP** against the background sample, and fills **`drivers`**. Precomputed SHAP artefacts from external pipelines are **not** ingested; influence is always computed on demand from the stored estimator + background + band list.
 
 ### Catalog storage (target shape)
 
@@ -203,6 +210,13 @@ Returned by `GET /models/{id}/point?lng=&lat=` when the user clicks the map or r
 | `magnitude` | number? | Signed contribution (e.g. SHAP value). |
 
 **MVP:** PointInspection with `value`, optional `drivers` (influence), optional `raw_environmental_values`.
+
+### Modeller checklist (admin uploads)
+
+- **Auth:** Admin `POST`/`PUT` routes require `Authorization: Bearer` with the Firebase ID token and **`admin: true`** custom claim (see OpenAPI **HTTPBearer** on `admin`-tagged operations).
+- **Suitability COG:** Must be a valid **Cloud Optimized GeoTIFF** in **EPSG:3857**; the API rejects others with a clear validation message.
+- **Environmental stack:** Shared project environmental COG should align in CRS/extent with how you trained; **`feature_band_names`** must be a subset of **`environmental_band_definitions[].name`** on that project, in training column order.
+- **Multipart `metadata`:** Send as a JSON **string** field in the form (same shape as `ModelMetadata`).
 
 ---
 

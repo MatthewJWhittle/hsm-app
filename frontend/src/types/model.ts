@@ -13,8 +13,11 @@ export interface ModelCard {
 }
 
 export interface ModelAnalysis {
-  /** 0-based indices into the project environmental COG (feature order). */
-  feature_band_indices?: number[] | null
+  /**
+   * Ordered machine names matching the parent project’s environmental_band_definitions.name
+   * (same order as the estimator’s feature matrix). The server resolves these to band indices.
+   */
+  feature_band_names?: string[] | null
   /** Path to pickled sklearn estimator relative to artifact_root. */
   serialized_model_path?: string | null
   positive_class_index?: number | null
@@ -41,8 +44,8 @@ export interface Model {
   metadata?: ModelMetadata | null
 }
 
-export function getFeatureBandIndices(m: Model): number[] | null {
-  const idx = m.metadata?.analysis?.feature_band_indices
-  if (!idx?.length) return null
-  return idx
+export function getFeatureBandNames(m: Model): string[] | null {
+  const names = m.metadata?.analysis?.feature_band_names
+  if (!names?.length) return null
+  return names
 }

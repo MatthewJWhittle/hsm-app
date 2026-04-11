@@ -33,11 +33,11 @@ def test_parse_metadata_none():
 
 
 def test_parse_metadata_round_trip():
-    raw = '{"card":{"title":"T","summary":"S"},"analysis":{"feature_band_indices":[0,1]}}'
+    raw = '{"card":{"title":"T","summary":"S"},"analysis":{"feature_band_names":["a","b"]}}'
     m = parse_metadata_form(raw)
     assert isinstance(m, ModelMetadata)
     assert m.card is not None and m.card.title == "T"
-    assert m.analysis is not None and m.analysis.feature_band_indices == [0, 1]
+    assert m.analysis is not None and m.analysis.feature_band_names == ["a", "b"]
 
 
 def test_parse_metadata_not_object():

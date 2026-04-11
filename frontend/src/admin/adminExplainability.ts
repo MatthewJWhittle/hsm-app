@@ -5,13 +5,13 @@ import type { Model, ModelCard, ModelMetadata } from '../types/model'
 export function explainabilityConfiguredInCatalog(model: Model): boolean {
   const a = model.metadata?.analysis
   if (!a?.serialized_model_path?.trim()) return false
-  if (!a.feature_band_indices?.length) return false
+  if (!a.feature_band_names?.length) return false
   return true
 }
 
 /**
  * Build ``metadata`` JSON for POST/PUT /models. Strips analysis fields when explainability is off;
- * sets ``feature_band_indices`` from the current band selection when on.
+ * sets ``feature_band_names`` from the current band selection when on.
  * When ``cardPatch`` is set, it replaces ``metadata.card`` / ``metadata.extras`` from the form (null = omit).
  */
 export function buildModelMetadataForSubmit(params: {
@@ -50,7 +50,7 @@ export function buildModelMetadataForSubmit(params: {
 
   meta.analysis = {
     ...meta.analysis,
-    feature_band_indices: params.selectedBands.map((b) => b.index),
+    feature_band_names: params.selectedBands.map((b) => b.name),
   }
   return JSON.stringify(meta)
 }

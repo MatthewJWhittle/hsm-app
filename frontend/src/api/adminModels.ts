@@ -9,7 +9,7 @@ export async function createModel(params: {
   species: string
   activity: string
   file: File
-  /** JSON string: ``ModelMetadata`` (e.g. ``card``, ``analysis.feature_band_indices``). */
+  /** JSON string: ``ModelMetadata`` (e.g. ``card``, ``analysis.feature_band_names``). */
   metadataJson?: string
   serializedModelFile?: File | null
 }): Promise<Model> {

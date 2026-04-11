@@ -16,10 +16,10 @@ import { fetchModelCatalog } from '../api/catalog'
 import { fetchProjectCatalog } from '../api/projects'
 import { useAuth } from '../auth/useAuth'
 import { Navbar } from '../components/Navbar'
-import { type Model, getFeatureBandIndices } from '../types/model'
+import { type Model, getFeatureBandNames } from '../types/model'
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 
-import { bandsFromDriverIndices, environmentalBandsForProject } from './adminBandSelect'
+import { bandsFromFeatureNames, environmentalBandsForProject } from './adminBandSelect'
 import { buildModelMetadataForSubmit, explainabilityConfiguredInCatalog } from './adminExplainability'
 import { emptyModelCardDraft, modelToCardDraft, parseModelCardDraft, type ModelCardDraft } from './modelCardDraft'
 import { AdminCatalogHeader } from './AdminCatalogHeader'
@@ -401,7 +401,7 @@ export function AdminPage() {
       setEditProjectId(id)
       if (editModel) {
         const defs = id ? environmentalBandsForProject(id, projects) : null
-        setEditSelectedEnvBands(bandsFromDriverIndices(getFeatureBandIndices(editModel) ?? undefined, defs))
+        setEditSelectedEnvBands(bandsFromFeatureNames(getFeatureBandNames(editModel) ?? undefined, defs))
       }
     },
     [editModel, projects],
@@ -541,7 +541,7 @@ export function AdminPage() {
     setEditActivity(m.activity)
     setEditProjectId(m.project_id ?? '')
     const defs = m.project_id ? environmentalBandsForProject(m.project_id, projects) : null
-    setEditSelectedEnvBands(bandsFromDriverIndices(getFeatureBandIndices(m) ?? undefined, defs))
+    setEditSelectedEnvBands(bandsFromFeatureNames(getFeatureBandNames(m) ?? undefined, defs))
     setEditExplainEnabled(explainabilityConfiguredInCatalog(m))
     setEditExplainModelFile(null)
     setEditFile(null)
