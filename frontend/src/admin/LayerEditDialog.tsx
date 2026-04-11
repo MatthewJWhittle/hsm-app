@@ -14,8 +14,6 @@ type LayerEditDialogProps = {
   onEditProjectIdChange: (id: string) => void
   editSpecies: string
   editActivity: string
-  editName: string
-  editVersion: string
   selectedEnvironmentalBands: EnvironmentalBandDefinition[]
   onSelectedEnvironmentalBandsChange: (bands: EnvironmentalBandDefinition[]) => void
   environmentalBandOptions: EnvironmentalBandDefinition[] | null
@@ -25,8 +23,6 @@ type LayerEditDialogProps = {
   editFile: File | null
   onEditSpeciesChange: (v: string) => void
   onEditActivityChange: (v: string) => void
-  onEditNameChange: (v: string) => void
-  onEditVersionChange: (v: string) => void
   onEditExplainabilityEnabledChange: (v: boolean) => void
   onEditExplainModelFileChange: (f: File | null) => void
   onEditFileChange: (f: File | null) => void
@@ -46,8 +42,6 @@ export function LayerEditDialog({
   onEditProjectIdChange,
   editSpecies,
   editActivity,
-  editName,
-  editVersion,
   selectedEnvironmentalBands,
   onSelectedEnvironmentalBandsChange,
   environmentalBandOptions,
@@ -57,8 +51,6 @@ export function LayerEditDialog({
   editFile,
   onEditSpeciesChange,
   onEditActivityChange,
-  onEditNameChange,
-  onEditVersionChange,
   onEditExplainabilityEnabledChange,
   onEditExplainModelFileChange,
   onEditFileChange,
@@ -92,12 +84,8 @@ export function LayerEditDialog({
             allowStandAloneProject
             species={editSpecies}
             activity={editActivity}
-            modelName={editName}
-            modelVersion={editVersion}
             onSpeciesChange={onEditSpeciesChange}
             onActivityChange={onEditActivityChange}
-            onModelNameChange={onEditNameChange}
-            onModelVersionChange={onEditVersionChange}
             selectedEnvironmentalBands={selectedEnvironmentalBands}
             onSelectedEnvironmentalBandsChange={onSelectedEnvironmentalBandsChange}
             environmentalBandOptions={environmentalBandOptions}

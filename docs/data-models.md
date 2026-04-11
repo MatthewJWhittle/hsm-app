@@ -18,9 +18,7 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 | `activity` | string | Display name (e.g. "In flight"). |
 | `artifact_root` | string | **Required.** Base path or prefix in storage (GCS, etc.) for this model’s artifacts. All paths for this model are relative or derived from this (suitability COG, driver data). Enables a consistent folder-per-model layout. |
 | `suitability_cog_path` | string | Path to the suitability COG (absolute or relative to `artifact_root`). Frontend/TiTiler use this for tiles. |
-| `model_name` | string? | Optional. Model or run name (MVP: basic metadata). |
-| `model_version` | string? | Optional. Model version or date. |
-| `metadata` | object? | Optional structured description and analysis inputs. Not supplied by map clients for point queries. See **`metadata` shape** below. **Legacy** documents may still store `driver_band_indices` / `driver_config`; the API migrates those into `metadata.analysis` when loading a `Model`. |
+| `metadata` | object? | Optional structured description and analysis inputs. Not supplied by map clients for point queries. See **`metadata` shape** below. Display names and revision labels live under **`metadata.card`** (not separate top-level fields). **Legacy** documents may still store `driver_band_indices` / `driver_config` or old `model_name` / `model_version`; the API migrates those into `metadata` when loading a `Model`. |
 
 **Extensibility:** Add optional fields as needed (e.g. `taxon_id`, `meta` blob). Backend and frontend should ignore unknown keys so schema can evolve.
 
@@ -28,7 +26,7 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 
 | Section | Purpose |
 |---------|---------|
-| `card` | Human-facing **model card** (Hugging Face–style): optional `title`, `summary`, `metrics`, `spatial_resolution_m`, `training_period`, `evaluation_notes`, `license`, `citation`. |
+| `card` | Human-facing **model card** (Hugging Face–style): optional `title`, `version` (revision label, e.g. date or run id), `summary`, `metrics`, `spatial_resolution_m`, `training_period`, `evaluation_notes`, `license`, `citation`. |
 | `extras` | Optional `Record<string, string>` for custom key/value labels. |
 | `analysis` | Training / point-pipeline inputs: **`feature_band_indices`** (0-based indices into the project environmental COG, feature order), **`serialized_model_path`** (pickled sklearn estimator **relative to `artifact_root`**, e.g. `serialized_model.pkl`), **`positive_class_index`** (for `predict_proba`; default `1` at runtime if omitted), optional **`driver_cog_path`** (per-model environmental COG override relative to `artifact_root`). |
 
@@ -220,7 +218,7 @@ Returned by `GET /models/{id}/point?lng=&lat=` when the user clicks the map or r
 
 | Model | Where used | MVP priority |
 |-------|------------|--------------|
-| **Model** | Catalog; `GET /models`, `GET /models/{id}`; admin POST/PUT | Required: `id`, species, activity, `artifact_root`, `suitability_cog_path`; optional model_name, model_version, **`metadata`**. |
+| **Model** | Catalog; `GET /models`, `GET /models/{id}`; admin POST/PUT | Required: `id`, species, activity, `artifact_root`, `suitability_cog_path`; optional **`metadata`**. |
 | **Catalog** | Firestore `models` collection or local JSON `documents[]` snapshot | Stored list of Model; id required. |
 | **RasterMetadata** | `GET /models/{id}/raster/metadata` when needed | Optional in MVP. |
 | **PointInspection** | Response of `GET /models/{id}/point` | Required for MVP. |

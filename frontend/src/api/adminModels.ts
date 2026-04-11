@@ -9,9 +9,7 @@ export async function createModel(params: {
   species: string
   activity: string
   file: File
-  modelName?: string
-  modelVersion?: string
-  /** JSON string: ``ModelMetadata`` (e.g. ``analysis.feature_band_indices``). */
+  /** JSON string: ``ModelMetadata`` (e.g. ``card``, ``analysis.feature_band_indices``). */
   metadataJson?: string
   serializedModelFile?: File | null
 }): Promise<Model> {
@@ -20,8 +18,6 @@ export async function createModel(params: {
   form.append('species', params.species)
   form.append('activity', params.activity)
   form.append('file', params.file)
-  if (params.modelName) form.append('model_name', params.modelName)
-  if (params.modelVersion) form.append('model_version', params.modelVersion)
   if (params.metadataJson) form.append('metadata', params.metadataJson)
   if (params.serializedModelFile) {
     form.append('serialized_model_file', params.serializedModelFile)
@@ -45,8 +41,6 @@ export async function updateModel(params: {
   species: string
   activity: string
   file?: File | null
-  modelName: string | null
-  modelVersion: string | null
   projectId?: string | null
   metadataJson?: string | null
   serializedModelFile?: File | null
@@ -55,8 +49,6 @@ export async function updateModel(params: {
   form.append('species', params.species)
   form.append('activity', params.activity)
   if (params.file) form.append('file', params.file)
-  form.append('model_name', params.modelName ?? '')
-  form.append('model_version', params.modelVersion ?? '')
   if (params.projectId) {
     form.append('project_id', params.projectId)
   }

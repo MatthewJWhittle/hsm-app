@@ -188,7 +188,7 @@ def test_post_models_201_creates_model(catalog_docs):
                 "project_id": "proj-1",
                 "species": "New species",
                 "activity": "Flight",
-                "model_name": "m1",
+                "metadata": '{"card":{"title":"m1"}}',
             },
             files={"file": ("cog.tif", BytesIO(b"dummy"), "image/tiff")},
         )
@@ -196,7 +196,7 @@ def test_post_models_201_creates_model(catalog_docs):
     data = r.json()
     assert data["species"] == "New species"
     assert data["activity"] == "Flight"
-    assert data["model_name"] == "m1"
+    assert data["metadata"]["card"]["title"] == "m1"
     assert data["project_id"] == "proj-1"
     assert "id" in data
     mock_storage.write_suitability_cog.assert_called_once()

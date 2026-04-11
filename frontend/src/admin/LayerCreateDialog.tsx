@@ -19,8 +19,6 @@ type LayerCreateDialogProps = {
   activeProjects: CatalogProject[]
   species: string
   activity: string
-  modelName: string
-  modelVersion: string
   selectedEnvironmentalBands: EnvironmentalBandDefinition[]
   onSelectedEnvironmentalBandsChange: (bands: EnvironmentalBandDefinition[]) => void
   environmentalBandOptions: EnvironmentalBandDefinition[] | null
@@ -29,8 +27,6 @@ type LayerCreateDialogProps = {
   file: File | null
   onSpeciesChange: (v: string) => void
   onActivityChange: (v: string) => void
-  onModelNameChange: (v: string) => void
-  onModelVersionChange: (v: string) => void
   onExplainabilityEnabledChange: (v: boolean) => void
   onExplainModelFileChange: (f: File | null) => void
   onFileChange: (f: File | null) => void
@@ -51,8 +47,6 @@ export function LayerCreateDialog({
   activeProjects,
   species,
   activity,
-  modelName,
-  modelVersion,
   selectedEnvironmentalBands,
   onSelectedEnvironmentalBandsChange,
   environmentalBandOptions,
@@ -61,8 +55,6 @@ export function LayerCreateDialog({
   file,
   onSpeciesChange,
   onActivityChange,
-  onModelNameChange,
-  onModelVersionChange,
   onExplainabilityEnabledChange,
   onExplainModelFileChange,
   onFileChange,
@@ -103,12 +95,8 @@ export function LayerCreateDialog({
             allowStandAloneProject={false}
             species={species}
             activity={activity}
-            modelName={modelName}
-            modelVersion={modelVersion}
             onSpeciesChange={onSpeciesChange}
             onActivityChange={onActivityChange}
-            onModelNameChange={onModelNameChange}
-            onModelVersionChange={onModelVersionChange}
             selectedEnvironmentalBands={selectedEnvironmentalBands}
             onSelectedEnvironmentalBandsChange={onSelectedEnvironmentalBandsChange}
             environmentalBandOptions={environmentalBandOptions}

@@ -1,6 +1,7 @@
 import { Box, Divider, Paper, Stack, TextField, Typography } from '@mui/material'
 
 import type { ModelCardDraft } from './modelCardDraft'
+import { FIELD_HELP } from './catalogFormConstants'
 
 export type ModelCardFormFieldsProps = {
   maxWidth?: number
@@ -25,18 +26,30 @@ export function ModelCardFormFields({
         Model card
       </Typography>
       <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 2 }}>
-        Optional documentation for this layer (title, summary, metrics, license, etc.). Same idea as the project’s
-        environmental band table — edit here and changes save with the layer.
+        Optional catalog subtitle and documentation (stored under metadata.card). Species and activity identify the
+        layer; this block is for display names, revision labels, and notes.
       </Typography>
       <Stack spacing={2}>
-        <TextField
-          label="Title"
-          value={draft.title}
-          onChange={(e) => patch({ title: e.target.value })}
-          size="small"
-          fullWidth
-          disabled={disabled}
-        />
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+          <TextField
+            label="Title"
+            helperText={FIELD_HELP.cardTitle}
+            value={draft.title}
+            onChange={(e) => patch({ title: e.target.value })}
+            size="small"
+            fullWidth
+            disabled={disabled}
+          />
+          <TextField
+            label="Version"
+            helperText={FIELD_HELP.cardVersion}
+            value={draft.version}
+            onChange={(e) => patch({ version: e.target.value })}
+            size="small"
+            fullWidth
+            disabled={disabled}
+          />
+        </Stack>
         <TextField
           label="Summary"
           value={draft.summary}

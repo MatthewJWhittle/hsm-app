@@ -64,14 +64,13 @@ describe('parseModel', () => {
     ).toBeNull()
   })
 
-  it('parses model_name and model_version', () => {
+  it('parses metadata.card title and version', () => {
     const m = parseModel({
       ...minimalValid,
-      model_name: 'v1',
-      model_version: '2024-01',
+      metadata: { card: { title: 'v1', version: '2024-01' } },
     })
-    expect(m!.model_name).toBe('v1')
-    expect(m!.model_version).toBe('2024-01')
+    expect(m!.metadata?.card?.title).toBe('v1')
+    expect(m!.metadata?.card?.version).toBe('2024-01')
   })
 
   it('rejects missing required string fields', () => {

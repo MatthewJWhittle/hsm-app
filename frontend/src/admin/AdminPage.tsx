@@ -62,8 +62,6 @@ export function AdminPage() {
   const [modelProjectId, setModelProjectId] = useState('')
   const [species, setSpecies] = useState('')
   const [activity, setActivity] = useState('')
-  const [modelName, setModelName] = useState('')
-  const [modelVersion, setModelVersion] = useState('')
   const [selectedEnvBands, setSelectedEnvBands] = useState<EnvironmentalBandDefinition[]>([])
   const [explainEnabled, setExplainEnabled] = useState(false)
   const [explainModelFile, setExplainModelFile] = useState<File | null>(null)
@@ -77,8 +75,6 @@ export function AdminPage() {
   const [editModel, setEditModel] = useState<Model | null>(null)
   const [editSpecies, setEditSpecies] = useState('')
   const [editActivity, setEditActivity] = useState('')
-  const [editName, setEditName] = useState('')
-  const [editVersion, setEditVersion] = useState('')
   const [editProjectId, setEditProjectId] = useState('')
   const [editFile, setEditFile] = useState<File | null>(null)
   const [editSelectedEnvBands, setEditSelectedEnvBands] = useState<EnvironmentalBandDefinition[]>([])
@@ -131,7 +127,7 @@ export function AdminPage() {
     const q = modelTableFilter.trim().toLowerCase()
     if (!q) return models
     return models.filter((m) => {
-      const hay = `${m.species} ${m.activity} ${m.id} ${m.project_id ?? ''} ${m.model_name ?? ''} ${m.model_version ?? ''}`.toLowerCase()
+      const hay = `${m.species} ${m.activity} ${m.id} ${m.project_id ?? ''} ${m.metadata?.card?.title ?? ''} ${m.metadata?.card?.version ?? ''}`.toLowerCase()
       return hay.includes(q)
     })
   }, [models, modelTableFilter])
@@ -183,8 +179,6 @@ export function AdminPage() {
       species: editSpecies,
       activity: editActivity,
       projectId: editProjectId,
-      modelName: editName,
-      modelVersion: editVersion,
       bandDefs: editSelectedEnvBands,
       explainEnabled: editExplainEnabled,
       metadataJson,
@@ -197,8 +191,6 @@ export function AdminPage() {
     editSpecies,
     editActivity,
     editProjectId,
-    editName,
-    editVersion,
     editSelectedEnvBands,
     editExplainEnabled,
     editFile,
@@ -345,8 +337,6 @@ export function AdminPage() {
         modelId: editModel.id,
         species: editSpecies,
         activity: editActivity,
-        modelName: editName || null,
-        modelVersion: editVersion || null,
         file: editFile ?? undefined,
         projectId: editProjectId || undefined,
         metadataJson,
@@ -370,8 +360,6 @@ export function AdminPage() {
         species: editSpecies,
         activity: editActivity,
         projectId: editProjectId,
-        modelName: editName,
-        modelVersion: editVersion,
         bandDefs: editSelectedEnvBands,
         explainEnabled: editExplainEnabled,
         metadataJson:
@@ -399,8 +387,6 @@ export function AdminPage() {
     buildLayerEditSnapshot,
     editSpecies,
     editActivity,
-    editName,
-    editVersion,
     editProjectId,
     editSelectedEnvBands,
     editExplainEnabled,
@@ -536,8 +522,6 @@ export function AdminPage() {
           modelId: m.id,
           species: m.species,
           activity: m.activity,
-          modelName: m.model_name ?? null,
-          modelVersion: m.model_version ?? null,
           projectId: bulkAssignProjectId,
         })
       }
@@ -555,8 +539,6 @@ export function AdminPage() {
     setEditCardDraft(modelToCardDraft(m))
     setEditSpecies(m.species)
     setEditActivity(m.activity)
-    setEditName(m.model_name ?? '')
-    setEditVersion(m.model_version ?? '')
     setEditProjectId(m.project_id ?? '')
     const defs = m.project_id ? environmentalBandsForProject(m.project_id, projects) : null
     setEditSelectedEnvBands(bandsFromDriverIndices(getFeatureBandIndices(m) ?? undefined, defs))
@@ -672,8 +654,6 @@ export function AdminPage() {
     editSpecies,
     editActivity,
     editProjectId,
-    editName,
-    editVersion,
     editSelectedEnvBands,
     editExplainEnabled,
     editFile,
@@ -789,15 +769,11 @@ export function AdminPage() {
         species,
         activity,
         file,
-        modelName: modelName || undefined,
-        modelVersion: modelVersion || undefined,
         metadataJson,
         serializedModelFile: explainEnabled ? explainModelFile : undefined,
       })
       setSpecies('')
       setActivity('')
-      setModelName('')
-      setModelVersion('')
       setSelectedEnvBands([])
       setExplainEnabled(false)
       setExplainModelFile(null)
@@ -1017,8 +993,6 @@ export function AdminPage() {
             activeProjects={activeProjects}
             species={species}
             activity={activity}
-            modelName={modelName}
-            modelVersion={modelVersion}
             selectedEnvironmentalBands={selectedEnvBands}
             onSelectedEnvironmentalBandsChange={setSelectedEnvBands}
             environmentalBandOptions={createLayerEnvOptions}
@@ -1027,8 +1001,6 @@ export function AdminPage() {
             file={file}
             onSpeciesChange={setSpecies}
             onActivityChange={setActivity}
-            onModelNameChange={setModelName}
-            onModelVersionChange={setModelVersion}
             onExplainabilityEnabledChange={setExplainEnabled}
             onExplainModelFileChange={setExplainModelFile}
             onFileChange={setFile}
@@ -1075,8 +1047,6 @@ export function AdminPage() {
             onEditProjectIdChange={handleEditProjectIdChange}
             editSpecies={editSpecies}
             editActivity={editActivity}
-            editName={editName}
-            editVersion={editVersion}
             selectedEnvironmentalBands={editSelectedEnvBands}
             onSelectedEnvironmentalBandsChange={setEditSelectedEnvBands}
             environmentalBandOptions={editLayerEnvOptions}
@@ -1088,8 +1058,6 @@ export function AdminPage() {
             editFile={editFile}
             onEditSpeciesChange={setEditSpecies}
             onEditActivityChange={setEditActivity}
-            onEditNameChange={setEditName}
-            onEditVersionChange={setEditVersion}
             onEditExplainabilityEnabledChange={setEditExplainEnabled}
             onEditExplainModelFileChange={setEditExplainModelFile}
             onEditFileChange={setEditFile}

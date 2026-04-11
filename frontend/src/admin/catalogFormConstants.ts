@@ -3,8 +3,8 @@
 export const FIELD_HELP = {
   species: 'Appears in the layer list and map.',
   activity: 'Together with species, names the layer (e.g. roosting, foraging).',
-  modelName: 'Optional subtitle beyond species and activity.',
-  modelVersion: 'Optional label for this revision (e.g. date or version).',
+  cardTitle: 'Optional display name or run label (stored in metadata.card.title).',
+  cardVersion: 'Optional revision label, e.g. date or run id (metadata.card.version).',
 } as const
 
 export const COG_REQUIREMENTS_INFO =

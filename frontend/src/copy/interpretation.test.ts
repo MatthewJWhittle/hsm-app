@@ -15,17 +15,19 @@ import {
 
 describe('formatModelCatalogLabel', () => {
   it('joins name and version with middle dot', () => {
-    expect(formatModelCatalogLabel({ model_name: 'Habitat v2', model_version: '2024-01' })).toBe(
-      'Habitat v2 · 2024-01',
-    )
+    expect(
+      formatModelCatalogLabel({
+        metadata: { card: { title: 'Habitat v2', version: '2024-01' } },
+      }),
+    ).toBe('Habitat v2 · 2024-01')
   })
 
   it('returns name only when version missing', () => {
-    expect(formatModelCatalogLabel({ model_name: 'Only', model_version: null })).toBe('Only')
+    expect(formatModelCatalogLabel({ metadata: { card: { title: 'Only' } } })).toBe('Only')
   })
 
   it('returns em dash when both missing', () => {
-    expect(formatModelCatalogLabel({ model_name: null, model_version: null })).toBe('—')
+    expect(formatModelCatalogLabel({ metadata: {} })).toBe('—')
   })
 })
 

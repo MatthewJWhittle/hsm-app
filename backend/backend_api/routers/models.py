@@ -166,8 +166,6 @@ async def create_model(
     species: Annotated[str, Form()],
     activity: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],
-    model_name: Annotated[str | None, Form()] = None,
-    model_version: Annotated[str | None, Form()] = None,
     metadata: Annotated[str | None, Form()] = None,
     serialized_model_file: Annotated[UploadFile | None, File()] = None,
 ):
@@ -219,8 +217,6 @@ async def create_model(
         activity=activity.strip(),
         artifact_root=artifact_root,
         suitability_cog_path=suitability_cog_path,
-        model_name=model_name.strip() if model_name else None,
-        model_version=model_version.strip() if model_version else None,
         metadata=meta_in,
     )
 
@@ -267,8 +263,6 @@ async def update_model(
     species: Annotated[str | None, Form()] = None,
     activity: Annotated[str | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
-    model_name: Annotated[str | None, Form()] = None,
-    model_version: Annotated[str | None, Form()] = None,
     project_id: Annotated[str | None, Form()] = None,
     metadata: Annotated[str | None, Form()] = None,
     serialized_model_file: Annotated[UploadFile | None, File()] = None,
@@ -307,17 +301,6 @@ async def update_model(
 
     new_species = species.strip() if species is not None else existing.species
     new_activity = activity.strip() if activity is not None else existing.activity
-    if model_name is not None:
-        stripped = model_name.strip()
-        new_name = stripped if stripped else None
-    else:
-        new_name = existing.model_name
-    if model_version is not None:
-        stripped_v = model_version.strip()
-        new_ver = stripped_v if stripped_v else None
-    else:
-        new_ver = existing.model_version
-
     new_project_id = existing.project_id
     if project_id is not None:
         pid = project_id.strip()
@@ -345,8 +328,6 @@ async def update_model(
         activity=new_activity,
         artifact_root=artifact_root,
         suitability_cog_path=suitability_cog_path,
-        model_name=new_name,
-        model_version=new_ver,
         metadata=new_metadata,
     )
 

@@ -34,12 +34,8 @@ export interface MapLayerFormFieldsProps {
   allowStandAloneProject: boolean
   species: string
   activity: string
-  modelName: string
-  modelVersion: string
   onSpeciesChange: (value: string) => void
   onActivityChange: (value: string) => void
-  onModelNameChange: (value: string) => void
-  onModelVersionChange: (value: string) => void
   /** Ordered selection from the project manifest (feature order for the model). */
   selectedEnvironmentalBands: EnvironmentalBandDefinition[]
   onSelectedEnvironmentalBandsChange: (value: EnvironmentalBandDefinition[]) => void
@@ -71,12 +67,8 @@ export function MapLayerFormFields({
   allowStandAloneProject,
   species,
   activity,
-  modelName,
-  modelVersion,
   onSpeciesChange,
   onActivityChange,
-  onModelNameChange,
-  onModelVersionChange,
   selectedEnvironmentalBands,
   onSelectedEnvironmentalBandsChange,
   environmentalBandOptions,
@@ -185,26 +177,6 @@ export function MapLayerFormFields({
           helperText={FIELD_HELP.activity}
           value={activity}
           onChange={(e) => onActivityChange(e.target.value)}
-          size="small"
-          fullWidth
-          disabled={disabled}
-        />
-      </Stack>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-        <TextField
-          label="Model name"
-          helperText={FIELD_HELP.modelName}
-          value={modelName}
-          onChange={(e) => onModelNameChange(e.target.value)}
-          size="small"
-          fullWidth
-          disabled={disabled}
-        />
-        <TextField
-          label="Model version"
-          helperText={FIELD_HELP.modelVersion}
-          value={modelVersion}
-          onChange={(e) => onModelVersionChange(e.target.value)}
           size="small"
           fullWidth
           disabled={disabled}

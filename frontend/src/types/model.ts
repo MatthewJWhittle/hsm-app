@@ -2,6 +2,8 @@
 
 export interface ModelCard {
   title?: string | null
+  /** Optional revision label (e.g. date, run id). */
+  version?: string | null
   summary?: string | null
   /** Metric name -> number or short string */
   metrics?: Record<string, number | string> | null
@@ -34,8 +36,6 @@ export interface Model {
   activity: string
   artifact_root: string
   suitability_cog_path: string
-  model_name?: string | null
-  model_version?: string | null
   metadata?: ModelMetadata | null
 }
 

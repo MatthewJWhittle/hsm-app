@@ -48,12 +48,13 @@ describe('modelToCardDraft', () => {
   it('round-trips card from model', () => {
     const m = minimalModel({
       metadata: {
-        card: { title: 'X', summary: 'Y' },
+        card: { title: 'X', version: '2024-01', summary: 'Y' },
         extras: { k: 'v' },
       },
     })
     const d = modelToCardDraft(m)
     expect(d.title).toBe('X')
+    expect(d.version).toBe('2024-01')
     expect(d.summary).toBe('Y')
     expect(d.extrasJson).toContain('k')
   })

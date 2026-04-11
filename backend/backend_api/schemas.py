@@ -19,6 +19,10 @@ class ModelCard(BaseModel):
     evaluation_notes: str | None = None
     license: str | None = None
     citation: str | None = None
+    version: str | None = Field(
+        default=None,
+        description="Optional revision label (e.g. date or run id); replaces former top-level model_version.",
+    )
 
 
 class ModelAnalysis(BaseModel):
@@ -69,48 +73,62 @@ class Model(BaseModel):
         ...,
         description="Path to suitability COG (absolute or relative to artifact_root)",
     )
-    model_name: str | None = None
-    model_version: str | None = None
     metadata: ModelMetadata | None = None
 
     model_config = {"extra": "allow"}
 
     @model_validator(mode="before")
     @classmethod
-    def _migrate_legacy_driver_fields(cls, data: Any) -> Any:
-        """Map legacy ``driver_band_indices`` / ``driver_config`` into ``metadata.analysis``."""
+    def _migrate_legacy_model_document(cls, data: Any) -> Any:
+        """Map legacy driver fields and old top-level display fields into ``metadata``."""
         if not isinstance(data, dict):
             return data
         if data.get("metadata") is not None:
             data.pop("driver_band_indices", None)
             data.pop("driver_config", None)
-            return data
+        else:
+            analysis: dict[str, Any] = {}
+            if data.get("driver_band_indices") is not None:
+                analysis["feature_band_indices"] = data["driver_band_indices"]
+            dc = data.get("driver_config")
+            if isinstance(dc, dict):
+                mp = dc.get("explainability_model_path")
+                if isinstance(mp, str) and mp.strip():
+                    analysis["serialized_model_path"] = mp.strip()
+                pc = dc.get("explainability_positive_class")
+                if pc is not None:
+                    try:
+                        analysis["positive_class_index"] = int(pc)
+                    except (TypeError, ValueError):
+                        pass
+                dcp = dc.get("driver_cog_path")
+                if isinstance(dcp, str) and dcp.strip():
+                    analysis["driver_cog_path"] = dcp.strip()
 
-        analysis: dict[str, Any] = {}
-        if data.get("driver_band_indices") is not None:
-            analysis["feature_band_indices"] = data["driver_band_indices"]
-        dc = data.get("driver_config")
-        if isinstance(dc, dict):
-            mp = dc.get("explainability_model_path")
-            if isinstance(mp, str) and mp.strip():
-                analysis["serialized_model_path"] = mp.strip()
-            pc = dc.get("explainability_positive_class")
-            if pc is not None:
-                try:
-                    analysis["positive_class_index"] = int(pc)
-                except (TypeError, ValueError):
-                    pass
-            dcp = dc.get("driver_cog_path")
-            if isinstance(dcp, str) and dcp.strip():
-                analysis["driver_cog_path"] = dcp.strip()
+            meta: dict[str, Any] = {}
+            if analysis:
+                meta["analysis"] = analysis
+            if meta:
+                data["metadata"] = meta
+            data.pop("driver_band_indices", None)
+            data.pop("driver_config", None)
 
-        meta: dict[str, Any] = {}
-        if analysis:
-            meta["analysis"] = analysis
-        if meta:
-            data["metadata"] = meta
-        data.pop("driver_band_indices", None)
-        data.pop("driver_config", None)
+        legacy_name = data.pop("model_name", None)
+        legacy_ver = data.pop("model_version", None)
+        if legacy_name is not None or legacy_ver is not None:
+            meta = data.get("metadata")
+            if not isinstance(meta, dict):
+                meta = {}
+                data["metadata"] = meta
+            card = meta.get("card")
+            if not isinstance(card, dict):
+                card = {}
+                meta["card"] = card
+            if isinstance(legacy_name, str) and legacy_name.strip() and not card.get("title"):
+                card["title"] = legacy_name.strip()
+            if isinstance(legacy_ver, str) and legacy_ver.strip() and not card.get("version"):
+                card["version"] = legacy_ver.strip()
+
         return data
 
 

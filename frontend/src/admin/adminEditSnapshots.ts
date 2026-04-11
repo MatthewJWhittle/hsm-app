@@ -32,8 +32,6 @@ export function layerFormSnapshot(params: {
   species: string
   activity: string
   projectId: string
-  modelName: string
-  modelVersion: string
   bandDefs: EnvironmentalBandDefinition[]
   explainEnabled: boolean
   metadataJson: string
@@ -46,8 +44,6 @@ export function layerFormSnapshot(params: {
     species: params.species.trim(),
     activity: params.activity.trim(),
     projectId: params.projectId,
-    modelName: params.modelName,
-    modelVersion: params.modelVersion,
     bands: serializeBandDefinitions(params.bandDefs),
     explain: params.explainEnabled,
     metadata: params.metadataJson,

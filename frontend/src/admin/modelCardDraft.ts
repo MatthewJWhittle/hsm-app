@@ -3,6 +3,7 @@ import type { Model, ModelCard } from '../types/model'
 /** Form state for the optional Hugging Face–style model card (maps to `metadata.card` / `metadata.extras`). */
 export interface ModelCardDraft {
   title: string
+  version: string
   summary: string
   metricsJson: string
   spatialResolutionM: string
@@ -16,6 +17,7 @@ export interface ModelCardDraft {
 export function emptyModelCardDraft(): ModelCardDraft {
   return {
     title: '',
+    version: '',
     summary: '',
     metricsJson: '',
     spatialResolutionM: '',
@@ -32,6 +34,7 @@ export function modelToCardDraft(m: Model | null): ModelCardDraft {
   const ex = m?.metadata?.extras
   return {
     title: c?.title ?? '',
+    version: c?.version ?? '',
     summary: c?.summary ?? '',
     metricsJson: c?.metrics ? JSON.stringify(c.metrics, null, 2) : '',
     spatialResolutionM: c?.spatial_resolution_m != null ? String(c.spatial_resolution_m) : '',
@@ -103,6 +106,7 @@ export function parseModelCardDraft(
 
   const card: ModelCard = {}
   if (draft.title.trim()) card.title = draft.title.trim()
+  if (draft.version.trim()) card.version = draft.version.trim()
   if (draft.summary.trim()) card.summary = draft.summary.trim()
   if (metrics) card.metrics = metrics
   if (spatial_resolution_m !== undefined) card.spatial_resolution_m = spatial_resolution_m
