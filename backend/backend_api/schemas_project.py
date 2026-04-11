@@ -89,6 +89,13 @@ class CatalogProject(BaseModel):
         default=None,
         description="Per-band machine name, optional display label, optional description; set after upload.",
     )
+    band_inference_notes: list[str] | None = Field(
+        default=None,
+        description=(
+            "Set only on POST/PUT project responses when band names were inferred from the "
+            "raster (omitted from Firestore)."
+        ),
+    )
     explainability_background_path: str | None = Field(
         default=None,
         description="Reference sample Parquet for SHAP (relative to driver_artifact_root); auto-generated when the COG is uploaded.",

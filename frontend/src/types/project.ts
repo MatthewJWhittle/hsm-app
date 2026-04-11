@@ -22,6 +22,8 @@ export interface CatalogProject {
   driver_cog_path?: string | null
   /** Per-band names/labels for the environmental COG (aligned with raster band order). */
   environmental_band_definitions?: EnvironmentalBandDefinition[] | null
+  /** Present only on upload responses when names were inferred from the raster (not stored). */
+  band_inference_notes?: string[] | null
   /** SHAP reference sample (Parquet); generated when the environmental COG is uploaded. */
   explainability_background_path?: string | null
   /** Row count of the last generated background Parquet (random pixels). */

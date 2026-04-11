@@ -71,6 +71,16 @@ _ADMIN_RESPONSES: dict[int | str, dict[str, str]] = {
 }
 
 
+def _infer_band_definitions_from_form(raw: str | None) -> bool:
+    """When omitted, infer band names from the raster. Use ``false``/``0``/``no`` to require JSON."""
+    if raw is None or not str(raw).strip():
+        return True
+    v = str(raw).strip().lower()
+    if v in ("0", "false", "no"):
+        return False
+    return True
+
+
 def _parse_allowed_uids(raw: str | None) -> list[str]:
     if not raw or not raw.strip():
         return []
@@ -383,8 +393,14 @@ async def create_project(
     visibility: Annotated[str, Form()] = "public",
     allowed_uids: Annotated[str | None, Form()] = None,
     environmental_band_definitions: Annotated[str | None, Form()] = None,
+    infer_band_definitions: Annotated[str | None, Form()] = None,
 ):
-    """Create a project; environmental COG may be uploaded now or added via PUT (admin only)."""
+    """Create a project; environmental COG may be uploaded now or added via PUT (admin only).
+
+    When uploading an environmental COG, omit ``environmental_band_definitions`` to infer
+    machine names from GDAL band descriptions (slugified; collisions resolved). Set form field
+    ``infer_band_definitions`` to ``false`` to require an explicit JSON array instead.
+    """
     if not name.strip():
         raise HTTPException(status_code=422, detail="name is required")
     visibility_v = parse_visibility(visibility)
@@ -397,6 +413,7 @@ async def create_project(
     artifact_root: str | None = None
     cog_path: str | None = None
     band_defs: list[EnvironmentalBandDefinition] | None = None
+    inference_notes: list[str] | None = None
     if file is not None:
         content = await file.read()
         if not content:
@@ -426,14 +443,22 @@ async def create_project(
 
         try:
 
-            def _defs() -> list[EnvironmentalBandDefinition]:
+            def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
                 return band_definitions_for_upload_bytes(
-                    content, environmental_band_definitions
+                    content,
+                    environmental_band_definitions,
+                    infer_band_definitions=_infer_band_definitions_from_form(
+                        infer_band_definitions
+                    ),
                 )
 
-            band_defs = await run_in_threadpool(_defs)
+            band_defs, infer_notes = await run_in_threadpool(_defs)
+            inference_notes = infer_notes if infer_notes else None
         except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e)) from e
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error("BAND_DEFINITIONS", str(e)),
+            ) from e
 
     explain_bg_path: str | None = None
     explain_bg_rows: int | None = None
@@ -474,6 +499,7 @@ async def create_project(
         driver_artifact_root=artifact_root,
         driver_cog_path=cog_path,
         environmental_band_definitions=band_defs,
+        band_inference_notes=inference_notes,
         explainability_background_path=explain_bg_path,
         explainability_background_sample_rows=explain_bg_rows,
         explainability_background_generated_at=explain_bg_at,
@@ -514,8 +540,13 @@ async def update_project(
     allowed_uids: Annotated[str | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
     environmental_band_definitions: Annotated[str | None, Form()] = None,
+    infer_band_definitions: Annotated[str | None, Form()] = None,
 ):
-    """Update project (admin only)."""
+    """Update project (admin only).
+
+    When replacing the environmental COG, band definitions can be omitted to infer from the
+    file (see ``infer_band_definitions`` on ``POST /projects``).
+    """
     existing = catalog.get_project(project_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="project not found")
@@ -541,6 +572,7 @@ async def update_project(
     new_band_defs: list[EnvironmentalBandDefinition] | None = (
         existing.environmental_band_definitions
     )
+    inference_notes: list[str] | None = None
 
     if file is not None:
         content = await file.read()
@@ -571,14 +603,22 @@ async def update_project(
 
         try:
 
-            def _defs() -> list[EnvironmentalBandDefinition]:
+            def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
                 return band_definitions_for_upload_bytes(
-                    content, environmental_band_definitions
+                    content,
+                    environmental_band_definitions,
+                    infer_band_definitions=_infer_band_definitions_from_form(
+                        infer_band_definitions
+                    ),
                 )
 
-            new_band_defs = await run_in_threadpool(_defs)
+            new_band_defs, infer_notes = await run_in_threadpool(_defs)
+            inference_notes = infer_notes if infer_notes else None
         except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e)) from e
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error("BAND_DEFINITIONS", str(e)),
+            ) from e
     elif environmental_band_definitions is not None and environmental_band_definitions.strip():
         try:
             parsed = parse_band_definitions_json(environmental_band_definitions)
@@ -664,6 +704,7 @@ async def update_project(
         driver_artifact_root=artifact_root,
         driver_cog_path=cog_path,
         environmental_band_definitions=new_band_defs,
+        band_inference_notes=inference_notes,
         explainability_background_path=new_explain_bg_path,
         explainability_background_sample_rows=new_explain_bg_rows,
         explainability_background_generated_at=new_explain_bg_at,

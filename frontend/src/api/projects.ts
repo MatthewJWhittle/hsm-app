@@ -117,6 +117,20 @@ export function parseProject(value: unknown): CatalogProject | null {
       return null
     }
   }
+  if (value.band_inference_notes !== undefined) {
+    if (value.band_inference_notes === null) {
+      out.band_inference_notes = null
+    } else if (Array.isArray(value.band_inference_notes)) {
+      const notes: string[] = []
+      for (const n of value.band_inference_notes) {
+        if (typeof n !== 'string') return null
+        notes.push(n)
+      }
+      out.band_inference_notes = notes
+    } else {
+      return null
+    }
+  }
   return out
 }
 

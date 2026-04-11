@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import rasterio
@@ -23,22 +24,92 @@ def count_bands_in_path(path: str) -> int:
         return int(src.count)
 
 
-def definitions_from_rasterio_dataset(src: DatasetReader) -> list[EnvironmentalBandDefinition]:
+def _normalise_machine_band_name(raw: str | None, index: int) -> tuple[str, str | None]:
     """
-    Build one manifest row per band. Uses GDAL/rasterio per-band ``descriptions``
-    as ``name`` when set; otherwise ``band_0`` … ``band_{n-1}``.
+    Build a stable machine name from GDAL band description, else ``band_{index}``.
+
+    Returns (name, optional warning).
     """
-    count = int(src.count)
+    if raw is None or not str(raw).strip():
+        return f"band_{index}", f"Band {index}: no GDAL description; using band_{index}."
+    s = str(raw).strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    if not s:
+        return f"band_{index}", (
+            f"Band {index}: description {raw!r} could not be turned into a machine name; "
+            f"using band_{index}."
+        )
+    if len(s) > 64:
+        truncated = s[:64].rstrip("_")
+        return truncated, f"Band {index}: machine name truncated from description {raw!r}."
+    return s, None
+
+
+def _uniquify_machine_names(
+    defs: list[EnvironmentalBandDefinition],
+) -> tuple[list[EnvironmentalBandDefinition], list[str]]:
+    """Ensure machine ``name`` values are unique (case-insensitive); append _2, _3, … on collision."""
+    warnings: list[str] = []
+    used_lower: set[str] = set()
     out: list[EnvironmentalBandDefinition] = []
+    for d in defs:
+        base = d.name
+        candidate = base
+        n = 2
+        while candidate.lower() in used_lower:
+            candidate = f"{base}_{n}"
+            n += 1
+        if candidate != base:
+            warnings.append(
+                f"Band {d.index}: machine name {base!r} collided with another band; using {candidate!r}."
+            )
+        used_lower.add(candidate.lower())
+        out.append(d.model_copy(update={"name": candidate}) if candidate != base else d)
+    return out, warnings
+
+
+def infer_band_definitions_from_dataset(
+    src: DatasetReader,
+) -> tuple[list[EnvironmentalBandDefinition], list[str]]:
+    """
+    Build one manifest row per raster band from GDAL descriptions (slugified) or ``band_i``.
+
+    Raises:
+        ValueError: zero bands or validation failure after inference.
+    """
+    warnings: list[str] = []
+    count = int(src.count)
+    if count == 0:
+        raise ValueError("environmental raster has zero bands")
+    defs: list[EnvironmentalBandDefinition] = []
     for i in range(count):
         raw = src.descriptions[i] if src.descriptions and i < len(src.descriptions) else None
-        name = (
-            str(raw).strip()
-            if raw is not None and str(raw).strip()
-            else f"band_{i}"
-        )
-        out.append(EnvironmentalBandDefinition(index=i, name=name, label=None, description=None))
-    return out
+        name, w = _normalise_machine_band_name(raw, i)
+        if w:
+            warnings.append(w)
+        defs.append(EnvironmentalBandDefinition(index=i, name=name, label=None, description=None))
+    defs, uw = _uniquify_machine_names(defs)
+    warnings.extend(uw)
+    validate_band_definitions_match_raster(count, defs)
+    return defs, warnings
+
+
+def infer_band_definitions_from_bytes(content: bytes) -> tuple[list[EnvironmentalBandDefinition], list[str]]:
+    """Infer band manifest from in-memory GeoTIFF / COG bytes."""
+    with MemoryFile(content) as mem:
+        with mem.open() as src:
+            return infer_band_definitions_from_dataset(src)
+
+
+def definitions_from_rasterio_dataset(src: DatasetReader) -> list[EnvironmentalBandDefinition]:
+    """
+    Build one manifest row per band (legacy helper).
+
+    Prefer :func:`infer_band_definitions_from_dataset` for slugified names and uniqueness.
+    """
+    defs, _ = infer_band_definitions_from_dataset(src)
+    return defs
 
 
 def default_band_definitions(count: int) -> list[EnvironmentalBandDefinition]:
@@ -50,26 +121,41 @@ def default_band_definitions(count: int) -> list[EnvironmentalBandDefinition]:
 
 
 def default_band_definitions_from_path(path: str) -> list[EnvironmentalBandDefinition]:
-    """Same as :func:`definitions_from_rasterio_dataset` for an on-disk GeoTIFF/COG."""
+    """Derive band definitions from an on-disk GeoTIFF/COG (same rules as upload inference)."""
     with rasterio.open(path) as src:
-        return definitions_from_rasterio_dataset(src)
+        defs, _ = infer_band_definitions_from_dataset(src)
+    return defs
 
 
 def band_definitions_for_upload_bytes(
-    content: bytes, definitions_form: str | None
-) -> list[EnvironmentalBandDefinition]:
+    content: bytes,
+    definitions_form: str | None,
+    *,
+    infer_band_definitions: bool = True,
+) -> tuple[list[EnvironmentalBandDefinition], list[str]]:
     """
-    Resolve band definitions for a new upload: validate client JSON if present,
-    otherwise derive names from the file (band descriptions when set, else ``band_i``).
+    Resolve band definitions for a new upload.
+
+    If ``environmental_band_definitions`` JSON is present and non-empty after parse, validate
+    against the raster and return (no inference notes).
+
+    Otherwise, if ``infer_band_definitions`` is True, infer names from GDAL band descriptions
+    (slugified, unique machine names) and return warnings for fallbacks/collisions.
+
+    If inference is disabled and no definitions are supplied, raises ``ValueError``.
     """
     parsed = parse_band_definitions_json(definitions_form)
-    with MemoryFile(content) as mem:
-        with mem.open() as src:
-            count = int(src.count)
-            if parsed is not None:
+    if parsed is not None:
+        with MemoryFile(content) as mem:
+            with mem.open() as src:
+                count = int(src.count)
                 validate_band_definitions_match_raster(count, parsed)
-                return parsed
-            return definitions_from_rasterio_dataset(src)
+        return parsed, []
+    if not infer_band_definitions:
+        raise ValueError(
+            "environmental_band_definitions JSON is required when infer_band_definitions is false"
+        )
+    return infer_band_definitions_from_bytes(content)
 
 
 def validate_band_definitions_match_raster(
