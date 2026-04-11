@@ -91,9 +91,27 @@ def compute_shap_driver_variables(
     try:
         with open(model_path, "rb") as f:
             clf = pickle.load(f)
+    except ModuleNotFoundError as e:
+        # Pickles trained in another repo often reference custom packages (e.g. ``sdm``) that
+        # are not installed in the API container; sklearn-only pickles load fine.
+        mod = getattr(e, "name", None) or str(e)
+        logger.warning(
+            "Explainability pickle import failed (missing module %s)",
+            mod,
+            exc_info=False,
+        )
+        raise PointSamplingError(
+            "Serialized estimator references Python code not available on this server "
+            f"(missing import {mod!r}). Train with in-container packages only, or export a "
+            "pipeline using standard sklearn / dependencies present in the API image.",
+            code="EXPLAINABILITY_PICKLE_IMPORT",
+        ) from None
     except Exception as e:
         logger.exception("Failed to load explainability model")
-        raise PointSamplingError("explainability model could not be loaded") from e
+        raise PointSamplingError(
+            "explainability model could not be loaded",
+            code="EXPLAINABILITY_PICKLE_LOAD",
+        ) from e
 
     try:
         background = pd.read_parquet(bg_path)
