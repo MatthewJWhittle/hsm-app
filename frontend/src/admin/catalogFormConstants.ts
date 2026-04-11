@@ -1,10 +1,10 @@
 /** Shared copy for admin project / layer forms. */
 
 export const FIELD_HELP = {
-  species: 'Appears in the layer list and map.',
-  activity: 'Together with species, names the layer (e.g. roosting, foraging).',
-  cardTitle: 'Optional display name or run label (stored in metadata.card.title).',
-  cardVersion: 'Optional revision label, e.g. date or run id (metadata.card.version).',
+  species: 'Shown in the layer list and map legend.',
+  activity: 'Together with species, identifies this layer (e.g. roosting, in flight).',
+  suitabilityCog:
+    'Cloud-optimized GeoTIFF in Web Mercator (EPSG:3857). This raster is what the map tiles and suitability values come from.',
 } as const
 
 export const COG_REQUIREMENTS_INFO =

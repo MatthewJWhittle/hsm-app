@@ -74,7 +74,7 @@ export function LayerEditDialog({
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ pb: 2 }}>
-        <Box sx={{ mt: 0.5 }}>
+        <Box sx={{ width: '100%', maxWidth: formMaxWidth, mx: 'auto', mt: 0.5 }}>
           <MapLayerFormFields
             mode="edit"
             maxWidth={formMaxWidth}
@@ -99,6 +99,8 @@ export function LayerEditDialog({
             layerId={editModel?.id}
             modelCardDraft={modelCardDraft}
             onModelCardDraftChange={onModelCardDraftChange}
+            catalogCreatedAt={editModel?.created_at ?? null}
+            catalogUpdatedAt={editModel?.updated_at ?? null}
           />
           {editError && (
             <Alert severity="error" sx={{ mt: 2 }}>

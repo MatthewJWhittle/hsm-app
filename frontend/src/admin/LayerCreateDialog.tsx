@@ -85,7 +85,7 @@ export function LayerCreateDialog({
         <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: formMaxWidth }}>
           {COG_REQUIREMENTS_INFO}
         </Alert>
-        <Box component="form" id={FORM_ID} onSubmit={onSubmit}>
+        <Box component="form" id={FORM_ID} onSubmit={onSubmit} sx={{ width: '100%', maxWidth: formMaxWidth, mx: 'auto' }}>
           <MapLayerFormFields
             mode="create"
             maxWidth={formMaxWidth}

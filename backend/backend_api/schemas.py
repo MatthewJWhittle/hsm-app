@@ -2,26 +2,28 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ModelCard(BaseModel):
-    """Human-facing model card (Hugging Face–style metadata)."""
+    """Human-facing model card metadata."""
+
+    model_config = ConfigDict(extra="ignore")
 
     title: str | None = None
     summary: str | None = None
-    metrics: dict[str, Any] | None = Field(
-        default=None,
-        description="Optional metric map (e.g. accuracy, F1); values are scalars or short strings.",
-    )
     spatial_resolution_m: float | None = None
-    training_period: str | None = None
-    evaluation_notes: str | None = None
-    license: str | None = None
-    citation: str | None = None
+    primary_metric_type: str | None = Field(
+        default=None,
+        description="Primary quality metric name (e.g. AUC).",
+    )
+    primary_metric_value: str | None = Field(
+        default=None,
+        description="Display value for the primary metric (string or number as text).",
+    )
     version: str | None = Field(
         default=None,
-        description="Optional revision label (e.g. date or run id); replaces former top-level model_version.",
+        description="Optional revision label (e.g. date or run id).",
     )
 
 
@@ -72,6 +74,14 @@ class Model(BaseModel):
     suitability_cog_path: str = Field(
         ...,
         description="Path to suitability COG (absolute or relative to artifact_root)",
+    )
+    created_at: str | None = Field(
+        default=None,
+        description="ISO-8601 UTC timestamp when the catalog row was first created (server-set).",
+    )
+    updated_at: str | None = Field(
+        default=None,
+        description="ISO-8601 UTC timestamp of the last catalog update (server-set).",
     )
     metadata: ModelMetadata | None = None
 

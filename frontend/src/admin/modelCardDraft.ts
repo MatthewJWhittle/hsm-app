@@ -1,17 +1,21 @@
 import type { Model, ModelCard } from '../types/model'
 
-/** Form state for the optional Hugging Face–style model card (maps to `metadata.card` / `metadata.extras`). */
+/** Default primary metric for habitat suitability-style models */
+export const PRIMARY_METRIC_TYPES = ['AUC', 'F1', 'Accuracy', 'Log loss', 'R²', 'Custom'] as const
+
+export type ExtraPair = { key: string; value: string }
+
+/** Form state for the model card (maps to ``metadata.card`` / ``metadata.extras``). */
 export interface ModelCardDraft {
   title: string
   version: string
   summary: string
-  metricsJson: string
   spatialResolutionM: string
-  trainingPeriod: string
-  evaluationNotes: string
-  license: string
-  citation: string
-  extrasJson: string
+  primaryMetricType: string
+  /** When ``primaryMetricType`` is ``Custom``, this becomes ``primary_metric_type`` on save. */
+  customMetricLabel: string
+  primaryMetricValue: string
+  extrasPairs: ExtraPair[]
 }
 
 export function emptyModelCardDraft(): ModelCardDraft {
@@ -19,81 +23,66 @@ export function emptyModelCardDraft(): ModelCardDraft {
     title: '',
     version: '',
     summary: '',
-    metricsJson: '',
     spatialResolutionM: '',
-    trainingPeriod: '',
-    evaluationNotes: '',
-    license: '',
-    citation: '',
-    extrasJson: '',
+    primaryMetricType: 'AUC',
+    customMetricLabel: '',
+    primaryMetricValue: '',
+    extrasPairs: [{ key: '', value: '' }],
   }
+}
+
+function extrasObjectToPairs(ex: Record<string, string> | null | undefined): ExtraPair[] {
+  if (!ex || Object.keys(ex).length === 0) return [{ key: '', value: '' }]
+  return Object.entries(ex).map(([key, value]) => ({ key, value }))
 }
 
 export function modelToCardDraft(m: Model | null): ModelCardDraft {
   const c = m?.metadata?.card
   const ex = m?.metadata?.extras
+
+  const storedType = c?.primary_metric_type?.trim() ?? ''
+  let primaryMetricType: string = 'AUC'
+  let customMetricLabel = ''
+  if (storedType) {
+    if ((PRIMARY_METRIC_TYPES as readonly string[]).includes(storedType)) {
+      primaryMetricType = storedType === 'Custom' ? 'Custom' : storedType
+    } else {
+      primaryMetricType = 'Custom'
+      customMetricLabel = storedType
+    }
+  }
+  let primaryMetricValue = c?.primary_metric_value ?? ''
+  if (!primaryMetricValue && c?.metrics && typeof c.metrics === 'object') {
+    const auc = c.metrics.auc ?? c.metrics.AUC
+    if (auc !== undefined && auc !== null) {
+      primaryMetricType = 'AUC'
+      primaryMetricValue = String(auc)
+    }
+  }
+
   return {
     title: c?.title ?? '',
     version: c?.version ?? '',
     summary: c?.summary ?? '',
-    metricsJson: c?.metrics ? JSON.stringify(c.metrics, null, 2) : '',
     spatialResolutionM: c?.spatial_resolution_m != null ? String(c.spatial_resolution_m) : '',
-    trainingPeriod: c?.training_period ?? '',
-    evaluationNotes: c?.evaluation_notes ?? '',
-    license: c?.license ?? '',
-    citation: c?.citation ?? '',
-    extrasJson: ex ? JSON.stringify(ex, null, 2) : '',
+    primaryMetricType,
+    customMetricLabel,
+    primaryMetricValue,
+    extrasPairs: extrasObjectToPairs(ex ?? undefined),
   }
 }
 
 export function parseModelCardDraft(
   draft: ModelCardDraft,
 ): { ok: true; card: ModelCard | null; extras: Record<string, string> | null } | { ok: false; message: string } {
-  let metrics: Record<string, number | string> | undefined
-  if (draft.metricsJson.trim()) {
-    try {
-      const p = JSON.parse(draft.metricsJson) as unknown
-      if (p === null || typeof p !== 'object' || Array.isArray(p)) {
-        return { ok: false, message: 'Metrics must be a JSON object.' }
-      }
-      const out: Record<string, number | string> = {}
-      for (const [k, v] of Object.entries(p as Record<string, unknown>)) {
-        if (typeof v === 'number' && Number.isFinite(v)) {
-          out[k] = v
-        } else if (typeof v === 'string') {
-          out[k] = v
-        } else {
-          return { ok: false, message: `Metrics values must be numbers or strings (key: ${k}).` }
-        }
-      }
-      metrics = Object.keys(out).length ? out : undefined
-    } catch {
-      return { ok: false, message: 'Metrics must be valid JSON.' }
-    }
-  }
-
   let extras: Record<string, string> | null = null
-  if (draft.extrasJson.trim()) {
-    try {
-      const p = JSON.parse(draft.extrasJson) as unknown
-      if (p === null || typeof p !== 'object' || Array.isArray(p)) {
-        return { ok: false, message: 'Extras must be a JSON object.' }
-      }
-      const out: Record<string, string> = {}
-      for (const [k, v] of Object.entries(p as Record<string, unknown>)) {
-        if (typeof v === 'number' && Number.isFinite(v)) {
-          out[k] = String(v)
-        } else if (typeof v === 'string') {
-          out[k] = v
-        } else {
-          return { ok: false, message: `Extras values must be strings or numbers (key: ${k}).` }
-        }
-      }
-      extras = Object.keys(out).length ? out : null
-    } catch {
-      return { ok: false, message: 'Extras must be valid JSON.' }
-    }
+  const out: Record<string, string> = {}
+  for (const row of draft.extrasPairs) {
+    const k = row.key.trim()
+    if (!k) continue
+    out[k] = row.value.trim()
   }
+  extras = Object.keys(out).length ? out : null
 
   let spatial_resolution_m: number | undefined
   if (draft.spatialResolutionM.trim()) {
@@ -108,12 +97,25 @@ export function parseModelCardDraft(
   if (draft.title.trim()) card.title = draft.title.trim()
   if (draft.version.trim()) card.version = draft.version.trim()
   if (draft.summary.trim()) card.summary = draft.summary.trim()
-  if (metrics) card.metrics = metrics
   if (spatial_resolution_m !== undefined) card.spatial_resolution_m = spatial_resolution_m
-  if (draft.trainingPeriod.trim()) card.training_period = draft.trainingPeriod.trim()
-  if (draft.evaluationNotes.trim()) card.evaluation_notes = draft.evaluationNotes.trim()
-  if (draft.license.trim()) card.license = draft.license.trim()
-  if (draft.citation.trim()) card.citation = draft.citation.trim()
+
+  const mv = draft.primaryMetricValue.trim()
+  if (mv) {
+    let metricTypeResolved: string | undefined
+    if (draft.primaryMetricType === 'Custom') {
+      const custom = draft.customMetricLabel.trim()
+      if (!custom) {
+        return { ok: false, message: 'Enter a name for the custom metric, or choose another type.' }
+      }
+      metricTypeResolved = custom
+    } else if (draft.primaryMetricType.trim()) {
+      metricTypeResolved = draft.primaryMetricType.trim()
+    }
+    if (metricTypeResolved) {
+      card.primary_metric_type = metricTypeResolved
+      card.primary_metric_value = mv
+    }
+  }
 
   const hasCard = Object.keys(card).length > 0
   return { ok: true, card: hasCard ? card : null, extras }

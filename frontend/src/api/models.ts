@@ -9,11 +9,9 @@ function parseModelCard(value: unknown): ModelCard | null {
     'title',
     'version',
     'summary',
+    'primary_metric_type',
+    'primary_metric_value',
     'spatial_resolution_m',
-    'training_period',
-    'evaluation_notes',
-    'license',
-    'citation',
   ] as const) {
     const v = value[k]
     if (v === undefined) continue
@@ -121,7 +119,8 @@ function parseModelMetadata(value: unknown): ModelMetadata | null {
 
 export function parseModel(value: unknown): Model | null {
   if (!isRecord(value)) return null
-  const { id, project_id, species, activity, artifact_root, suitability_cog_path, metadata } = value
+  const { id, project_id, species, activity, artifact_root, suitability_cog_path, created_at, updated_at, metadata } =
+    value
   if (
     typeof id !== 'string' ||
     typeof species !== 'string' ||
@@ -145,6 +144,14 @@ export function parseModel(value: unknown): Model | null {
     out.project_id = project_id
   }
 
+  if (created_at !== undefined) {
+    if (created_at !== null && typeof created_at !== 'string') return null
+    out.created_at = created_at
+  }
+  if (updated_at !== undefined) {
+    if (updated_at !== null && typeof updated_at !== 'string') return null
+    out.updated_at = updated_at
+  }
   if (metadata !== undefined) {
     if (metadata === null) {
       out.metadata = null

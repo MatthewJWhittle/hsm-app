@@ -5,13 +5,11 @@ export interface ModelCard {
   /** Optional revision label (e.g. date, run id). */
   version?: string | null
   summary?: string | null
-  /** Metric name -> number or short string */
-  metrics?: Record<string, number | string> | null
   spatial_resolution_m?: number | null
-  training_period?: string | null
-  evaluation_notes?: string | null
-  license?: string | null
-  citation?: string | null
+  primary_metric_type?: string | null
+  primary_metric_value?: string | null
+  /** Legacy responses only; prefer primary_metric_* */
+  metrics?: Record<string, number | string> | null
 }
 
 export interface ModelAnalysis {
@@ -36,6 +34,10 @@ export interface Model {
   activity: string
   artifact_root: string
   suitability_cog_path: string
+  /** ISO-8601 UTC, server-set when the layer was first registered */
+  created_at?: string | null
+  /** ISO-8601 UTC, server-set on each save */
+  updated_at?: string | null
   metadata?: ModelMetadata | null
 }
 

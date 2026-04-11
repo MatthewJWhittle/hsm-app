@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import (
@@ -51,6 +52,11 @@ from backend_api.settings import Settings
 from backend_api.storage import SERIALIZED_MODEL_FILENAME, ObjectStorage
 
 router = APIRouter()
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
 
 _ADMIN_WRITE_RESPONSES: dict[int | str, dict[str, str]] = {
     status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid bearer token"},
@@ -210,6 +216,7 @@ async def create_model(
         serialized_model_file=serialized_model_file,
     )
 
+    ts = _utc_now_iso()
     model = Model(
         id=model_id,
         project_id=project_id.strip(),
@@ -217,6 +224,8 @@ async def create_model(
         activity=activity.strip(),
         artifact_root=artifact_root,
         suitability_cog_path=suitability_cog_path,
+        created_at=ts,
+        updated_at=ts,
         metadata=meta_in,
     )
 
@@ -321,6 +330,8 @@ async def update_model(
         serialized_model_file=serialized_model_file,
     )
 
+    ts = _utc_now_iso()
+    created_prev = existing.created_at or ts
     model = Model(
         id=model_id,
         project_id=new_project_id,
@@ -328,6 +339,8 @@ async def update_model(
         activity=new_activity,
         artifact_root=artifact_root,
         suitability_cog_path=suitability_cog_path,
+        created_at=created_prev,
+        updated_at=ts,
         metadata=new_metadata,
     )
 
