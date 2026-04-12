@@ -48,6 +48,6 @@ def test_pickle_module_not_found_clear_error() -> None:
         patch("pickle.load", side_effect=e),
     ):
         with pytest.raises(PointSamplingError) as ei:
-            compute_shap_driver_variables(model, feature_row, dc)
+            compute_shap_driver_variables(model, feature_row, dc, max_background_rows=512)
     assert ei.value.code == "EXPLAINABILITY_PICKLE_IMPORT"
     assert "sdm" in ei.value.detail.lower() or "missing import" in ei.value.detail.lower()

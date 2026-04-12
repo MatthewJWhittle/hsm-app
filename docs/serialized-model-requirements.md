@@ -31,6 +31,7 @@ Use the block below as the **system or task preamble** when asking another agent
 | Item | Detail |
 |------|--------|
 | **Upload** | Multipart **`serialized_model_file`** on admin **`POST /models`** or **`PUT /models/{id}`**; combined with **`metadata`** listing **`analysis.feature_band_names`**, **`analysis.positive_class_index`** (optional), and a parent **project** that has **`explainability_background.parquet`**. |
+| **SHAP background size** | At **`GET …/point`**, only the first **`SHAP_BACKGROUND_MAX_ROWS`** rows of the background Parquet are used (default **512**, configurable). Larger files are truncated deterministically to bound CPU per click. |
 | **Load failure (missing imports)** | **422** with **`detail.code`** **`EXPLAINABILITY_PICKLE_IMPORT`** — pickle referenced a module not available on the server. |
 | **Other load failures** | **422** with **`EXPLAINABILITY_PICKLE_LOAD`**. |
 

@@ -299,12 +299,15 @@ def inspect_point(
     lat: float,
     *,
     catalog: "CatalogService | None" = None,
+    shap_background_max_rows: int | None = None,
 ) -> PointInspection:
     """Sample suitability; optional raw env values and SHAP influence when configured."""
     from backend_api.point_explainability import (
         compute_shap_driver_variables,
         explainability_configured,
     )
+
+    shap_cap = 512 if shap_background_max_rows is None else shap_background_max_rows
 
     path = resolve_cog_path(model)
     value = sample_suitability(path, lng, lat)
@@ -357,7 +360,12 @@ def inspect_point(
                 feature_df = pd.DataFrame(
                     [band_values], columns=[str(x) for x in fnames]
                 )
-                drivers_out = compute_shap_driver_variables(model, feature_df, dc)
+                drivers_out = compute_shap_driver_variables(
+                    model,
+                    feature_df,
+                    dc,
+                    max_background_rows=shap_cap,
+                )
 
     drivers_final = drivers_out or []
     raw_list = raw_out

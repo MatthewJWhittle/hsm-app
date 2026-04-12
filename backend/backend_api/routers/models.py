@@ -192,6 +192,7 @@ async def get_model_point(
     ],
     m: Annotated[Model, Depends(get_model_visible_or_404)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ):
     """
     Suitability value at a WGS84 point (band 1 of the model COG).
@@ -209,10 +210,19 @@ async def get_model_point(
     **Pickle compatibility:** if the serialized estimator fails to load on the server (Python /
     scikit-learn / dependency mismatch with the training environment), influence may be unavailable
     even when other capabilities succeed; check ``capabilities.notes`` and server logs.
+
+    **SHAP cost:** background Parquet rows are capped at ``SHAP_BACKGROUND_MAX_ROWS`` (see app settings)
+    for each point request; larger files are truncated deterministically to the first N rows.
     """
 
     def _run() -> PointInspection:
-        return inspect_point(m, lng, lat, catalog=catalog)
+        return inspect_point(
+            m,
+            lng,
+            lat,
+            catalog=catalog,
+            shap_background_max_rows=settings.shap_background_max_rows,
+        )
 
     try:
         return await run_in_threadpool(_run)

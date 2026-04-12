@@ -55,7 +55,9 @@ def test_shap_column_transformer_pipeline_receives_dataframe(tmp_path: Path) -> 
     }
     feature_row = pd.DataFrame([[0.12, -0.34]], columns=cols)
 
-    drivers = compute_shap_driver_variables(model, feature_row, dc)
+    drivers = compute_shap_driver_variables(
+        model, feature_row, dc, max_background_rows=512
+    )
     assert len(drivers) >= 1
     names = {d.name for d in drivers}
     assert names.issubset(set(cols))

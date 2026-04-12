@@ -123,3 +123,15 @@ class Settings(BaseSettings):
         le=50_000,
     )
 
+    shap_background_max_rows: int = Field(
+        default=512,
+        description=(
+            "Max rows read from explainability_background.parquet when running permutation SHAP "
+            "on GET /models/{id}/point (deterministic head slice). Limits request-time CPU; "
+            "raise for larger training backgrounds only if you accept longer point requests."
+        ),
+        validation_alias=AliasChoices("SHAP_BACKGROUND_MAX_ROWS"),
+        ge=8,
+        le=50_000,
+    )
+

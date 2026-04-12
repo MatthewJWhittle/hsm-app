@@ -24,6 +24,26 @@ logger = logging.getLogger(__name__)
 TOP_INFLUENCE_DRIVERS = 8
 
 
+def cap_shap_background_rows(background: pd.DataFrame, max_rows: int) -> pd.DataFrame:
+    """
+    Deterministically limit background size for permutation SHAP (first ``max_rows`` rows).
+
+    Parquet row order is stable for a given file; this bounds request-time work without
+    changing smaller backgrounds.
+    """
+    if max_rows < 1:
+        return background
+    n = len(background)
+    if n <= max_rows:
+        return background
+    logger.info(
+        "SHAP explainability background truncated from %s to %s rows (SHAP_BACKGROUND_MAX_ROWS)",
+        n,
+        max_rows,
+    )
+    return background.iloc[:max_rows].copy()
+
+
 def _background_storage_root(model: Model, dc: dict) -> str:
     """Project shared background vs legacy per-model folder."""
     r = dc.get("explainability_background_artifact_root")
@@ -68,12 +88,16 @@ def compute_shap_driver_variables(
     model: Model,
     feature_row: pd.DataFrame,
     dc: dict,
+    *,
+    max_background_rows: int,
 ) -> list[DriverVariable]:
     """
     Load sklearn pipeline + background from ``artifact_root``, run permutation SHAP
     for one row, return top drivers by |contribution|.
 
     ``feature_row`` columns must match training feature order (``feature_names``).
+
+    ``max_background_rows`` caps rows loaded from the background Parquet for SHAP (see Settings).
     """
     mp = dc.get("explainability_model_path")
     bp = dc.get("explainability_background_path")
@@ -130,6 +154,7 @@ def compute_shap_driver_variables(
         )
 
     background = background[fnames]
+    background = cap_shap_background_rows(background, max_background_rows)
     pos = int(dc.get("explainability_positive_class", 1))
 
     def predict_fn(data: object) -> np.ndarray:
