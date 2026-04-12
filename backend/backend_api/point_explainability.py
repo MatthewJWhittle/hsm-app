@@ -132,9 +132,26 @@ def compute_shap_driver_variables(
     background = background[fnames]
     pos = int(dc.get("explainability_positive_class", 1))
 
-    def predict_fn(data: pd.DataFrame) -> np.ndarray:
-        arr = np.asarray(data, dtype=np.float64)
-        proba = clf.predict_proba(arr)
+    def predict_fn(data: object) -> np.ndarray:
+        """
+        SHAP's permutation explainer calls this with **numpy arrays** (masked batches), not DataFrames.
+        Many sklearn pipelines use ``ColumnTransformer`` with **string** column selectors, which only
+        work when ``predict_proba`` receives a **pandas DataFrame** with those column names — so we
+        wrap ndarray input using ``feature_names`` (``fnames``) before calling the estimator.
+        """
+        if isinstance(data, pd.DataFrame):
+            X = data.reindex(columns=fnames)
+        else:
+            arr = np.asarray(data, dtype=np.float64)
+            if arr.ndim == 1:
+                arr = arr.reshape(1, -1)
+            if arr.shape[1] != len(fnames):
+                raise PointSamplingError(
+                    "explainability model input width "
+                    f"({arr.shape[1]}) does not match configured feature count ({len(fnames)})"
+                )
+            X = pd.DataFrame(arr, columns=fnames)
+        proba = clf.predict_proba(X)
         if proba.shape[1] <= pos:
             raise PointSamplingError("model output does not support configured positive class index")
         return proba[:, pos]
