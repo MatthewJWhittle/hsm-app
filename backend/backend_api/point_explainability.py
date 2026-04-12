@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 import shap
 
+from backend_api.explainability_runtime_cache import ShapExplainerBundle, get_or_build_shap_bundle
 from backend_api.feature_band_names import FeatureBandNamesValidationError
 from backend_api.model_effective_config import get_effective_driver_config, get_feature_band_indices
 from backend_api.point_sampling import PointSamplingError
@@ -67,6 +68,95 @@ def _resolve_artifact_file(artifact_root: str, rel: str) -> Path:
     return p
 
 
+def _load_classifier_or_raise(model_path: Path) -> object:
+    try:
+        with open(model_path, "rb") as f:
+            return pickle.load(f)
+    except ModuleNotFoundError as e:
+        mod = getattr(e, "name", None) or str(e)
+        logger.warning(
+            "Explainability pickle import failed (missing module %s)",
+            mod,
+            exc_info=False,
+        )
+        raise PointSamplingError(
+            "Serialized estimator references Python code not available on this server "
+            f"(missing import {mod!r}). Train with in-container packages only, or export a "
+            "pipeline using standard sklearn / dependencies present in the API image.",
+            code="EXPLAINABILITY_PICKLE_IMPORT",
+        ) from None
+    except Exception:
+        logger.exception("Failed to load explainability model")
+        raise PointSamplingError(
+            "explainability model could not be loaded",
+            code="EXPLAINABILITY_PICKLE_LOAD",
+        ) from None
+
+
+def _materialize_shap_explainer_bundle(
+    model: Model,
+    dc: dict,
+    model_path: Path,
+    bg_path: Path,
+    max_background_rows: int,
+) -> ShapExplainerBundle:
+    """Load pickle + capped background and build ``shap.Explainer`` (no query row yet)."""
+    clf = _load_classifier_or_raise(model_path)
+
+    try:
+        background = pd.read_parquet(bg_path)
+    except Exception:
+        logger.exception("Failed to read explainability background")
+        raise PointSamplingError("explainability background could not be read") from None
+
+    fnames = [str(x) for x in (dc.get("feature_names") or [])]
+    missing_bg = [c for c in fnames if c not in background.columns]
+    if missing_bg:
+        raise PointSamplingError(f"background parquet missing columns: {missing_bg!r}")
+
+    background = background[fnames]
+    background = cap_shap_background_rows(background, max_background_rows)
+    pos = int(dc.get("explainability_positive_class", 1))
+
+    def predict_fn(data: object) -> np.ndarray:
+        if isinstance(data, pd.DataFrame):
+            X = data.reindex(columns=fnames)
+        else:
+            arr = np.asarray(data, dtype=np.float64)
+            if arr.ndim == 1:
+                arr = arr.reshape(1, -1)
+            if arr.shape[1] != len(fnames):
+                raise PointSamplingError(
+                    "explainability model input width "
+                    f"({arr.shape[1]}) does not match configured feature count ({len(fnames)})"
+                )
+            X = pd.DataFrame(arr, columns=fnames)
+        proba = clf.predict_proba(X)
+        if proba.shape[1] <= pos:
+            raise PointSamplingError("model output does not support configured positive class index")
+        return proba[:, pos]
+
+    try:
+        explainer = shap.Explainer(
+            predict_fn,
+            background,
+            algorithm="permutation",
+            model_output="probability",
+        )
+    except Exception:
+        logger.exception("Failed to construct SHAP explainer")
+        raise PointSamplingError("could not build variable influence explainer") from None
+
+    bl = dc.get("band_labels")
+    band_labels: list | None = bl if isinstance(bl, list) else None
+    return ShapExplainerBundle(
+        explainer=explainer,
+        fnames=fnames,
+        pos=pos,
+        band_labels=band_labels,
+    )
+
+
 def explainability_configured(model: Model, catalog: "CatalogService") -> bool:
     """True when serialized model + background + feature_names are available for SHAP."""
     dc = get_effective_driver_config(model, catalog)
@@ -98,6 +188,7 @@ def compute_shap_driver_variables(
     ``feature_row`` columns must match training feature order (``feature_names``).
 
     ``max_background_rows`` caps rows loaded from the background Parquet for SHAP (see Settings).
+    Explainer construction is cached per model when artifact mtimes are unchanged.
     """
     mp = dc.get("explainability_model_path")
     bp = dc.get("explainability_background_path")
@@ -112,86 +203,23 @@ def compute_shap_driver_variables(
     if not bg_path.is_file():
         raise PointSamplingError("explainability background file not found on server")
 
-    try:
-        with open(model_path, "rb") as f:
-            clf = pickle.load(f)
-    except ModuleNotFoundError as e:
-        # Pickles trained in another repo often reference custom packages (e.g. ``sdm``) that
-        # are not installed in the API container; sklearn-only pickles load fine.
-        mod = getattr(e, "name", None) or str(e)
-        logger.warning(
-            "Explainability pickle import failed (missing module %s)",
-            mod,
-            exc_info=False,
-        )
-        raise PointSamplingError(
-            "Serialized estimator references Python code not available on this server "
-            f"(missing import {mod!r}). Train with in-container packages only, or export a "
-            "pipeline using standard sklearn / dependencies present in the API image.",
-            code="EXPLAINABILITY_PICKLE_IMPORT",
-        ) from None
-    except Exception as e:
-        logger.exception("Failed to load explainability model")
-        raise PointSamplingError(
-            "explainability model could not be loaded",
-            code="EXPLAINABILITY_PICKLE_LOAD",
-        ) from e
+    bundle = get_or_build_shap_bundle(
+        model.id,
+        model_path,
+        bg_path,
+        max_background_rows,
+        lambda: _materialize_shap_explainer_bundle(
+            model, dc, model_path, bg_path, max_background_rows
+        ),
+    )
+    fnames = bundle.fnames
+    feature_row = feature_row.reindex(columns=fnames)
 
     try:
-        background = pd.read_parquet(bg_path)
-    except Exception as e:
-        logger.exception("Failed to read explainability background")
-        raise PointSamplingError("explainability background could not be read") from e
-
-    fnames = [str(x) for x in (dc.get("feature_names") or [])]
-    if list(feature_row.columns) != fnames:
-        feature_row = feature_row[fnames]
-
-    missing_bg = [c for c in fnames if c not in background.columns]
-    if missing_bg:
-        raise PointSamplingError(
-            f"background parquet missing columns: {missing_bg!r}"
-        )
-
-    background = background[fnames]
-    background = cap_shap_background_rows(background, max_background_rows)
-    pos = int(dc.get("explainability_positive_class", 1))
-
-    def predict_fn(data: object) -> np.ndarray:
-        """
-        SHAP's permutation explainer calls this with **numpy arrays** (masked batches), not DataFrames.
-        Many sklearn pipelines use ``ColumnTransformer`` with **string** column selectors, which only
-        work when ``predict_proba`` receives a **pandas DataFrame** with those column names — so we
-        wrap ndarray input using ``feature_names`` (``fnames``) before calling the estimator.
-        """
-        if isinstance(data, pd.DataFrame):
-            X = data.reindex(columns=fnames)
-        else:
-            arr = np.asarray(data, dtype=np.float64)
-            if arr.ndim == 1:
-                arr = arr.reshape(1, -1)
-            if arr.shape[1] != len(fnames):
-                raise PointSamplingError(
-                    "explainability model input width "
-                    f"({arr.shape[1]}) does not match configured feature count ({len(fnames)})"
-                )
-            X = pd.DataFrame(arr, columns=fnames)
-        proba = clf.predict_proba(X)
-        if proba.shape[1] <= pos:
-            raise PointSamplingError("model output does not support configured positive class index")
-        return proba[:, pos]
-
-    try:
-        explainer = shap.Explainer(
-            predict_fn,
-            background,
-            algorithm="permutation",
-            model_output="probability",
-        )
-        shap_values = explainer(feature_row)
-    except Exception as e:
+        shap_values = bundle.explainer(feature_row)
+    except Exception:
         logger.exception("SHAP explain failed")
-        raise PointSamplingError("could not compute variable influence at this location") from e
+        raise PointSamplingError("could not compute variable influence at this location") from None
 
     vals = np.asarray(shap_values.values)
     if vals.ndim == 2:
@@ -206,7 +234,7 @@ def compute_shap_driver_variables(
     pairs.sort(key=lambda x: abs(float(x[1])), reverse=True)
     pairs = pairs[:TOP_INFLUENCE_DRIVERS]
 
-    band_labels = dc.get("band_labels")
+    band_labels = bundle.band_labels
     name_to_display: dict[str, str] = {}
     if isinstance(band_labels, list) and len(band_labels) == len(fnames):
         for i, fname in enumerate(fnames):
@@ -234,6 +262,45 @@ def compute_shap_driver_variables(
             )
         )
     return drivers
+
+
+def warm_explainability_cache(
+    model: Model,
+    catalog: "CatalogService",
+    *,
+    max_background_rows: int,
+) -> None:
+    """
+    Load and cache SHAP explainer artifacts for a model (no query row).
+
+    No-op when explainability is not configured or files are missing (does not raise).
+    """
+    if not explainability_configured(model, catalog):
+        return
+    try:
+        dc = get_effective_driver_config(model, catalog)
+    except FeatureBandNamesValidationError:
+        return
+    mp = dc.get("explainability_model_path")
+    bp = dc.get("explainability_background_path")
+    if not isinstance(mp, str) or not isinstance(bp, str):
+        return
+    model_path = _resolve_artifact_file(model.artifact_root, mp)
+    bg_path = _resolve_artifact_file(_background_storage_root(model, dc), bp)
+    if not model_path.is_file() or not bg_path.is_file():
+        return
+    try:
+        get_or_build_shap_bundle(
+            model.id,
+            model_path,
+            bg_path,
+            max_background_rows,
+            lambda: _materialize_shap_explainer_bundle(
+                model, dc, model_path, bg_path, max_background_rows
+            ),
+        )
+    except PointSamplingError:
+        logger.debug("explainability warm skipped for model %s", model.id, exc_info=True)
 
 
 def validate_explainability_artifacts_for_model(

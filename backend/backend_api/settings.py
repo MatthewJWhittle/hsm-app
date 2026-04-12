@@ -135,3 +135,14 @@ class Settings(BaseSettings):
         le=50_000,
     )
 
+    point_inspect_timeout_seconds: float = Field(
+        default=45.0,
+        description=(
+            "Wall-clock limit for synchronous GET /models/{id}/point work (suitability + env + SHAP). "
+            "Returns 504 when exceeded; the worker thread may still finish briefly after the client disconnects."
+        ),
+        validation_alias=AliasChoices("POINT_INSPECT_TIMEOUT_SECONDS"),
+        ge=5.0,
+        le=300.0,
+    )
+

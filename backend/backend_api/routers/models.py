@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated
@@ -15,6 +16,7 @@ from fastapi import (
     status,
 )
 from starlette.concurrency import run_in_threadpool
+from starlette.responses import Response
 
 from backend_api.api_errors import validation_error
 from backend_api.auth_deps import optional_id_token_claims, require_admin_claims
@@ -31,7 +33,10 @@ from backend_api.deps.visibility_models import (
     get_model_visible_or_404,
 )
 from backend_api.deps.settings_dep import get_settings
-from backend_api.point_explainability import validate_explainability_artifacts_for_model
+from backend_api.point_explainability import (
+    validate_explainability_artifacts_for_model,
+    warm_explainability_cache,
+)
 from backend_api.point_sampling import (
     PointSamplingError,
     RasterNotFoundError,
@@ -213,6 +218,8 @@ async def get_model_point(
 
     **SHAP cost:** background Parquet rows are capped at ``SHAP_BACKGROUND_MAX_ROWS`` (see app settings)
     for each point request; larger files are truncated deterministically to the first N rows.
+
+    **Timeout:** synchronous work is limited by ``POINT_INSPECT_TIMEOUT_SECONDS`` (default 45s); **504** on overrun.
     """
 
     def _run() -> PointInspection:
@@ -225,7 +232,18 @@ async def get_model_point(
         )
 
     try:
-        return await run_in_threadpool(_run)
+        return await asyncio.wait_for(
+            run_in_threadpool(_run),
+            timeout=settings.point_inspect_timeout_seconds,
+        )
+    except TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail=validation_error(
+                "POINT_INSPECT_TIMEOUT",
+                "Point inspection exceeded the server time limit; try again or reduce explainability background size.",
+            ),
+        ) from None
     except PointSamplingError as e:
         raise HTTPException(
             status_code=422,
@@ -236,6 +254,34 @@ async def get_model_point(
             status_code=503,
             detail=validation_error("RASTER_NOT_FOUND", e.detail),
         ) from e
+
+
+@router.post(
+    "/models/{model_id}/explainability-warmup",
+    status_code=204,
+    tags=["catalog"],
+    summary="Prefetch SHAP explainer for a model (optional client optimization)",
+)
+async def post_explainability_warmup(
+    m: Annotated[Model, Depends(get_model_visible_or_404)],
+    catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    settings: Annotated[Settings, Depends(get_settings)],
+):
+    """
+    Load serialized estimator + explainability background and build the permutation SHAP explainer
+    into an in-memory cache when explainability is configured. Safe to call repeatedly; no-op when
+    not configured. Does not run SHAP for a map click — use ``GET …/point`` for that.
+    """
+
+    def _warm() -> None:
+        warm_explainability_cache(
+            m,
+            catalog,
+            max_background_rows=settings.shap_background_max_rows,
+        )
+
+    await run_in_threadpool(_warm)
+    return Response(status_code=204)
 
 
 @router.post(
