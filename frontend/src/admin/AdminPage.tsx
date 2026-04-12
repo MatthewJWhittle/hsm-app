@@ -31,9 +31,9 @@ import { ProjectCreateDialog } from './ProjectCreateDialog'
 import { ProjectEditDialog } from './ProjectEditDialog'
 import { ProjectsCatalogTab } from './ProjectsCatalogTab'
 import { layerFormSnapshot, projectFormSnapshot } from './adminEditSnapshots'
+import { useDebouncedLayerAutosave, useDebouncedProjectAutosave } from './useAdminDebouncedAutosave'
 
 const FORM_MAX_WIDTH = 640
-const AUTO_SAVE_DEBOUNCE_MS = 550
 
 export function AdminPage() {
   const { user, loading, isAdmin, getIdToken } = useAuth()
@@ -619,63 +619,37 @@ export function AdminPage() {
     }
   }
 
-  useEffect(
-    () => {
-      if (!projectEditOpen || !editingProject) return
-      if (!editProjName.trim()) return
-      const snap = buildProjectEditSnapshot()
-      if (snap === projectEditBaselineRef.current) return
-      const t = window.setTimeout(() => {
-        void persistProjectEdit()
-      }, AUTO_SAVE_DEBOUNCE_MS)
-      return () => window.clearTimeout(t)
-    },
-    // Debounced autosave: `editingProject?.id` plus form fields; omit full `editingProject` to avoid re-arming on catalog churn.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      projectEditOpen,
-      editingProject?.id,
-      editProjName,
-      editProjDesc,
-      editProjStatus,
-      editProjVisibility,
-      editProjAllowedUids,
-      editProjBandDefs,
-      editProjFile,
-      buildProjectEditSnapshot,
-      persistProjectEdit,
-    ],
-  )
+  useDebouncedProjectAutosave({
+    projectEditOpen,
+    editingProjectId: editingProject?.id,
+    editProjName,
+    editProjDesc,
+    editProjStatus,
+    editProjVisibility,
+    editProjAllowedUids,
+    editProjBandDefs,
+    editProjFile,
+    baselineRef: projectEditBaselineRef,
+    buildSnapshot: buildProjectEditSnapshot,
+    persist: persistProjectEdit,
+  })
 
-  useEffect(
-    () => {
-      if (!editOpen || !editModel) return
-      if (!canPersistLayerEdit()) return
-      const snap = buildLayerEditSnapshot()
-      if (snap === layerEditBaselineRef.current) return
-      const t = window.setTimeout(() => {
-        void persistLayerEdit()
-      }, AUTO_SAVE_DEBOUNCE_MS)
-      return () => window.clearTimeout(t)
-    },
-    // Debounced autosave: `editModel?.id` plus form fields; omit full `editModel` for the same reason as project edit above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      editOpen,
-      editModel?.id,
-      editSpecies,
-      editActivity,
-      editProjectId,
-      editSelectedEnvBands,
-      editExplainEnabled,
-      editFile,
-      editExplainModelFile,
-      editCardDraft,
-      buildLayerEditSnapshot,
-      persistLayerEdit,
-      canPersistLayerEdit,
-    ],
-  )
+  useDebouncedLayerAutosave({
+    editOpen,
+    editModelId: editModel?.id,
+    editSpecies,
+    editActivity,
+    editProjectId,
+    editSelectedEnvBands,
+    editExplainEnabled,
+    editFile,
+    editExplainModelFile,
+    editCardDraft,
+    baselineRef: layerEditBaselineRef,
+    buildSnapshot: buildLayerEditSnapshot,
+    canPersist: canPersistLayerEdit,
+    persist: persistLayerEdit,
+  })
 
   const handleCloseProjectEdit = useCallback(async () => {
     if (projectEditOpen && editingProject) {
