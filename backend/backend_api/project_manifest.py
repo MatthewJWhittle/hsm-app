@@ -66,8 +66,3 @@ def validate_model_feature_bands_for_admin(model: Model, catalog: "CatalogServic
         resolve_feature_band_names_to_indices(names, proj.environmental_band_definitions)
     except FeatureBandNamesValidationError as e:
         raise HTTPException(status_code=400, detail=e.detail) from e
-
-
-def validate_model_bands_against_project_manifest(model: Model, catalog: "CatalogService") -> None:
-    """Backward-compatible alias for :func:`validate_model_feature_bands_for_admin`."""
-    validate_model_feature_bands_for_admin(model, catalog)

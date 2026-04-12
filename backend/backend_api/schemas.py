@@ -66,6 +66,40 @@ class ModelMetadata(BaseModel):
     analysis: ModelAnalysis | None = None
 
 
+def _analysis_dict_from_legacy_driver_config(dc: dict[str, Any]) -> dict[str, Any]:
+    """Map legacy ``driver_config`` keys into ``metadata.analysis`` field names."""
+    analysis: dict[str, Any] = {}
+    mp = dc.get("explainability_model_path")
+    if isinstance(mp, str) and mp.strip():
+        analysis["serialized_model_path"] = mp.strip()
+    pc = dc.get("explainability_positive_class")
+    if pc is not None:
+        try:
+            analysis["positive_class_index"] = int(pc)
+        except (TypeError, ValueError):
+            pass
+    dcp = dc.get("driver_cog_path")
+    if isinstance(dcp, str) and dcp.strip():
+        analysis["driver_cog_path"] = dcp.strip()
+    return analysis
+
+
+def _merge_legacy_driver_config_into_analysis(
+    analysis: dict[str, Any], dc: dict[str, Any]
+) -> dict[str, Any]:
+    """
+    Fill gaps in ``metadata.analysis`` from top-level ``driver_config`` without overwriting
+    values already present in Firestore (prefer stored ``metadata`` over stale ``driver_config``).
+    """
+    out = dict(analysis)
+    extra = _analysis_dict_from_legacy_driver_config(dc)
+    for key, val in extra.items():
+        cur = out.get(key)
+        if cur is None or (isinstance(cur, str) and not cur.strip()):
+            out[key] = val
+    return out
+
+
 class Model(BaseModel):
     """One selectable catalog entry (species + activity + COG paths + optional metadata)."""
 
@@ -102,34 +136,26 @@ class Model(BaseModel):
         """Map legacy driver fields and old top-level display fields into ``metadata``."""
         if not isinstance(data, dict):
             return data
-        if data.get("metadata") is not None:
-            data.pop("driver_band_indices", None)
-            data.pop("driver_config", None)
-        else:
-            analysis: dict[str, Any] = {}
-            # Legacy driver_band_indices removed — clients must send metadata.analysis.feature_band_names.
-            dc = data.get("driver_config")
-            if isinstance(dc, dict):
-                mp = dc.get("explainability_model_path")
-                if isinstance(mp, str) and mp.strip():
-                    analysis["serialized_model_path"] = mp.strip()
-                pc = dc.get("explainability_positive_class")
-                if pc is not None:
-                    try:
-                        analysis["positive_class_index"] = int(pc)
-                    except (TypeError, ValueError):
-                        pass
-                dcp = dc.get("driver_cog_path")
-                if isinstance(dcp, str) and dcp.strip():
-                    analysis["driver_cog_path"] = dcp.strip()
 
-            meta: dict[str, Any] = {}
-            if analysis:
-                meta["analysis"] = analysis
-            if meta:
-                data["metadata"] = meta
-            data.pop("driver_band_indices", None)
-            data.pop("driver_config", None)
+        dc = data.get("driver_config")
+        dc_dict = dc if isinstance(dc, dict) else None
+        meta_raw = data.get("metadata")
+
+        if meta_raw is None:
+            if dc_dict:
+                analysis = _analysis_dict_from_legacy_driver_config(dc_dict)
+                if analysis:
+                    data["metadata"] = {"analysis": analysis}
+        elif isinstance(meta_raw, dict) and dc_dict:
+            analysis = meta_raw.get("analysis")
+            if not isinstance(analysis, dict):
+                analysis = {}
+            merged = _merge_legacy_driver_config_into_analysis(analysis, dc_dict)
+            if merged != analysis:
+                data["metadata"] = {**meta_raw, "analysis": merged}
+
+        data.pop("driver_band_indices", None)
+        data.pop("driver_config", None)
 
         legacy_name = data.pop("model_name", None)
         legacy_ver = data.pop("model_version", None)

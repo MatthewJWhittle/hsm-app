@@ -9,10 +9,12 @@ from typing import TYPE_CHECKING
 import numpy as np
 import rasterio
 from rasterio.crs import CRS
+from rasterio.io import DatasetReader
 from rasterio.transform import rowcol
 from rasterio.warp import transform as transform_coords
 from rasterio.windows import Window
 
+from backend_api.feature_band_names import FeatureBandNamesValidationError
 from backend_api.model_effective_config import get_effective_driver_config, get_feature_band_indices
 from backend_api.schemas import (
     DriverVariable,
@@ -98,8 +100,6 @@ def validate_driver_band_indices_for_model(model: Model, catalog: "CatalogServic
     Raises:
         ValueError: names cannot be resolved or indices out of range (use for HTTP 422 on admin save).
     """
-    from backend_api.feature_band_names import FeatureBandNamesValidationError
-
     try:
         indices = get_feature_band_indices(model, catalog)
     except FeatureBandNamesValidationError as e:
@@ -125,6 +125,41 @@ def validate_driver_band_indices_for_model(model: Model, catalog: "CatalogServic
             )
 
 
+def _rowcol_window_for_wgs84_point(
+    src: DatasetReader,
+    lng: float,
+    lat: float,
+    *,
+    crs_invalid_msg: str,
+    crs_invalid_code: str,
+    crs_mismatch_msg: str,
+    crs_mismatch_code: str,
+    outside_msg: str,
+    outside_code: str,
+) -> tuple[int, int, Window]:
+    """Project WGS84 (lng, lat) to pixel row/col and 1×1 window; shared CRS / extent checks."""
+    if not src.crs:
+        raise PointSamplingError(crs_invalid_msg, code=crs_invalid_code)
+    if src.crs != EXPECTED_SUITABILITY_CRS:
+        raise PointSamplingError(crs_mismatch_msg, code=crs_mismatch_code)
+
+    xs, ys = transform_coords("EPSG:4326", src.crs, [lng], [lat])
+    x, y = float(xs[0]), float(ys[0])
+    if not all(math.isfinite(v) for v in (x, y)):
+        raise PointSamplingError(
+            "could not project coordinates to raster CRS",
+            code="POINT_COORD_TRANSFORM_FAILED",
+        )
+
+    row_i, col_i = rowcol(src.transform, x, y)
+    row_i = int(row_i)
+    col_i = int(col_i)
+    if row_i < 0 or row_i >= src.height or col_i < 0 or col_i >= src.width:
+        raise PointSamplingError(outside_msg, code=outside_code)
+
+    return row_i, col_i, Window(col_i, row_i, 1, 1)
+
+
 def sample_suitability(cog_path: str, lng: float, lat: float) -> float:
     """
     Read band 1 at (lng, lat) in WGS84.
@@ -138,35 +173,17 @@ def sample_suitability(cog_path: str, lng: float, lat: float) -> float:
         raise RasterNotFoundError("suitability raster not found on server")
 
     with rasterio.open(path) as src:
-        if not src.crs:
-            raise PointSamplingError(
-                "raster has no CRS; expected EPSG:3857",
-                code="POINT_CRS_INVALID",
-            )
-        if src.crs != EXPECTED_SUITABILITY_CRS:
-            raise PointSamplingError(
-                f"raster CRS must be EPSG:3857 for point inspection; got {src.crs}",
-                code="POINT_CRS_MISMATCH",
-            )
-
-        xs, ys = transform_coords("EPSG:4326", src.crs, [lng], [lat])
-        x, y = float(xs[0]), float(ys[0])
-        if not all(math.isfinite(v) for v in (x, y)):
-            raise PointSamplingError(
-                "could not project coordinates to raster CRS",
-                code="POINT_COORD_TRANSFORM_FAILED",
-            )
-
-        row_i, col_i = rowcol(src.transform, x, y)
-        row_i = int(row_i)
-        col_i = int(col_i)
-        if row_i < 0 or row_i >= src.height or col_i < 0 or col_i >= src.width:
-            raise PointSamplingError(
-                "point is outside the raster extent",
-                code="POINT_OUTSIDE_EXTENT",
-            )
-
-        window = Window(col_i, row_i, 1, 1)
+        _row_i, _col_i, window = _rowcol_window_for_wgs84_point(
+            src,
+            lng,
+            lat,
+            crs_invalid_msg="raster has no CRS; expected EPSG:3857",
+            crs_invalid_code="POINT_CRS_INVALID",
+            crs_mismatch_msg=f"raster CRS must be EPSG:3857 for point inspection; got {src.crs}",
+            crs_mismatch_code="POINT_CRS_MISMATCH",
+            outside_msg="point is outside the raster extent",
+            outside_code="POINT_OUTSIDE_EXTENT",
+        )
         data = src.read(1, window=window, masked=True)
         if np.ma.getmaskarray(data).any():
             raise PointSamplingError(
@@ -201,35 +218,21 @@ def sample_environmental_bands_at_point(
 
     out: list[float] = []
     with rasterio.open(path) as src:
-        if not src.crs:
-            raise PointSamplingError(
-                "environmental raster has no CRS; expected EPSG:3857 for point inspection",
-                code="POINT_ENV_CRS_INVALID",
-            )
-        if src.crs != EXPECTED_SUITABILITY_CRS:
-            raise PointSamplingError(
-                f"environmental raster CRS must be EPSG:3857 for point inspection; got {src.crs}",
-                code="POINT_ENV_CRS_MISMATCH",
-            )
-
-        xs, ys = transform_coords("EPSG:4326", src.crs, [lng], [lat])
-        x, y = float(xs[0]), float(ys[0])
-        if not all(math.isfinite(v) for v in (x, y)):
-            raise PointSamplingError(
-                "could not project coordinates to raster CRS",
-                code="POINT_COORD_TRANSFORM_FAILED",
-            )
-
-        row_i, col_i = rowcol(src.transform, x, y)
-        row_i = int(row_i)
-        col_i = int(col_i)
-        if row_i < 0 or row_i >= src.height or col_i < 0 or col_i >= src.width:
-            raise PointSamplingError(
-                "point is outside the environmental raster extent",
-                code="POINT_ENV_OUTSIDE_EXTENT",
-            )
-
-        window = Window(col_i, row_i, 1, 1)
+        _row_i, _col_i, window = _rowcol_window_for_wgs84_point(
+            src,
+            lng,
+            lat,
+            crs_invalid_msg=(
+                "environmental raster has no CRS; expected EPSG:3857 for point inspection"
+            ),
+            crs_invalid_code="POINT_ENV_CRS_INVALID",
+            crs_mismatch_msg=(
+                f"environmental raster CRS must be EPSG:3857 for point inspection; got {src.crs}"
+            ),
+            crs_mismatch_code="POINT_ENV_CRS_MISMATCH",
+            outside_msg="point is outside the environmental raster extent",
+            outside_code="POINT_ENV_OUTSIDE_EXTENT",
+        )
 
         for bi in band_indices_0based:
             if bi < 0 or bi >= src.count:
@@ -298,7 +301,6 @@ def inspect_point(
     catalog: "CatalogService | None" = None,
 ) -> PointInspection:
     """Sample suitability; optional raw env values and SHAP influence when configured."""
-    from backend_api.feature_band_names import FeatureBandNamesValidationError
     from backend_api.point_explainability import (
         compute_shap_driver_variables,
         explainability_configured,

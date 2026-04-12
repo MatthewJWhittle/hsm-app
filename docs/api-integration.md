@@ -229,4 +229,5 @@ When the API changes, regenerate behaviour details from **`{BASE_URL}/openapi.js
 | [`scripts/convert_to_cog.sh`](../scripts/convert_to_cog.sh) | Example **27700 → 3857 → COG** for sample suitability rasters. |
 | [`scripts/data/environmental_band_label_updates.json`](../scripts/data/environmental_band_label_updates.json) | Example **`PATCH …/labels`** payload. |
 | [`scripts/apply_band_label_updates.py`](../scripts/apply_band_label_updates.py) | Applies label patch with env-configured auth. |
+| [`scripts/reproject_cog.sh`](../scripts/reproject_cog.sh) | Example **gdalwarp** flow to reproject a raster to **EPSG:3857** before COG upload. |
 | [`backend/backend_api/routers/models_openapi.py`](../backend/backend_api/routers/models_openapi.py) | OpenAPI multipart schema for **`POST`/`PUT` `/models`**. |

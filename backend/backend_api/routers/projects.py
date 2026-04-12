@@ -71,6 +71,21 @@ _ADMIN_RESPONSES: dict[int | str, dict[str, str]] = {
 }
 
 
+def _proj_422(
+    code: str, message: str, *, context: dict | None = None
+) -> HTTPException:
+    """422 with the same structured ``detail`` shape as admin model routes."""
+    return HTTPException(
+        status_code=422, detail=validation_error(code, message, context=context)
+    )
+
+
+def _proj_503(code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=503, detail=validation_error(code, message)
+    )
+
+
 def _infer_band_definitions_from_form(raw: str | None) -> bool:
     """When omitted, infer band names from the raster. Use ``false``/``0``/``no`` to require JSON."""
     if raw is None or not str(raw).strip():
@@ -138,14 +153,14 @@ async def patch_environmental_band_definitions(
     cog_path = existing.driver_cog_path
     abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
     if not abs_path:
-        raise HTTPException(
-            status_code=422,
-            detail="cannot set band definitions without an environmental COG uploaded",
+        raise _proj_422(
+            "ENV_COG_REQUIRED",
+            "cannot set band definitions without an environmental COG uploaded",
         )
     if not Path(abs_path).is_file():
-        raise HTTPException(
-            status_code=422,
-            detail="environmental COG not found on server; upload the file first",
+        raise _proj_422(
+            "ENV_COG_NOT_ON_DISK",
+            "environmental COG not found on server; upload the file first",
         )
 
     def _count() -> int:
@@ -155,7 +170,10 @@ async def patch_environmental_band_definitions(
     try:
         validate_band_definitions_match_raster(count, definitions)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error("BAND_DEFINITION_INVALID", str(e)),
+        ) from e
 
     now = datetime.now(UTC).isoformat()
     project = existing.model_copy(
@@ -171,7 +189,7 @@ async def patch_environmental_band_definitions(
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"could not save catalog: {e}") from e
+        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
     return project
@@ -214,35 +232,41 @@ async def patch_environmental_band_definition_labels(
 
     defs = existing.environmental_band_definitions
     if not defs:
-        raise HTTPException(
-            status_code=422,
-            detail="project has no environmental band definitions; upload the environmental COG first",
+        raise _proj_422(
+            "BAND_DEFINITIONS_MISSING",
+            "project has no environmental band definitions; upload the environmental COG first",
         )
 
     artifact_root = existing.driver_artifact_root
     cog_path = existing.driver_cog_path
     abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
     if not abs_path:
-        raise HTTPException(
-            status_code=422,
-            detail="cannot patch band labels without an environmental COG on the project",
+        raise _proj_422(
+            "ENV_COG_REQUIRED",
+            "cannot patch band labels without an environmental COG on the project",
         )
     if not Path(abs_path).is_file():
-        raise HTTPException(
-            status_code=422,
-            detail="environmental COG not found on server; upload the file first",
+        raise _proj_422(
+            "ENV_COG_NOT_ON_DISK",
+            "environmental COG not found on server; upload the file first",
         )
 
     try:
         merged = apply_band_label_updates(defs, updates)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error("BAND_LABEL_PATCH_INVALID", str(e)),
+        ) from e
 
     count = await run_in_threadpool(lambda: count_bands_in_path(abs_path))
     try:
         validate_band_definitions_match_raster(count, merged)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error("BAND_DEFINITION_INVALID", str(e)),
+        ) from e
 
     now = datetime.now(UTC).isoformat()
     project = existing.model_copy(
@@ -258,7 +282,7 @@ async def patch_environmental_band_definition_labels(
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"could not save catalog: {e}") from e
+        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
     return project
@@ -306,26 +330,26 @@ async def post_explainability_background_sample(
     band_defs = existing.environmental_band_definitions
 
     if not artifact_root or not cog_path:
-        raise HTTPException(
-            status_code=422,
-            detail="project has no environmental COG; upload one first",
+        raise _proj_422(
+            "ENV_COG_REQUIRED",
+            "project has no environmental COG; upload one first",
         )
     if not band_defs:
-        raise HTTPException(
-            status_code=422,
-            detail="project has no environmental band definitions; save band names first",
+        raise _proj_422(
+            "BAND_DEFINITIONS_MISSING",
+            "project has no environmental band definitions; save band names first",
         )
 
     abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
     if not abs_path:
-        raise HTTPException(
-            status_code=422,
-            detail="cannot resolve environmental COG path",
+        raise _proj_422(
+            "ENV_COG_PATH_INVALID",
+            "cannot resolve environmental COG path",
         )
     if not _environmental_cog_readable_for_sampling(abs_path):
-        raise HTTPException(
-            status_code=422,
-            detail="environmental COG not found on server",
+        raise _proj_422(
+            "ENV_COG_NOT_ON_DISK",
+            "environmental COG not found on server",
         )
 
     n_samples = (
@@ -349,7 +373,11 @@ async def post_explainability_background_sample(
     except Exception as e:
         raise HTTPException(
             status_code=422,
-            detail=f"could not build explainability background sample from COG: {e}",
+            detail=validation_error(
+                "EXPLAINABILITY_BACKGROUND_FAILED",
+                "could not build explainability background sample from COG",
+                context={"cause": str(e)},
+            ),
         ) from e
 
     now = datetime.now(UTC).isoformat()
@@ -368,7 +396,7 @@ async def post_explainability_background_sample(
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"could not save catalog: {e}") from e
+        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
     return project
@@ -402,12 +430,15 @@ async def create_project(
     ``infer_band_definitions`` to ``false`` to require an explicit JSON array instead.
     """
     if not name.strip():
-        raise HTTPException(status_code=422, detail="name is required")
+        raise _proj_422("MISSING_FIELD", "name is required")
     visibility_v = parse_visibility(visibility)
     try:
         uids = _parse_allowed_uids(allowed_uids)
     except (json.JSONDecodeError, ValueError) as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error("ALLOWED_UIDS_INVALID", str(e)),
+        ) from e
 
     project_id = str(uuid.uuid4())
     artifact_root: str | None = None
@@ -417,11 +448,15 @@ async def create_project(
     if file is not None:
         content = await file.read()
         if not content:
-            raise HTTPException(status_code=422, detail="empty file")
+            raise _proj_422("EMPTY_FILE", "empty file")
         if len(content) > settings.max_environmental_upload_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
+                detail=validation_error(
+                    "UPLOAD_TOO_LARGE",
+                    f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
+                    context={"max_bytes": settings.max_environmental_upload_bytes},
+                ),
             )
         try:
             await validate_cog_bytes_threaded(content)
@@ -437,9 +472,12 @@ async def create_project(
         try:
             artifact_root, cog_path = await run_in_threadpool(_write)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
+            raise HTTPException(
+                status_code=400,
+                detail=validation_error("STORAGE_LAYOUT_INVALID", str(e)),
+            ) from e
         except Exception as e:
-            raise HTTPException(status_code=503, detail=f"could not store file: {e}") from e
+            raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
 
         try:
 
@@ -482,7 +520,11 @@ async def create_project(
         except Exception as e:
             raise HTTPException(
                 status_code=422,
-                detail=f"could not build explainability background sample from COG: {e}",
+                detail=validation_error(
+                    "EXPLAINABILITY_BACKGROUND_FAILED",
+                    "could not build explainability background sample from COG",
+                    context={"cause": str(e)},
+                ),
             ) from e
 
     now = datetime.now(UTC).isoformat()
@@ -513,7 +555,7 @@ async def create_project(
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"could not save catalog: {e}") from e
+        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
     return project
@@ -565,7 +607,10 @@ async def update_project(
             _parse_allowed_uids(allowed_uids) if allowed_uids is not None else None
         )
     except (json.JSONDecodeError, ValueError) as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error("ALLOWED_UIDS_INVALID", str(e)),
+        ) from e
 
     artifact_root = existing.driver_artifact_root
     cog_path = existing.driver_cog_path
@@ -577,11 +622,15 @@ async def update_project(
     if file is not None:
         content = await file.read()
         if not content:
-            raise HTTPException(status_code=422, detail="empty file")
+            raise _proj_422("EMPTY_FILE", "empty file")
         if len(content) > settings.max_environmental_upload_bytes:
             raise HTTPException(
                 status_code=413,
-                detail=f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
+                detail=validation_error(
+                    "UPLOAD_TOO_LARGE",
+                    f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
+                    context={"max_bytes": settings.max_environmental_upload_bytes},
+                ),
             )
         try:
             await validate_cog_bytes_threaded(content)
@@ -597,9 +646,12 @@ async def update_project(
         try:
             artifact_root, cog_path = await run_in_threadpool(_write)
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
+            raise HTTPException(
+                status_code=400,
+                detail=validation_error("STORAGE_LAYOUT_INVALID", str(e)),
+            ) from e
         except Exception as e:
-            raise HTTPException(status_code=503, detail=f"could not store file: {e}") from e
+            raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
 
         try:
 
@@ -623,20 +675,23 @@ async def update_project(
         try:
             parsed = parse_band_definitions_json(environmental_band_definitions)
         except (json.JSONDecodeError, ValueError) as e:
-            raise HTTPException(status_code=422, detail=str(e)) from e
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error("BAND_DEFINITION_JSON_INVALID", str(e)),
+            ) from e
         if parsed is None:
             new_band_defs = None
         else:
             abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
             if not abs_path:
-                raise HTTPException(
-                    status_code=422,
-                    detail="cannot set band definitions without an environmental COG uploaded",
+                raise _proj_422(
+                    "ENV_COG_REQUIRED",
+                    "cannot set band definitions without an environmental COG uploaded",
                 )
             if not Path(abs_path).is_file():
-                raise HTTPException(
-                    status_code=422,
-                    detail="environmental COG not found on server; upload the file first",
+                raise _proj_422(
+                    "ENV_COG_NOT_ON_DISK",
+                    "environmental COG not found on server; upload the file first",
                 )
 
             def _count() -> int:
@@ -646,7 +701,10 @@ async def update_project(
             try:
                 validate_band_definitions_match_raster(count, parsed)
             except ValueError as e:
-                raise HTTPException(status_code=422, detail=str(e)) from e
+                raise HTTPException(
+                    status_code=422,
+                    detail=validation_error("BAND_DEFINITION_INVALID", str(e)),
+                ) from e
             new_band_defs = parsed
     elif not existing.environmental_band_definitions:
         abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
@@ -688,7 +746,11 @@ async def update_project(
         except Exception as e:
             raise HTTPException(
                 status_code=422,
-                detail=f"could not build explainability background sample from COG: {e}",
+                detail=validation_error(
+                    "EXPLAINABILITY_BACKGROUND_FAILED",
+                    "could not build explainability background sample from COG",
+                    context={"cause": str(e)},
+                ),
             ) from e
 
     now = datetime.now(UTC).isoformat()
@@ -718,7 +780,7 @@ async def update_project(
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"could not save catalog: {e}") from e
+        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
     return project

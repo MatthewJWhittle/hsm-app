@@ -23,6 +23,17 @@ describe('parseApiError', () => {
     expect(parseApiError({ detail: { detail: 'inner' } })).toBe('inner')
   })
 
+  it('formats structured API detail with message (and optional code)', () => {
+    expect(
+      parseApiError({
+        detail: {
+          code: 'EXPLAINABILITY_PICKLE_IMPORT',
+          message: 'Serialized estimator references missing module.',
+        },
+      }),
+    ).toBe('Serialized estimator references missing module.')
+  })
+
   it('returns default when no detail key', () => {
     expect(parseApiError({})).toBe('Request failed')
     expect(parseApiError(null)).toBe('Request failed')

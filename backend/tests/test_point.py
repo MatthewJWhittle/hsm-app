@@ -431,6 +431,70 @@ def test_point_returns_shap_influence(tmp_path):
     assert len(data["raw_environmental_values"]) == 2
 
 
+def test_point_partial_explainability_raw_without_shap(tmp_path):
+    """Pickle + bands + env COG but no project background parquet → raw values, empty drivers, note."""
+    bounds = (-200_000.0, 7_000_000.0, -199_000.0, 7_000_500.0)
+    cog = tmp_path / "suitability_cog.tif"
+    _write_test_cog(cog, bounds, fill=0.5)
+    env_cog = tmp_path / "projects" / "proj-p" / "environmental_cog.tif"
+    env_cog.parent.mkdir(parents=True)
+    _write_test_cog_multiband(env_cog, bounds, fills=[0.2, 0.8])
+
+    clf = LogisticRegression(max_iter=200).fit([[0.0, 0.0], [1.0, 1.0]], [0, 1])
+    with open(tmp_path / "mdl.pkl", "wb") as f:
+        pickle.dump(clf, f)
+
+    project_id = "proj-p"
+    project_documents = [
+        {
+            "id": project_id,
+            "name": "P",
+            "driver_artifact_root": str(env_cog.parent),
+            "driver_cog_path": "environmental_cog.tif",
+            "environmental_band_definitions": [
+                {"index": 0, "name": "f0", "label": "f0"},
+                {"index": 1, "name": "f1", "label": "f1"},
+            ],
+        }
+    ]
+    documents = [
+        {
+            "id": "m-partial",
+            "species": "Bat",
+            "activity": "Fly",
+            "artifact_root": str(tmp_path),
+            "suitability_cog_path": "suitability_cog.tif",
+            "project_id": project_id,
+            "metadata": {
+                "analysis": {
+                    "feature_band_names": ["f0", "f1"],
+                    "serialized_model_path": "mdl.pkl",
+                }
+            },
+        }
+    ]
+    mock_client = mock_firestore_client_for_documents(documents, project_documents=project_documents)
+    with patch("backend_api.catalog_service.firestore.Client", return_value=mock_client):
+        import backend_api.main as main
+
+        importlib.reload(main)
+        with TestClient(main.app) as client:
+            lng, lat = _center_wgs84(bounds)
+            r = client.get(
+                "/models/m-partial/point",
+                params={"lng": lng, "lat": lat},
+            )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["drivers"] == []
+    assert len(data["raw_environmental_values"]) == 2
+    caps = data.get("capabilities") or {}
+    assert caps.get("environmental_values_available") is True
+    assert caps.get("driver_influence_available") is False
+    notes = caps.get("notes") or []
+    assert any("explainability" in n.lower() for n in notes)
+
+
 def test_point_wrong_crs_422(tmp_path):
     """Raster must be EPSG:3857; WGS84 file is rejected."""
     cog = tmp_path / "suitability_cog.tif"

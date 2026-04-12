@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 import rasterio
+from pydantic import ValidationError
 from rasterio.io import DatasetReader, MemoryFile
 
 from backend_api.schemas_project import BandLabelPatch, EnvironmentalBandDefinition
@@ -204,10 +206,6 @@ def parse_band_definitions_json(raw: str | None) -> list[EnvironmentalBandDefini
     """Parse optional JSON array from multipart form; raise ValueError on bad input."""
     if raw is None or not str(raw).strip():
         return None
-    import json
-
-    from pydantic import ValidationError
-
     data = json.loads(raw.strip())
     if not isinstance(data, list):
         raise ValueError("environmental_band_definitions must be a JSON array")
