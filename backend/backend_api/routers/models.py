@@ -205,6 +205,10 @@ async def get_model_point(
 
     Empty ``drivers`` with a numeric ``value`` usually means explainability is incomplete, not
     that the endpoint failed.
+
+    **Pickle compatibility:** if the serialized estimator fails to load on the server (Python /
+    scikit-learn / dependency mismatch with the training environment), influence may be unavailable
+    even when other capabilities succeed; check ``capabilities.notes`` and server logs.
     """
 
     def _run() -> PointInspection:

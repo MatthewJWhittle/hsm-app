@@ -41,7 +41,11 @@ class ModelAnalysis(BaseModel):
     )
     serialized_model_path: str | None = Field(
         default=None,
-        description="Path to pickled sklearn estimator relative to artifact_root (e.g. serialized_model.pkl).",
+        description=(
+            "Path to pickled fitted estimator relative to artifact_root (e.g. serialized_model.pkl). "
+            "Must be scikit-learn-centric (imports only sklearn/numpy/scipy stack); custom packages are not "
+            "available at GET /models/{id}/point — see docs/serialized-model-requirements.md."
+        ),
     )
     positive_class_index: int | None = Field(
         default=None,
