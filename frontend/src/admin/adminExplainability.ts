@@ -41,8 +41,8 @@ export function buildModelMetadataForSubmit(params: {
 
   if (!params.explainEnabled) {
     if (meta.analysis) {
-      const { analysis: _a, ...rest } = meta
-      const cleaned = { ...rest } as ModelMetadata
+      const cleaned: ModelMetadata = { ...meta }
+      delete cleaned.analysis
       return Object.keys(cleaned).length ? cleaned : undefined
     }
     return Object.keys(meta).length ? meta : undefined

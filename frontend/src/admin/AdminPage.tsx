@@ -619,53 +619,63 @@ export function AdminPage() {
     }
   }
 
-  useEffect(() => {
-    if (!projectEditOpen || !editingProject) return
-    if (!editProjName.trim()) return
-    const snap = buildProjectEditSnapshot()
-    if (snap === projectEditBaselineRef.current) return
-    const t = window.setTimeout(() => {
-      void persistProjectEdit()
-    }, AUTO_SAVE_DEBOUNCE_MS)
-    return () => window.clearTimeout(t)
-  }, [
-    projectEditOpen,
-    editingProject?.id,
-    editProjName,
-    editProjDesc,
-    editProjStatus,
-    editProjVisibility,
-    editProjAllowedUids,
-    editProjBandDefs,
-    editProjFile,
-    buildProjectEditSnapshot,
-    persistProjectEdit,
-  ])
+  useEffect(
+    () => {
+      if (!projectEditOpen || !editingProject) return
+      if (!editProjName.trim()) return
+      const snap = buildProjectEditSnapshot()
+      if (snap === projectEditBaselineRef.current) return
+      const t = window.setTimeout(() => {
+        void persistProjectEdit()
+      }, AUTO_SAVE_DEBOUNCE_MS)
+      return () => window.clearTimeout(t)
+    },
+    // Debounced autosave: `editingProject?.id` plus form fields; omit full `editingProject` to avoid re-arming on catalog churn.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      projectEditOpen,
+      editingProject?.id,
+      editProjName,
+      editProjDesc,
+      editProjStatus,
+      editProjVisibility,
+      editProjAllowedUids,
+      editProjBandDefs,
+      editProjFile,
+      buildProjectEditSnapshot,
+      persistProjectEdit,
+    ],
+  )
 
-  useEffect(() => {
-    if (!editOpen || !editModel) return
-    if (!canPersistLayerEdit()) return
-    const snap = buildLayerEditSnapshot()
-    if (snap === layerEditBaselineRef.current) return
-    const t = window.setTimeout(() => {
-      void persistLayerEdit()
-    }, AUTO_SAVE_DEBOUNCE_MS)
-    return () => window.clearTimeout(t)
-  }, [
-    editOpen,
-    editModel?.id,
-    editSpecies,
-    editActivity,
-    editProjectId,
-    editSelectedEnvBands,
-    editExplainEnabled,
-    editFile,
-    editExplainModelFile,
-    editCardDraft,
-    buildLayerEditSnapshot,
-    persistLayerEdit,
-    canPersistLayerEdit,
-  ])
+  useEffect(
+    () => {
+      if (!editOpen || !editModel) return
+      if (!canPersistLayerEdit()) return
+      const snap = buildLayerEditSnapshot()
+      if (snap === layerEditBaselineRef.current) return
+      const t = window.setTimeout(() => {
+        void persistLayerEdit()
+      }, AUTO_SAVE_DEBOUNCE_MS)
+      return () => window.clearTimeout(t)
+    },
+    // Debounced autosave: `editModel?.id` plus form fields; omit full `editModel` for the same reason as project edit above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      editOpen,
+      editModel?.id,
+      editSpecies,
+      editActivity,
+      editProjectId,
+      editSelectedEnvBands,
+      editExplainEnabled,
+      editFile,
+      editExplainModelFile,
+      editCardDraft,
+      buildLayerEditSnapshot,
+      persistLayerEdit,
+      canPersistLayerEdit,
+    ],
+  )
 
   const handleCloseProjectEdit = useCallback(async () => {
     if (projectEditOpen && editingProject) {
