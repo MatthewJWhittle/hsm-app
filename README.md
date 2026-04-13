@@ -218,7 +218,7 @@ If you run **`uvicorn` outside Docker** with the emulator on the host, set **`FI
 ### Production (Hosting + API)
 
 - **CORS:** The API reads **`CORS_ORIGINS`** (comma-separated). Defaults include local dev URLs and **`https://hsm-dashboard.web.app`** / **`https://hsm-dashboard.firebaseapp.com`**. Override in Cloud Run (or your host env) if you add more web origins.
-- **Hosting CI builds:** Add GitHub repository secret **`VITE_FIREBASE_API_KEY`** (Firebase Console → Project settings → Web app config). Merge and PR workflows set **`VITE_USE_AUTH_EMULATOR=false`** and the project id for **`npm run build`**.
+- **Hosting CI builds:** Add GitHub repository secret **`VITE_FIREBASE_API_KEY`** (Firebase Console → Project settings → Web app config). Add repository variable **`PREVIEW_API_BASE_URL`** for PR previews so map/catalog API calls target staging when the preview hosting config omits Cloud Run rewrites. Merge and PR workflows set **`VITE_USE_AUTH_EMULATOR=false`** and the project id for **`npm run build`**.
 
 ### Next steps
 
