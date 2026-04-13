@@ -1,6 +1,7 @@
 /** Base URL for API calls. Dev: Vite proxies `/api` → backend. Production: Firebase Hosting rewrite. */
 export function apiBase(): string {
-  return import.meta.env.VITE_API_BASE ?? '/api'
+  const configuredBase = import.meta.env.VITE_API_BASE?.trim()
+  return configuredBase && configuredBase.length > 0 ? configuredBase : '/api'
 }
 
 export function titilerBase(): string {
