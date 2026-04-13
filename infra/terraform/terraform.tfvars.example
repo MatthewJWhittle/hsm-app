@@ -1,0 +1,32 @@
+project_id = "hsm-app-493209"
+
+# Cost-minimal default: keep region in US free-tier-friendly footprint
+# (especially for Cloud Storage free allowance). For UK proximity, set
+# region = "europe-west2" and expect higher baseline/storage cost risk.
+region = "us-central1"
+
+artifact_registry_repository_id = "hsm-app"
+
+api_service_name_staging = "api-staging"
+api_service_name_prod    = "api-prod"
+
+# Use immutable image tags (for example Git SHA tags) from Artifact Registry.
+api_container_image_staging = "us-central1-docker.pkg.dev/hsm-app-493209/hsm-app/backend:staging-sha"
+api_container_image_prod    = "us-central1-docker.pkg.dev/hsm-app-493209/hsm-app/backend:prod-sha"
+
+api_min_instance_count = 0
+api_max_instance_count = 2
+
+create_gcs_bucket = true
+gcs_bucket_name   = "hsm-app-493209-model-artifacts"
+
+# Keep false when Firestore already exists in the project.
+create_firestore_database = false
+
+# Shared TiTiler endpoint (kept stable across environments).
+titiler_url = "https://titiler-xxxxx-uc.a.run.app"
+
+firebase_web_api_key_secret_name = "firebase-web-api-key"
+
+cors_origins_staging = "http://localhost:5173,http://127.0.0.1:5173,https://hsm-dashboard--pr123-abc.web.app"
+cors_origins_prod    = "https://hsm-app-493209.web.app,https://hsm-app-493209.firebaseapp.com"
