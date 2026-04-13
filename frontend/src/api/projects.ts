@@ -1,6 +1,28 @@
-import type { CatalogProject } from '../types/project'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import { apiBase } from '../utils/apiBase'
 import { isRecord } from './jsonGuards'
+
+function parseBandDefinitions(value: unknown): EnvironmentalBandDefinition[] | null {
+  if (value === undefined || value === null) return null
+  if (!Array.isArray(value)) return null
+  const out: EnvironmentalBandDefinition[] = []
+  for (const row of value) {
+    if (!isRecord(row)) return null
+    const { index, name, label, description } = row
+    if (typeof index !== 'number' || typeof name !== 'string') return null
+    if (label !== undefined && label !== null && typeof label !== 'string') return null
+    if (description !== undefined && description !== null && typeof description !== 'string') return null
+    out.push({
+      index,
+      name,
+      ...(label !== undefined && label !== null ? { label } : {}),
+      ...(description !== undefined && description !== null && description !== ''
+        ? { description }
+        : {}),
+    })
+  }
+  return out
+}
 
 export function parseProject(value: unknown): CatalogProject | null {
   if (!isRecord(value)) return null
@@ -58,6 +80,56 @@ export function parseProject(value: unknown): CatalogProject | null {
   if (updated_at !== undefined) {
     if (updated_at !== null && typeof updated_at !== 'string') return null
     out.updated_at = updated_at
+  }
+  if (value.environmental_band_definitions !== undefined) {
+    if (value.environmental_band_definitions === null) {
+      out.environmental_band_definitions = null
+    } else {
+      const defs = parseBandDefinitions(value.environmental_band_definitions)
+      if (defs === null) return null
+      out.environmental_band_definitions = defs
+    }
+  }
+  if (value.explainability_background_path !== undefined) {
+    if (value.explainability_background_path === null) {
+      out.explainability_background_path = null
+    } else if (typeof value.explainability_background_path === 'string') {
+      out.explainability_background_path = value.explainability_background_path
+    } else {
+      return null
+    }
+  }
+  if (value.explainability_background_sample_rows !== undefined) {
+    if (value.explainability_background_sample_rows === null) {
+      out.explainability_background_sample_rows = null
+    } else if (typeof value.explainability_background_sample_rows === 'number') {
+      out.explainability_background_sample_rows = value.explainability_background_sample_rows
+    } else {
+      return null
+    }
+  }
+  if (value.explainability_background_generated_at !== undefined) {
+    if (value.explainability_background_generated_at === null) {
+      out.explainability_background_generated_at = null
+    } else if (typeof value.explainability_background_generated_at === 'string') {
+      out.explainability_background_generated_at = value.explainability_background_generated_at
+    } else {
+      return null
+    }
+  }
+  if (value.band_inference_notes !== undefined) {
+    if (value.band_inference_notes === null) {
+      out.band_inference_notes = null
+    } else if (Array.isArray(value.band_inference_notes)) {
+      const notes: string[] = []
+      for (const n of value.band_inference_notes) {
+        if (typeof n !== 'string') return null
+        notes.push(n)
+      }
+      out.band_inference_notes = notes
+    } else {
+      return null
+    }
   }
   return out
 }

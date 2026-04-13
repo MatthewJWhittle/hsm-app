@@ -1,5 +1,5 @@
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material'
-import type { CatalogProject } from '../types/project'
+import { Alert, Box, Dialog, DialogContent, DialogTitle, Typography } from '@mui/material'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import { ProjectFormFields } from './ProjectFormFields'
 
 type ProjectEditDialogProps = {
@@ -13,6 +13,9 @@ type ProjectEditDialogProps = {
   editProjAllowedUids: string
   editProjStatus: 'active' | 'archived'
   editProjFile: File | null
+  environmentalBandDefinitions: EnvironmentalBandDefinition[]
+  onEnvironmentalBandDefinitionsChange: (v: EnvironmentalBandDefinition[]) => void
+  environmentalBandEditableFields?: 'label' | 'all'
   onEditProjNameChange: (v: string) => void
   onEditProjDescChange: (v: string) => void
   onEditProjVisibilityChange: (v: 'public' | 'private') => void
@@ -21,7 +24,11 @@ type ProjectEditDialogProps = {
   onEditProjFileChange: (f: File | null) => void
   editProjError: string | null
   savingProjectEdit: boolean
-  onSave: () => void
+  regenerateExplainabilitySampleRows?: number
+  onRegenerateExplainabilitySampleRowsChange?: (n: number) => void
+  onRegenerateExplainabilityBackground?: () => void | Promise<void>
+  regeneratingExplainabilityBackground?: boolean
+  regenerateExplainabilityError?: string | null
 }
 
 export function ProjectEditDialog({
@@ -35,6 +42,9 @@ export function ProjectEditDialog({
   editProjAllowedUids,
   editProjStatus,
   editProjFile,
+  environmentalBandDefinitions,
+  onEnvironmentalBandDefinitionsChange,
+  environmentalBandEditableFields = 'label',
   onEditProjNameChange,
   onEditProjDescChange,
   onEditProjVisibilityChange,
@@ -43,7 +53,11 @@ export function ProjectEditDialog({
   onEditProjFileChange,
   editProjError,
   savingProjectEdit,
-  onSave,
+  regenerateExplainabilitySampleRows,
+  onRegenerateExplainabilitySampleRowsChange,
+  onRegenerateExplainabilityBackground,
+  regeneratingExplainabilityBackground,
+  regenerateExplainabilityError,
 }: ProjectEditDialogProps) {
   return (
     <Dialog
@@ -55,8 +69,15 @@ export function ProjectEditDialog({
       maxWidth="sm"
       PaperProps={{ sx: { borderRadius: 2 } }}
     >
-      <DialogTitle sx={{ fontWeight: 700 }}>Edit project</DialogTitle>
-      <DialogContent>
+      <DialogTitle sx={{ fontWeight: 700 }}>
+        Edit project
+        <Typography variant="caption" component="span" display="block" color="text.secondary" fontWeight={400} sx={{ mt: 0.5 }}>
+          {savingProjectEdit
+            ? 'Saving…'
+            : 'Changes save automatically. Click outside to close.'}
+        </Typography>
+      </DialogTitle>
+      <DialogContent sx={{ pb: 2 }}>
         <Box sx={{ mt: 0.5 }}>
           <ProjectFormFields
             mode="edit"
@@ -75,6 +96,17 @@ export function ProjectEditDialog({
             onFileChange={onEditProjFileChange}
             projectId={editingProject?.id}
             existingDriverPath={editingProject?.driver_cog_path ?? null}
+            environmentalBandDefinitions={environmentalBandDefinitions}
+            onEnvironmentalBandDefinitionsChange={onEnvironmentalBandDefinitionsChange}
+            environmentalBandEditableFields={environmentalBandEditableFields}
+            regenerateExplainabilitySampleRows={regenerateExplainabilitySampleRows}
+            onRegenerateExplainabilitySampleRowsChange={onRegenerateExplainabilitySampleRowsChange}
+            onRegenerateExplainabilityBackground={onRegenerateExplainabilityBackground}
+            regeneratingExplainabilityBackground={regeneratingExplainabilityBackground}
+            regenerateExplainabilityError={regenerateExplainabilityError}
+            explainabilityBackgroundPath={editingProject?.explainability_background_path ?? null}
+            explainabilityBackgroundSampleRows={editingProject?.explainability_background_sample_rows ?? null}
+            explainabilityBackgroundGeneratedAt={editingProject?.explainability_background_generated_at ?? null}
           />
           {editProjError && (
             <Alert severity="error" sx={{ mt: 2 }}>
@@ -83,12 +115,6 @@ export function ProjectEditDialog({
           )}
         </Box>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={() => void onSave()} disabled={savingProjectEdit}>
-          {savingProjectEdit ? 'Saving…' : 'Save'}
-        </Button>
-      </DialogActions>
     </Dialog>
   )
 }

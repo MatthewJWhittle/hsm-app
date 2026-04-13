@@ -1,4 +1,11 @@
-import type { CatalogProject } from '../types/project'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
+
+/** Partial label update for PATCH …/environmental-band-definitions/labels (``name`` aliases display label). */
+export type BandLabelPatch = {
+  label?: string | null
+  description?: string | null
+  name?: string | null
+}
 import { apiBase } from '../utils/apiBase'
 import { readFetchErrorDetail } from './errors'
 import { parseProject } from './projects'
@@ -57,5 +64,82 @@ export async function updateProject(params: {
   const raw: unknown = await r.json()
   const p = parseProject(raw)
   if (p === null) throw new Error('Invalid update project response')
+  return p
+}
+
+/** Replace band manifest (indices 0..n-1). Validates against the project’s environmental COG band count. */
+export async function patchProjectEnvironmentalBandDefinitions(params: {
+  token: string
+  projectId: string
+  definitions: EnvironmentalBandDefinition[]
+}): Promise<CatalogProject> {
+  const r = await fetch(
+    `${apiBase()}/projects/${encodeURIComponent(params.projectId)}/environmental-band-definitions`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${params.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params.definitions),
+    },
+  )
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  const p = parseProject(raw)
+  if (p === null) throw new Error('Invalid PATCH environmental-band-definitions response')
+  return p
+}
+
+/** Patch display labels/descriptions for one or more bands (keyed by machine band ``name``). */
+export async function patchProjectEnvironmentalBandLabels(params: {
+  token: string
+  projectId: string
+  updates: Record<string, BandLabelPatch>
+}): Promise<CatalogProject> {
+  const r = await fetch(
+    `${apiBase()}/projects/${encodeURIComponent(params.projectId)}/environmental-band-definitions/labels`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${params.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(params.updates),
+    },
+  )
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  const p = parseProject(raw)
+  if (p === null) throw new Error('Invalid PATCH environmental-band-definitions/labels response')
+  return p
+}
+
+/** Rebuild ``explainability_background.parquet`` from the project environmental COG (admin). */
+export async function postRegenerateExplainabilityBackgroundSample(params: {
+  token: string
+  projectId: string
+  /** Pixel count; omit to use server default (ENV_BACKGROUND_SAMPLE_ROWS). */
+  sampleRows?: number
+}): Promise<CatalogProject> {
+  const body: { sample_rows?: number } = {}
+  if (params.sampleRows !== undefined) {
+    body.sample_rows = params.sampleRows
+  }
+  const r = await fetch(
+    `${apiBase()}/projects/${encodeURIComponent(params.projectId)}/explainability-background-sample`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${params.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    },
+  )
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  const p = parseProject(raw)
+  if (p === null) throw new Error('Invalid explainability-background-sample response')
   return p
 }

@@ -1,20 +1,126 @@
-import type { Model } from '../types/model'
+import type { Model, ModelAnalysis, ModelCard, ModelMetadata } from '../types/model'
 import { isRecord } from './jsonGuards'
+
+function parseModelCard(value: unknown): ModelCard | null {
+  if (value === undefined || value === null) return null
+  if (!isRecord(value)) return null
+  const out: ModelCard = {}
+  for (const k of [
+    'title',
+    'version',
+    'summary',
+    'primary_metric_type',
+    'primary_metric_value',
+    'spatial_resolution_m',
+  ] as const) {
+    const v = value[k]
+    if (v === undefined) continue
+    if (v === null) {
+      ;(out as Record<string, unknown>)[k] = null
+      continue
+    }
+    if (typeof v === 'string' || typeof v === 'number') {
+      ;(out as Record<string, unknown>)[k] = v
+    } else {
+      return null
+    }
+  }
+  if (value.metrics !== undefined) {
+    if (value.metrics === null) {
+      out.metrics = null
+    } else if (isRecord(value.metrics)) {
+      const m: Record<string, number | string> = {}
+      for (const [k, v] of Object.entries(value.metrics)) {
+        if (typeof v === 'number' || typeof v === 'string') m[k] = v
+        else return null
+      }
+      out.metrics = m
+    } else {
+      return null
+    }
+  }
+  return out
+}
+
+function parseModelAnalysis(value: unknown): ModelAnalysis | null {
+  if (value === undefined || value === null) return null
+  if (!isRecord(value)) return null
+  const out: ModelAnalysis = {}
+  if (value.feature_band_names !== undefined) {
+    if (value.feature_band_names === null) {
+      out.feature_band_names = null
+    } else if (
+      Array.isArray(value.feature_band_names) &&
+      value.feature_band_names.every((x) => typeof x === 'string')
+    ) {
+      out.feature_band_names = value.feature_band_names
+    } else {
+      return null
+    }
+  }
+  for (const k of ['serialized_model_path', 'driver_cog_path'] as const) {
+    const v = value[k]
+    if (v === undefined) continue
+    if (v === null || typeof v === 'string') {
+      ;(out as Record<string, unknown>)[k] = v
+    } else {
+      return null
+    }
+  }
+  if (value.positive_class_index !== undefined) {
+    const v = value.positive_class_index
+    if (v === null || typeof v === 'number') {
+      out.positive_class_index = v
+    } else {
+      return null
+    }
+  }
+  return out
+}
+
+function parseModelMetadata(value: unknown): ModelMetadata | null {
+  if (value === undefined || value === null) return null
+  if (!isRecord(value)) return null
+  const out: ModelMetadata = {}
+  if (value.card !== undefined) {
+    if (value.card === null) {
+      out.card = null
+    } else {
+      const c = parseModelCard(value.card)
+      if (c === null) return null
+      out.card = c
+    }
+  }
+  if (value.extras !== undefined) {
+    if (value.extras === null) {
+      out.extras = null
+    } else if (isRecord(value.extras)) {
+      const ex: Record<string, string> = {}
+      for (const [k, v] of Object.entries(value.extras)) {
+        if (typeof v === 'string') ex[k] = v
+        else return null
+      }
+      out.extras = ex
+    } else {
+      return null
+    }
+  }
+  if (value.analysis !== undefined) {
+    if (value.analysis === null) {
+      out.analysis = null
+    } else {
+      const a = parseModelAnalysis(value.analysis)
+      if (a === null) return null
+      out.analysis = a
+    }
+  }
+  return out
+}
 
 export function parseModel(value: unknown): Model | null {
   if (!isRecord(value)) return null
-  const {
-    id,
-    project_id,
-    species,
-    activity,
-    artifact_root,
-    suitability_cog_path,
-    model_name,
-    model_version,
-    driver_band_indices,
-    driver_config,
-  } = value
+  const { id, project_id, species, activity, artifact_root, suitability_cog_path, created_at, updated_at, metadata } =
+    value
   if (
     typeof id !== 'string' ||
     typeof species !== 'string' ||
@@ -38,33 +144,21 @@ export function parseModel(value: unknown): Model | null {
     out.project_id = project_id
   }
 
-  if (model_name !== undefined) {
-    if (model_name !== null && typeof model_name !== 'string') return null
-    out.model_name = model_name
+  if (created_at !== undefined) {
+    if (created_at !== null && typeof created_at !== 'string') return null
+    out.created_at = created_at
   }
-  if (model_version !== undefined) {
-    if (model_version !== null && typeof model_version !== 'string') return null
-    out.model_version = model_version
+  if (updated_at !== undefined) {
+    if (updated_at !== null && typeof updated_at !== 'string') return null
+    out.updated_at = updated_at
   }
-  if (driver_band_indices !== undefined) {
-    if (driver_band_indices === null) {
-      out.driver_band_indices = null
-    } else if (
-      Array.isArray(driver_band_indices) &&
-      driver_band_indices.every((x) => typeof x === 'number')
-    ) {
-      out.driver_band_indices = driver_band_indices
+  if (metadata !== undefined) {
+    if (metadata === null) {
+      out.metadata = null
     } else {
-      return null
-    }
-  }
-  if (driver_config !== undefined) {
-    if (driver_config === null) {
-      out.driver_config = null
-    } else if (isRecord(driver_config)) {
-      out.driver_config = driver_config
-    } else {
-      return null
+      const md = parseModelMetadata(metadata)
+      if (md === null) return null
+      out.metadata = md
     }
   }
 

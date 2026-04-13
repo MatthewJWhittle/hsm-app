@@ -9,8 +9,14 @@ function formatDetail(detail: unknown): string {
       )
       .join('; ')
   }
-  if (detail && typeof detail === 'object' && 'detail' in detail) {
-    return formatDetail((detail as { detail: unknown }).detail)
+  if (detail && typeof detail === 'object') {
+    if ('detail' in detail) {
+      return formatDetail((detail as { detail: unknown }).detail)
+    }
+    const rec = detail as Record<string, unknown>
+    if (typeof rec.message === 'string' && rec.message.trim()) {
+      return rec.message
+    }
   }
   return 'Request failed'
 }

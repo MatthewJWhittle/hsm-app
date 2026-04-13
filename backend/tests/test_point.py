@@ -1,17 +1,28 @@
 """Tests for GET /models/{id}/point (synthetic COG in tmp_path)."""
 
 import importlib
+import pickle
 from unittest.mock import patch
 
 import numpy as np
+import pandas as pd
 import pytest
 import rasterio
 from fastapi.testclient import TestClient
 from rasterio.crs import CRS
 from rasterio.transform import from_bounds
 from rasterio.warp import transform as transform_coords
+from sklearn.linear_model import LogisticRegression
 
 from tests.helpers import mock_firestore_client_for_documents
+
+
+def _detail_msg(payload: dict) -> str:
+    """Normalize FastAPI error detail (string or structured dict)."""
+    d = payload.get("detail")
+    if isinstance(d, dict):
+        return str(d.get("message", "")).lower()
+    return str(d).lower()
 
 
 def _write_test_cog(path, bounds_3857: tuple[float, float, float, float], fill: float) -> None:
@@ -56,6 +67,31 @@ def _write_test_cog_all_nodata(
         nodata=nodata,
     ) as dst:
         dst.write(data, 1)
+
+
+def _write_test_cog_multiband(
+    path,
+    bounds_3857: tuple[float, float, float, float],
+    fills: list[float],
+) -> None:
+    """Small EPSG:3857 GeoTIFF with ``len(fills)`` bands (constant per band)."""
+    width, height = 8, 8
+    transform = from_bounds(*bounds_3857, width, height)
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=height,
+        width=width,
+        count=len(fills),
+        dtype="float32",
+        crs=CRS.from_epsg(3857),
+        transform=transform,
+        nodata=-9999.0,
+    ) as dst:
+        for i, fill in enumerate(fills):
+            data = np.full((height, width), fill, dtype=np.float32)
+            dst.write(data, i + 1)
 
 
 def _write_test_cog_epsg4326(
@@ -136,7 +172,8 @@ def test_point_outside_raster_422(point_client):
         params={"lng": 0.0, "lat": 0.0},
     )
     assert r.status_code == 422
-    assert "outside" in r.json()["detail"].lower() or "extent" in r.json()["detail"].lower()
+    dm = _detail_msg(r.json())
+    assert "outside" in dm or "extent" in dm
 
 
 def test_point_unknown_model_404(point_client):
@@ -181,7 +218,9 @@ def test_point_missing_cog_503(tmp_path):
                 params={"lng": -2.5, "lat": 53.0},
             )
     assert r.status_code == 503
-    assert r.json()["detail"] == "suitability raster not found on server"
+    d = r.json()["detail"]
+    assert isinstance(d, dict) and d.get("code") == "RASTER_NOT_FOUND"
+    assert "not found" in d.get("message", "").lower()
 
 
 def test_point_nodata_pixel_422(tmp_path):
@@ -211,7 +250,249 @@ def test_point_nodata_pixel_422(tmp_path):
                 params={"lng": lng, "lat": lat},
             )
     assert r.status_code == 422
-    assert "nodata" in r.json()["detail"].lower()
+    assert "nodata" in _detail_msg(r.json())
+
+
+def test_point_returns_raw_environmental_values(tmp_path):
+    """Model with project env COG and driver_band_indices returns rawEnvironmentalValues; no SHAP without artefacts."""
+    bounds = (-200_000.0, 7_000_000.0, -199_000.0, 7_000_500.0)
+    cog = tmp_path / "suitability_cog.tif"
+    _write_test_cog(cog, bounds, fill=0.42)
+    env_cog = tmp_path / "projects" / "proj-a" / "environmental_cog.tif"
+    env_cog.parent.mkdir(parents=True)
+    _write_test_cog_multiband(env_cog, bounds, fills=[0.11, 0.22, 0.33])
+
+    project_id = "proj-a"
+    project_documents = [
+        {
+            "id": project_id,
+            "name": "Test project",
+            "driver_artifact_root": str(env_cog.parent),
+            "driver_cog_path": "environmental_cog.tif",
+            "environmental_band_definitions": [
+                {"index": 0, "name": "a", "label": "forest"},
+                {"index": 1, "name": "b", "label": "mid"},
+                {"index": 2, "name": "c", "label": "water"},
+            ],
+        }
+    ]
+    documents = [
+        {
+            "id": "m-with-drivers",
+            "species": "Test bat",
+            "activity": "Roosting",
+            "artifact_root": str(tmp_path),
+            "suitability_cog_path": "suitability_cog.tif",
+            "project_id": project_id,
+            "metadata": {"analysis": {"feature_band_names": ["a", "c"]}},
+        }
+    ]
+    mock_client = mock_firestore_client_for_documents(documents, project_documents=project_documents)
+    with patch("backend_api.catalog_service.firestore.Client", return_value=mock_client):
+        import backend_api.main as main
+
+        importlib.reload(main)
+        with TestClient(main.app) as client:
+            lng, lat = _center_wgs84(bounds)
+            r = client.get(
+                "/models/m-with-drivers/point",
+                params={"lng": lng, "lat": lat},
+            )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["value"] == pytest.approx(0.42)
+    assert data["drivers"] == []
+    raw = data["raw_environmental_values"]
+    assert len(raw) == 2
+    assert raw[0]["name"] == "forest"
+    assert raw[0]["value"] == pytest.approx(0.11)
+    assert raw[1]["name"] == "water"
+    assert raw[1]["value"] == pytest.approx(0.33)
+
+
+def test_point_drivers_empty_when_not_configured(point_client):
+    """No feature_band_names → drivers empty (existing behaviour)."""
+    client, bounds = point_client
+    lng, lat = _center_wgs84(bounds)
+    r = client.get(
+        "/models/test-bat--roosting/point",
+        params={"lng": lng, "lat": lat},
+    )
+    assert r.status_code == 200
+    assert r.json()["drivers"] == []
+
+
+def test_point_env_raster_missing_503_when_drivers_configured(tmp_path):
+    """feature_band_names set but environmental file missing → 503 after suitability OK."""
+    bounds = (-200_000.0, 7_000_000.0, -199_000.0, 7_000_500.0)
+    cog = tmp_path / "suitability_cog.tif"
+    _write_test_cog(cog, bounds, fill=0.5)
+    project_id = "proj-x"
+    project_documents = [
+        {
+            "id": project_id,
+            "name": "P",
+            "driver_artifact_root": str(tmp_path / "missing"),
+            "driver_cog_path": "environmental_cog.tif",
+            "environmental_band_definitions": [
+                {"index": 0, "name": "only", "label": "Only"},
+            ],
+        }
+    ]
+    documents = [
+        {
+            "id": "m-broken-env",
+            "species": "Bat",
+            "activity": "Fly",
+            "artifact_root": str(tmp_path),
+            "suitability_cog_path": "suitability_cog.tif",
+            "project_id": project_id,
+            "metadata": {"analysis": {"feature_band_names": ["only"]}},
+        }
+    ]
+    mock_client = mock_firestore_client_for_documents(documents, project_documents=project_documents)
+    with patch("backend_api.catalog_service.firestore.Client", return_value=mock_client):
+        import backend_api.main as main
+
+        importlib.reload(main)
+        with TestClient(main.app) as client:
+            lng, lat = _center_wgs84(bounds)
+            r = client.get(
+                "/models/m-broken-env/point",
+                params={"lng": lng, "lat": lat},
+            )
+    assert r.status_code == 503
+    assert "environmental" in _detail_msg(r.json())
+
+
+def test_point_returns_shap_influence(tmp_path):
+    """With explainability artefacts, drivers lists SHAP-style influence."""
+    np.random.seed(0)
+    bounds = (-200_000.0, 7_000_000.0, -199_000.0, 7_000_500.0)
+    cog = tmp_path / "suitability_cog.tif"
+    _write_test_cog(cog, bounds, fill=0.5)
+    env_cog = tmp_path / "projects" / "proj-a" / "environmental_cog.tif"
+    env_cog.parent.mkdir(parents=True)
+    _write_test_cog_multiband(env_cog, bounds, fills=[0.3, 0.7])
+
+    X = np.random.randn(40, 2)
+    y = (X[:, 0] + X[:, 1] > 0).astype(int)
+    clf = LogisticRegression(max_iter=500).fit(X, y)
+    with open(tmp_path / "mdl.pkl", "wb") as f:
+        pickle.dump(clf, f)
+    bg = pd.DataFrame(np.random.randn(20, 2), columns=["f0", "f1"])
+    bg.to_parquet(env_cog.parent / "explainability_background.parquet")
+
+    project_id = "proj-a"
+    project_documents = [
+        {
+            "id": project_id,
+            "name": "Test project",
+            "driver_artifact_root": str(env_cog.parent),
+            "driver_cog_path": "environmental_cog.tif",
+            "explainability_background_path": "explainability_background.parquet",
+            "environmental_band_definitions": [
+                {"index": 0, "name": "f0", "label": "f0"},
+                {"index": 1, "name": "f1", "label": "f1"},
+            ],
+        }
+    ]
+    documents = [
+        {
+            "id": "m-shap",
+            "species": "Bat",
+            "activity": "Fly",
+            "artifact_root": str(tmp_path),
+            "suitability_cog_path": "suitability_cog.tif",
+            "project_id": project_id,
+            "metadata": {
+                "analysis": {
+                    "feature_band_names": ["f0", "f1"],
+                    "serialized_model_path": "mdl.pkl",
+                }
+            },
+        }
+    ]
+    mock_client = mock_firestore_client_for_documents(documents, project_documents=project_documents)
+    with patch("backend_api.catalog_service.firestore.Client", return_value=mock_client):
+        import backend_api.main as main
+
+        importlib.reload(main)
+        with TestClient(main.app) as client:
+            lng, lat = _center_wgs84(bounds)
+            r = client.get(
+                "/models/m-shap/point",
+                params={"lng": lng, "lat": lat},
+            )
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data["drivers"]) >= 1
+    assert all("direction" in d for d in data["drivers"])
+    assert len(data["raw_environmental_values"]) == 2
+
+
+def test_point_partial_explainability_raw_without_shap(tmp_path):
+    """Pickle + bands + env COG but no project background parquet → raw values, empty drivers, note."""
+    bounds = (-200_000.0, 7_000_000.0, -199_000.0, 7_000_500.0)
+    cog = tmp_path / "suitability_cog.tif"
+    _write_test_cog(cog, bounds, fill=0.5)
+    env_cog = tmp_path / "projects" / "proj-p" / "environmental_cog.tif"
+    env_cog.parent.mkdir(parents=True)
+    _write_test_cog_multiband(env_cog, bounds, fills=[0.2, 0.8])
+
+    clf = LogisticRegression(max_iter=200).fit([[0.0, 0.0], [1.0, 1.0]], [0, 1])
+    with open(tmp_path / "mdl.pkl", "wb") as f:
+        pickle.dump(clf, f)
+
+    project_id = "proj-p"
+    project_documents = [
+        {
+            "id": project_id,
+            "name": "P",
+            "driver_artifact_root": str(env_cog.parent),
+            "driver_cog_path": "environmental_cog.tif",
+            "environmental_band_definitions": [
+                {"index": 0, "name": "f0", "label": "f0"},
+                {"index": 1, "name": "f1", "label": "f1"},
+            ],
+        }
+    ]
+    documents = [
+        {
+            "id": "m-partial",
+            "species": "Bat",
+            "activity": "Fly",
+            "artifact_root": str(tmp_path),
+            "suitability_cog_path": "suitability_cog.tif",
+            "project_id": project_id,
+            "metadata": {
+                "analysis": {
+                    "feature_band_names": ["f0", "f1"],
+                    "serialized_model_path": "mdl.pkl",
+                }
+            },
+        }
+    ]
+    mock_client = mock_firestore_client_for_documents(documents, project_documents=project_documents)
+    with patch("backend_api.catalog_service.firestore.Client", return_value=mock_client):
+        import backend_api.main as main
+
+        importlib.reload(main)
+        with TestClient(main.app) as client:
+            lng, lat = _center_wgs84(bounds)
+            r = client.get(
+                "/models/m-partial/point",
+                params={"lng": lng, "lat": lat},
+            )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["drivers"] == []
+    assert len(data["raw_environmental_values"]) == 2
+    caps = data.get("capabilities") or {}
+    assert caps.get("environmental_values_available") is True
+    assert caps.get("driver_influence_available") is False
+    notes = caps.get("notes") or []
+    assert any("explainability" in n.lower() for n in notes)
 
 
 def test_point_wrong_crs_422(tmp_path):
@@ -243,5 +524,5 @@ def test_point_wrong_crs_422(tmp_path):
                 params={"lng": lng, "lat": lat},
             )
     assert r.status_code == 422
-    detail = r.json()["detail"].lower()
+    detail = _detail_msg(r.json())
     assert "3857" in detail or "crs" in detail

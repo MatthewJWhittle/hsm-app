@@ -2,11 +2,106 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class ModelCard(BaseModel):
+    """Human-facing model card metadata."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    title: str | None = None
+    summary: str | None = None
+    spatial_resolution_m: float | None = None
+    primary_metric_type: str | None = Field(
+        default=None,
+        description="Primary quality metric name (e.g. AUC).",
+    )
+    primary_metric_value: str | None = Field(
+        default=None,
+        description="Display value for the primary metric (string or number as text).",
+    )
+    version: str | None = Field(
+        default=None,
+        description="Optional revision label (e.g. date or run id).",
+    )
+
+
+class ModelAnalysis(BaseModel):
+    """Training / inference inputs: band subset, serialized estimator, optional overrides."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    feature_band_names: list[str] | None = Field(
+        default=None,
+        description=(
+            "Ordered machine names matching ``environmental_band_definitions[].name`` on the parent "
+            "project (same order as the estimator feature matrix). The server resolves these to band indices."
+        ),
+    )
+    serialized_model_path: str | None = Field(
+        default=None,
+        description=(
+            "Path to pickled fitted estimator relative to artifact_root (e.g. serialized_model.pkl). "
+            "Must be scikit-learn-centric (imports only sklearn/numpy/scipy stack); custom packages are not "
+            "available at GET /models/{id}/point — see docs/serialized-model-requirements.md."
+        ),
+    )
+    positive_class_index: int | None = Field(
+        default=None,
+        ge=0,
+        description="Index for predict_proba positive class (default 1 at runtime).",
+    )
+    driver_cog_path: str | None = Field(
+        default=None,
+        description="Optional per-model environmental COG override (relative to artifact_root).",
+    )
+
+
+class ModelMetadata(BaseModel):
+    """All non-artifact model description: card, custom extras, and analysis inputs."""
+
+    card: ModelCard | None = None
+    extras: dict[str, str] | None = None
+    analysis: ModelAnalysis | None = None
+
+
+def _analysis_dict_from_legacy_driver_config(dc: dict[str, Any]) -> dict[str, Any]:
+    """Map legacy ``driver_config`` keys into ``metadata.analysis`` field names."""
+    analysis: dict[str, Any] = {}
+    mp = dc.get("explainability_model_path")
+    if isinstance(mp, str) and mp.strip():
+        analysis["serialized_model_path"] = mp.strip()
+    pc = dc.get("explainability_positive_class")
+    if pc is not None:
+        try:
+            analysis["positive_class_index"] = int(pc)
+        except (TypeError, ValueError):
+            pass
+    dcp = dc.get("driver_cog_path")
+    if isinstance(dcp, str) and dcp.strip():
+        analysis["driver_cog_path"] = dcp.strip()
+    return analysis
+
+
+def _merge_legacy_driver_config_into_analysis(
+    analysis: dict[str, Any], dc: dict[str, Any]
+) -> dict[str, Any]:
+    """
+    Fill gaps in ``metadata.analysis`` from top-level ``driver_config`` without overwriting
+    values already present in Firestore (prefer stored ``metadata`` over stale ``driver_config``).
+    """
+    out = dict(analysis)
+    extra = _analysis_dict_from_legacy_driver_config(dc)
+    for key, val in extra.items():
+        cur = out.get(key)
+        if cur is None or (isinstance(cur, str) and not cur.strip()):
+            out[key] = val
+    return out
 
 
 class Model(BaseModel):
-    """One selectable catalog entry (species + activity + COG paths)."""
+    """One selectable catalog entry (species + activity + COG paths + optional metadata)."""
 
     id: str = Field(..., description="Stable identifier (slug-safe)")
     project_id: str | None = Field(
@@ -23,32 +118,130 @@ class Model(BaseModel):
         ...,
         description="Path to suitability COG (absolute or relative to artifact_root)",
     )
-    model_name: str | None = None
-    model_version: str | None = None
-    driver_band_indices: list[int] | None = Field(
-        None,
-        description="0-based band indices into the project's shared environmental COG",
+    created_at: str | None = Field(
+        default=None,
+        description="ISO-8601 UTC timestamp when the catalog row was first created (server-set).",
     )
-    driver_config: dict[str, Any] | None = None
+    updated_at: str | None = Field(
+        default=None,
+        description="ISO-8601 UTC timestamp of the last catalog update (server-set).",
+    )
+    metadata: ModelMetadata | None = None
 
     model_config = {"extra": "allow"}
 
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_model_document(cls, data: Any) -> Any:
+        """Map legacy driver fields and old top-level display fields into ``metadata``."""
+        if not isinstance(data, dict):
+            return data
+
+        dc = data.get("driver_config")
+        dc_dict = dc if isinstance(dc, dict) else None
+        meta_raw = data.get("metadata")
+
+        if meta_raw is None:
+            if dc_dict:
+                analysis = _analysis_dict_from_legacy_driver_config(dc_dict)
+                if analysis:
+                    data["metadata"] = {"analysis": analysis}
+        elif isinstance(meta_raw, dict) and dc_dict:
+            analysis = meta_raw.get("analysis")
+            if not isinstance(analysis, dict):
+                analysis = {}
+            merged = _merge_legacy_driver_config_into_analysis(analysis, dc_dict)
+            if merged != analysis:
+                data["metadata"] = {**meta_raw, "analysis": merged}
+
+        data.pop("driver_band_indices", None)
+        data.pop("driver_config", None)
+
+        legacy_name = data.pop("model_name", None)
+        legacy_ver = data.pop("model_version", None)
+        if legacy_name is not None or legacy_ver is not None:
+            meta = data.get("metadata")
+            if not isinstance(meta, dict):
+                meta = {}
+                data["metadata"] = meta
+            card = meta.get("card")
+            if not isinstance(card, dict):
+                card = {}
+                meta["card"] = card
+            if isinstance(legacy_name, str) and legacy_name.strip() and not card.get("title"):
+                card["title"] = legacy_name.strip()
+            if isinstance(legacy_ver, str) and legacy_ver.strip() and not card.get("version"):
+                card["version"] = legacy_ver.strip()
+
+        return data
+
 
 class DriverVariable(BaseModel):
-    """One factor in a point-level suitability explanation."""
+    """One variable’s contribution to suitability at this point (e.g. SHAP-style influence)."""
 
     name: str
     direction: Literal["increase", "decrease", "neutral"]
     label: str | None = None
     magnitude: float | None = None
+    display_name: str | None = Field(
+        default=None,
+        description="Human-friendly name from catalog (when different from ``name``).",
+    )
+
+
+class RawEnvironmentalValue(BaseModel):
+    """Sampled environmental input at the clicked location (secondary detail)."""
+
+    name: str
+    value: float
+    unit: str | None = None
+    description: str | None = Field(
+        default=None,
+        description="Optional catalog description for this variable.",
+    )
+
+
+class PointInspectionCapabilities(BaseModel):
+    """Which parts of the inspection payload are populated (and why others may be empty)."""
+
+    suitability_available: bool = Field(
+        True,
+        description="Always true when GET /models/{id}/point returns 200.",
+    )
+    environmental_values_available: bool = Field(
+        False,
+        description="True when raw per-band environmental values were sampled at this point.",
+    )
+    driver_influence_available: bool = Field(
+        False,
+        description="True when SHAP-style ranked drivers are present.",
+    )
+    notes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Plain-language reasons when environmental values or drivers are absent; "
+            "this is usually configuration, not a failure."
+        ),
+    )
 
 
 class PointInspection(BaseModel):
-    """Suitability value and optional driver explanation at a location."""
+    """Suitability value, optional influence drivers, and optional raw env values at a location."""
 
     value: float
     unit: str | None = None
-    drivers: list[DriverVariable] | None = None
+    capabilities: PointInspectionCapabilities = Field(
+        default_factory=PointInspectionCapabilities,
+        description="What was computed vs skipped for this model configuration.",
+    )
+    drivers: list[DriverVariable] = Field(
+        default_factory=list,
+        description="Ranked variable influence (e.g. SHAP); empty when explainability is not configured.",
+    )
+    raw_environmental_values: list[RawEnvironmentalValue] | None = Field(
+        default=None,
+        description="Raw raster values for configured bands at this point (same order as model inputs when aligned).",
+    )
 
 
 class AuthMeResponse(BaseModel):
@@ -56,3 +249,28 @@ class AuthMeResponse(BaseModel):
 
     uid: str
     email: str | None = None
+
+
+class AuthTokenRequest(BaseModel):
+    """Credentials for Identity Toolkit sign-in (same as Firebase email/password)."""
+
+    email: str
+    password: str
+    admin_only: bool = Field(
+        default=False,
+        description=(
+            "If true, only return tokens when the user has Firebase custom claim "
+            "`admin: true` (else 403)."
+        ),
+    )
+
+
+class AuthTokenResponse(BaseModel):
+    """Firebase ID token and refresh token from Identity Toolkit."""
+
+    token_type: Literal["Bearer"] = "Bearer"
+    id_token: str
+    refresh_token: str
+    expires_in: str = Field(
+        description="Lifetime of the ID token in seconds (string per Identity Toolkit).",
+    )

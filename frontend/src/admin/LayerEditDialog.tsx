@@ -1,6 +1,7 @@
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material'
+import { Alert, Box, Dialog, DialogContent, DialogTitle, Typography } from '@mui/material'
 import type { Model } from '../types/model'
-import type { CatalogProject } from '../types/project'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
+import type { ModelCardDraft } from './modelCardDraft'
 import { MapLayerFormFields } from './MapLayerFormFields'
 
 type LayerEditDialogProps = {
@@ -13,19 +14,22 @@ type LayerEditDialogProps = {
   onEditProjectIdChange: (id: string) => void
   editSpecies: string
   editActivity: string
-  editName: string
-  editVersion: string
-  editDriverBandIndices: string
+  selectedEnvironmentalBands: EnvironmentalBandDefinition[]
+  onSelectedEnvironmentalBandsChange: (bands: EnvironmentalBandDefinition[]) => void
+  environmentalBandOptions: EnvironmentalBandDefinition[] | null
+  editExplainabilityEnabled: boolean
+  editExplainModelFile: File | null
+  editExplainHasExistingArtifacts: boolean
   editFile: File | null
   onEditSpeciesChange: (v: string) => void
   onEditActivityChange: (v: string) => void
-  onEditNameChange: (v: string) => void
-  onEditVersionChange: (v: string) => void
-  onEditDriverBandIndicesChange: (v: string) => void
+  onEditExplainabilityEnabledChange: (v: boolean) => void
+  onEditExplainModelFileChange: (f: File | null) => void
   onEditFileChange: (f: File | null) => void
   editError: string | null
   savingEdit: boolean
-  onSave: () => void
+  modelCardDraft: ModelCardDraft
+  onModelCardDraftChange: (draft: ModelCardDraft) => void
 }
 
 export function LayerEditDialog({
@@ -38,31 +42,39 @@ export function LayerEditDialog({
   onEditProjectIdChange,
   editSpecies,
   editActivity,
-  editName,
-  editVersion,
-  editDriverBandIndices,
+  selectedEnvironmentalBands,
+  onSelectedEnvironmentalBandsChange,
+  environmentalBandOptions,
+  editExplainabilityEnabled,
+  editExplainModelFile,
+  editExplainHasExistingArtifacts,
   editFile,
   onEditSpeciesChange,
   onEditActivityChange,
-  onEditNameChange,
-  onEditVersionChange,
-  onEditDriverBandIndicesChange,
+  onEditExplainabilityEnabledChange,
+  onEditExplainModelFileChange,
   onEditFileChange,
   editError,
   savingEdit,
-  onSave,
+  modelCardDraft,
+  onModelCardDraftChange,
 }: LayerEditDialogProps) {
   return (
     <Dialog
       open={open}
       onClose={() => onClose()}
       fullWidth
-      maxWidth="sm"
+      maxWidth="md"
       PaperProps={{ sx: { borderRadius: 2 } }}
     >
-      <DialogTitle sx={{ fontWeight: 700 }}>Edit map layer</DialogTitle>
-      <DialogContent>
-        <Box sx={{ mt: 0.5 }}>
+      <DialogTitle sx={{ fontWeight: 700 }}>
+        Edit map layer
+        <Typography variant="caption" component="span" display="block" color="text.secondary" fontWeight={400} sx={{ mt: 0.5 }}>
+          {savingEdit ? 'Saving…' : 'Changes save automatically. Click outside to close.'}
+        </Typography>
+      </DialogTitle>
+      <DialogContent sx={{ pb: 2 }}>
+        <Box sx={{ width: '100%', maxWidth: formMaxWidth, mx: 'auto', mt: 0.5 }}>
           <MapLayerFormFields
             mode="edit"
             maxWidth={formMaxWidth}
@@ -72,17 +84,23 @@ export function LayerEditDialog({
             allowStandAloneProject
             species={editSpecies}
             activity={editActivity}
-            modelName={editName}
-            modelVersion={editVersion}
-            driverBandIndices={editDriverBandIndices}
             onSpeciesChange={onEditSpeciesChange}
             onActivityChange={onEditActivityChange}
-            onModelNameChange={onEditNameChange}
-            onModelVersionChange={onEditVersionChange}
-            onDriverBandIndicesChange={onEditDriverBandIndicesChange}
+            selectedEnvironmentalBands={selectedEnvironmentalBands}
+            onSelectedEnvironmentalBandsChange={onSelectedEnvironmentalBandsChange}
+            environmentalBandOptions={environmentalBandOptions}
+            explainabilityEnabled={editExplainabilityEnabled}
+            onExplainabilityEnabledChange={onEditExplainabilityEnabledChange}
+            explainModelFile={editExplainModelFile}
+            onExplainModelFileChange={onEditExplainModelFileChange}
+            explainHasExistingArtifacts={editExplainHasExistingArtifacts}
             pendingFile={editFile}
             onFileChange={onEditFileChange}
             layerId={editModel?.id}
+            modelCardDraft={modelCardDraft}
+            onModelCardDraftChange={onModelCardDraftChange}
+            catalogCreatedAt={editModel?.created_at ?? null}
+            catalogUpdatedAt={editModel?.updated_at ?? null}
           />
           {editError && (
             <Alert severity="error" sx={{ mt: 2 }}>
@@ -91,12 +109,6 @@ export function LayerEditDialog({
           )}
         </Box>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={() => onClose()}>Cancel</Button>
-        <Button variant="contained" onClick={() => void onSave()} disabled={savingEdit}>
-          {savingEdit ? 'Saving…' : 'Save'}
-        </Button>
-      </DialogActions>
     </Dialog>
   )
 }

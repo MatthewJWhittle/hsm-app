@@ -10,11 +10,12 @@ import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
 import { SuitabilityLegend } from './components/map/SuitabilityLegend'
 import { InspectionHud } from './components/InspectionHud'
-import type { Model } from './types/model'
+import { type Model, getFeatureBandNames } from './types/model'
 import type { CatalogProject } from './types/project'
 import type { PointInspection } from './types/pointInspection'
 import { fetchModelCatalog } from './api/catalog'
 import { fetchProjectCatalog } from './api/projects'
+import { postExplainabilityWarmup } from './api/explainabilityWarmup'
 import { fetchPointInspection } from './api/inspectPoint'
 import { Navbar } from './components/Navbar'
 import { useAuth } from './auth/useAuth'
@@ -107,6 +108,21 @@ function App() {
     () => models.find((m) => m.id === selectedModelId) ?? null,
     [models, selectedModelId],
   )
+
+  useEffect(() => {
+    if (!catalogReady || !selectedModelId) return
+    const ac = new AbortController()
+    let cancelled = false
+    ;(async () => {
+      const token = user ? await getIdToken(true).catch(() => null) : null
+      if (cancelled) return
+      await postExplainabilityWarmup(selectedModelId, ac.signal, { token }).catch(() => {})
+    })()
+    return () => {
+      cancelled = true
+      ac.abort()
+    }
+  }, [catalogReady, selectedModelId, user, getIdToken])
 
   const selectedProjectId = useMemo(() => {
     if (!selectedModel) return ''
@@ -285,7 +301,7 @@ function App() {
               technicalDetails={{
                 modelId: selectedModel.id,
                 projectId: selectedModel.project_id,
-                driverBandIndices: selectedModel.driver_band_indices,
+                driverFeatureBandNames: getFeatureBandNames(selectedModel),
               }}
             />
           )}

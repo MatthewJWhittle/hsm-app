@@ -60,7 +60,7 @@ Recommended for solo-dev cost control: **Firebase Hosting + Cloud Run + Firestor
 
 * **API Endpoints** (FastAPI). Resource-oriented; align with [Solution architecture](docs/solution-architecture.md) and [Data models](docs/data-models.md).
 
-  * `GET /models` → list all models (id, species, activity, artifact_root, suitability_cog_path, model_name?, model_version?, driver_config?). One round-trip for catalog and tile URL construction; no separate “get URL” call.
+  * `GET /models` → list all models (id, species, activity, artifact_root, suitability_cog_path, metadata?). One round-trip for catalog and tile URL construction; no separate “get URL” call.
   * `GET /models/{id}` → single model by stable id (full entry). Used when selection changes or for detail view.
   * `GET /models/{id}/raster/metadata` → raster details for legend/extent when needed.
   * `GET /models/{id}/point?lng=&lat=` → point value and optional driver explanation (PointInspection: value, unit?, drivers[]).

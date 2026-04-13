@@ -24,6 +24,8 @@ import {
 } from '@mui/material'
 import type { Model } from '../types/model'
 import type { CatalogProject } from '../types/project'
+import { formatModelCatalogLabel } from '../copy/interpretation'
+import { explainabilityConfiguredInCatalog } from './adminExplainability'
 import { shortId } from './adminUtils'
 
 type LayersCatalogTabProps = {
@@ -191,7 +193,8 @@ export function LayersCatalogTab({
                 <TableCell width={160}>Project</TableCell>
                 <TableCell>Species</TableCell>
                 <TableCell>Activity</TableCell>
-                <TableCell>Name / version</TableCell>
+                <TableCell>Title / version</TableCell>
+                <TableCell width={120}>Influence</TableCell>
                 <TableCell align="right" width={88}>
                   Actions
                 </TableCell>
@@ -201,14 +204,14 @@ export function LayersCatalogTab({
               {listRefreshing && models.length === 0 ? (
                 Array.from({ length: 6 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={7}>
+                    <TableCell colSpan={8}>
                       <Skeleton variant="text" width="70%" height={28} />
                     </TableCell>
                   </TableRow>
                 ))
               ) : filteredModels.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={8}>
                     <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
                       {models.length === 0
                         ? 'No layers yet. Create a project first, then click New layer to add one.'
@@ -250,7 +253,16 @@ export function LayersCatalogTab({
                       <TableCell>{m.species}</TableCell>
                       <TableCell>{m.activity}</TableCell>
                       <TableCell>
-                        {[m.model_name, m.model_version].filter(Boolean).join(' · ') || '—'}
+                        {formatModelCatalogLabel(m)}
+                      </TableCell>
+                      <TableCell>
+                        {explainabilityConfiguredInCatalog(m) ? (
+                          <Chip label="Ready" size="small" color="success" variant="outlined" />
+                        ) : (
+                          <Typography variant="body2" color="text.secondary">
+                            —
+                          </Typography>
+                        )}
                       </TableCell>
                       <TableCell align="right">
                         <Button

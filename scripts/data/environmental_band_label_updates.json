@@ -1,0 +1,246 @@
+{
+  "ceh_landcover_broadleaved_woodland": {
+    "name": "Broadleaved woodland",
+    "description": "CEH Land Cover Map; broadleaved woodland (values often 0–10000 proportional scale)."
+  },
+  "ceh_landcover_coniferous_woodland": {
+    "name": "Coniferous woodland",
+    "description": "CEH Land Cover Map; coniferous woodland."
+  },
+  "ceh_landcover_arable": {
+    "name": "Arable",
+    "description": "CEH Land Cover Map; arable agriculture."
+  },
+  "ceh_landcover_improved_grassland": {
+    "name": "Improved grassland",
+    "description": "CEH Land Cover Map; improved grassland."
+  },
+  "ceh_landcover_urban": {
+    "name": "Urban",
+    "description": "CEH Land Cover Map; urban."
+  },
+  "ceh_landcover_suburban": {
+    "name": "Suburban",
+    "description": "CEH Land Cover Map; suburban."
+  },
+  "ceh_landcover_grassland": {
+    "name": "Grassland",
+    "description": "CEH Land Cover Map; grassland (non-improved)."
+  },
+  "ceh_landcover_upland_heathland": {
+    "name": "Upland heath",
+    "description": "CEH Land Cover Map; upland heathland."
+  },
+  "ceh_landcover_wetland": {
+    "name": "Wetland",
+    "description": "CEH Land Cover Map; wetland."
+  },
+  "vom_vegetation_height_mean": {
+    "name": "Mean vegetation height",
+    "description": "Vegetation Object Model (VOM) 2022; mean vegetation / canopy height above ground (m)."
+  },
+  "vom_vegetation_height_min": {
+    "name": "Minimum vegetation height",
+    "description": "VOM 2022; minimum vegetation height in the cell (m)."
+  },
+  "vom_vegetation_height_max": {
+    "name": "Maximum vegetation height",
+    "description": "VOM 2022; maximum vegetation height in the cell (m)."
+  },
+  "vom_vegetation_height_std": {
+    "name": "Vegetation height variability",
+    "description": "VOM 2022; standard deviation of vegetation height within the cell (m)."
+  },
+  "terrain_stats_slope": {
+    "name": "Slope",
+    "description": "Terrain slope from DEM (dimensionless rise/run or project-specific definition)."
+  },
+  "terrain_stats_aspect_eastness": {
+    "name": "East–west aspect",
+    "description": "Terrain aspect eastness component (east–west orientation; often sin-aspect)."
+  },
+  "terrain_stats_aspect_northness": {
+    "name": "North–south aspect",
+    "description": "Terrain aspect northness component (north–south orientation; often cos-aspect)."
+  },
+  "terrain_stats_twi": {
+    "name": "Topographic wetness index",
+    "description": "TWI: tendency for water to accumulate from upslope; higher values often wetter sites."
+  },
+  "terrain_stats_curvature": {
+    "name": "Curvature",
+    "description": "Terrain profile or plan curvature from DEM."
+  },
+  "terrain_stats_roughness": {
+    "name": "Surface roughness",
+    "description": "Terrain surface roughness / local relief variation."
+  },
+  "terrain_stats_tpi": {
+    "name": "Topographic position",
+    "description": "Topographic position index (TPI): elevation relative to neighbourhood (ridge vs valley tendency)."
+  },
+  "terrain_stats_aspect_eastness_slope": {
+    "name": "East–west aspect × slope",
+    "description": "Interaction: aspect eastness multiplied by slope."
+  },
+  "terrain_stats_aspect_northness_slope": {
+    "name": "North–south aspect × slope",
+    "description": "Interaction: aspect northness multiplied by slope."
+  },
+  "terrain_dtm": {
+    "name": "Ground elevation",
+    "description": "Digital terrain model (DTM): bare-earth elevation (m, British National Grid / project CRS)."
+  },
+  "terrain_dsm": {
+    "name": "Surface elevation",
+    "description": "Digital surface model (DSM): includes vegetation and buildings (m)."
+  },
+  "os_cover_major_roads": {
+    "name": "Major roads (cover)",
+    "description": "Ordnance Survey-derived layer: presence or fractional cover of major roads."
+  },
+  "os_cover_minor_roads": {
+    "name": "Minor roads (cover)",
+    "description": "Ordnance Survey-derived layer: minor roads."
+  },
+  "os_cover_woodland": {
+    "name": "Woodland (cover)",
+    "description": "Ordnance Survey-derived layer: woodland."
+  },
+  "os_cover_water": {
+    "name": "Open water (cover)",
+    "description": "Ordnance Survey-derived layer: open water."
+  },
+  "os_cover_buildings": {
+    "name": "Buildings (cover)",
+    "description": "Ordnance Survey-derived layer: buildings."
+  },
+  "os_distance_distance_to_major_roads": {
+    "name": "Distance to major roads",
+    "description": "Straight-line distance to the nearest major road (m)."
+  },
+  "os_distance_distance_to_minor_roads": {
+    "name": "Distance to minor roads",
+    "description": "Straight-line distance to the nearest minor road (m)."
+  },
+  "os_distance_distance_to_woodland": {
+    "name": "Distance to woodland",
+    "description": "Straight-line distance to the nearest woodland (m)."
+  },
+  "os_distance_distance_to_water": {
+    "name": "Distance to open water",
+    "description": "Straight-line distance to the nearest open water (m)."
+  },
+  "os_distance_distance_to_buildings": {
+    "name": "Distance to buildings",
+    "description": "Straight-line distance to the nearest building (m)."
+  },
+  "climate_stats_temp_ann_var": {
+    "name": "Annual temperature variability",
+    "description": "Climate summary: variation in temperature across years (project-specific climate stack)."
+  },
+  "climate_stats_temp_ann_avg": {
+    "name": "Annual mean temperature (climate summary)",
+    "description": "Climate summary: long-term annual mean temperature from the project climate stack (distinct from Bioclim BIO1 if both are present)."
+  },
+  "climate_stats_temp_mat_avg": {
+    "name": "Mean annual temperature (MAT)",
+    "description": "Climate summary: mean annual temperature (MAT); may overlap with other temperature layers—check your pipeline."
+  },
+  "climate_stats_prec_ann_var": {
+    "name": "Annual precipitation variability",
+    "description": "Climate summary: variation in precipitation across years."
+  },
+  "climate_stats_prec_ann_avg": {
+    "name": "Mean annual precipitation (climate summary)",
+    "description": "Climate summary: long-term annual mean precipitation from the project climate stack (distinct from Bioclim BIO12 if both are present)."
+  },
+  "climate_stats_wind_ann_var": {
+    "name": "Annual wind variability",
+    "description": "Climate summary: variation in wind speed across years."
+  },
+  "climate_stats_wind_ann_avg": {
+    "name": "Mean annual wind speed",
+    "description": "Climate summary: long-term annual mean wind speed."
+  },
+  "climate_bioclim_bio_1": {
+    "name": "Annual mean temperature (Bioclim)",
+    "description": "WorldClim Bioclim BIO1: annual mean temperature."
+  },
+  "climate_bioclim_bio_2": {
+    "name": "Mean daily temperature range",
+    "description": "WorldClim Bioclim BIO2: mean diurnal range (mean of monthly max − min temperature)."
+  },
+  "climate_bioclim_bio_3": {
+    "name": "Temperature isothermality",
+    "description": "WorldClim Bioclim BIO3: isothermality (BIO2/BIO7 × 100)."
+  },
+  "climate_bioclim_bio_4": {
+    "name": "Temperature seasonality",
+    "description": "WorldClim Bioclim BIO4: temperature seasonality (SD of monthly temperatures × 100)."
+  },
+  "climate_bioclim_bio_5": {
+    "name": "Max. temperature (warmest month)",
+    "description": "WorldClim Bioclim BIO5: maximum temperature of the warmest month."
+  },
+  "climate_bioclim_bio_6": {
+    "name": "Min. temperature (coldest month)",
+    "description": "WorldClim Bioclim BIO6: minimum temperature of the coldest month."
+  },
+  "climate_bioclim_bio_7": {
+    "name": "Annual temperature range",
+    "description": "WorldClim Bioclim BIO7: temperature annual range (BIO5 − BIO6)."
+  },
+  "climate_bioclim_bio_8": {
+    "name": "Mean temperature (wettest quarter)",
+    "description": "WorldClim Bioclim BIO8: mean temperature of the wettest quarter."
+  },
+  "climate_bioclim_bio_9": {
+    "name": "Mean temperature (driest quarter)",
+    "description": "WorldClim Bioclim BIO9: mean temperature of the driest quarter."
+  },
+  "climate_bioclim_bio_10": {
+    "name": "Mean temperature (warmest quarter)",
+    "description": "WorldClim Bioclim BIO10: mean temperature of the warmest quarter."
+  },
+  "climate_bioclim_bio_11": {
+    "name": "Mean temperature (coldest quarter)",
+    "description": "WorldClim Bioclim BIO11: mean temperature of the coldest quarter."
+  },
+  "climate_bioclim_bio_12": {
+    "name": "Annual precipitation (Bioclim)",
+    "description": "WorldClim Bioclim BIO12: total annual precipitation."
+  },
+  "climate_bioclim_bio_13": {
+    "name": "Precipitation (wettest month)",
+    "description": "WorldClim Bioclim BIO13: precipitation of the wettest month."
+  },
+  "climate_bioclim_bio_14": {
+    "name": "Precipitation (driest month)",
+    "description": "WorldClim Bioclim BIO14: precipitation of the driest month."
+  },
+  "climate_bioclim_bio_15": {
+    "name": "Precipitation seasonality",
+    "description": "WorldClim Bioclim BIO15: precipitation seasonality (coefficient of variation)."
+  },
+  "climate_bioclim_bio_16": {
+    "name": "Precipitation (wettest quarter)",
+    "description": "WorldClim Bioclim BIO16: precipitation of the wettest quarter."
+  },
+  "climate_bioclim_bio_17": {
+    "name": "Precipitation (driest quarter)",
+    "description": "WorldClim Bioclim BIO17: precipitation of the driest quarter."
+  },
+  "climate_bioclim_bio_18": {
+    "name": "Precipitation (warmest quarter)",
+    "description": "WorldClim Bioclim BIO18: precipitation of the warmest quarter."
+  },
+  "climate_bioclim_bio_19": {
+    "name": "Precipitation (coldest quarter)",
+    "description": "WorldClim Bioclim BIO19: precipitation of the coldest quarter."
+  },
+  "bgs_coast_distance_to_coast": {
+    "name": "Distance to coast",
+    "description": "Distance to the sea along the mapped coastline (British Geological Survey / coastline layer; m)."
+  }
+}

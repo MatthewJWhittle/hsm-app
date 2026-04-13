@@ -1,5 +1,6 @@
 import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material'
-import type { CatalogProject } from '../types/project'
+import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
+import type { ModelCardDraft } from './modelCardDraft'
 import { COG_REQUIREMENTS_INFO } from './catalogFormConstants'
 import { MapLayerFormFields } from './MapLayerFormFields'
 
@@ -18,16 +19,19 @@ type LayerCreateDialogProps = {
   activeProjects: CatalogProject[]
   species: string
   activity: string
-  modelName: string
-  modelVersion: string
-  driverBandIndices: string
+  selectedEnvironmentalBands: EnvironmentalBandDefinition[]
+  onSelectedEnvironmentalBandsChange: (bands: EnvironmentalBandDefinition[]) => void
+  environmentalBandOptions: EnvironmentalBandDefinition[] | null
+  explainabilityEnabled: boolean
+  explainModelFile: File | null
   file: File | null
   onSpeciesChange: (v: string) => void
   onActivityChange: (v: string) => void
-  onModelNameChange: (v: string) => void
-  onModelVersionChange: (v: string) => void
-  onDriverBandIndicesChange: (v: string) => void
+  onExplainabilityEnabledChange: (v: boolean) => void
+  onExplainModelFileChange: (f: File | null) => void
   onFileChange: (f: File | null) => void
+  modelCardDraft: ModelCardDraft
+  onModelCardDraftChange: (draft: ModelCardDraft) => void
 }
 
 export function LayerCreateDialog({
@@ -43,16 +47,19 @@ export function LayerCreateDialog({
   activeProjects,
   species,
   activity,
-  modelName,
-  modelVersion,
-  driverBandIndices,
+  selectedEnvironmentalBands,
+  onSelectedEnvironmentalBandsChange,
+  environmentalBandOptions,
+  explainabilityEnabled,
+  explainModelFile,
   file,
   onSpeciesChange,
   onActivityChange,
-  onModelNameChange,
-  onModelVersionChange,
-  onDriverBandIndicesChange,
+  onExplainabilityEnabledChange,
+  onExplainModelFileChange,
   onFileChange,
+  modelCardDraft,
+  onModelCardDraftChange,
 }: LayerCreateDialogProps) {
   return (
     <Dialog
@@ -62,7 +69,7 @@ export function LayerCreateDialog({
         onClose()
       }}
       fullWidth
-      maxWidth="sm"
+      maxWidth="md"
       PaperProps={{ sx: { borderRadius: 2 } }}
     >
       <DialogTitle sx={{ fontWeight: 700 }}>New map layer</DialogTitle>
@@ -78,7 +85,7 @@ export function LayerCreateDialog({
         <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: formMaxWidth }}>
           {COG_REQUIREMENTS_INFO}
         </Alert>
-        <Box component="form" id={FORM_ID} onSubmit={onSubmit}>
+        <Box component="form" id={FORM_ID} onSubmit={onSubmit} sx={{ width: '100%', maxWidth: formMaxWidth, mx: 'auto' }}>
           <MapLayerFormFields
             mode="create"
             maxWidth={formMaxWidth}
@@ -88,17 +95,20 @@ export function LayerCreateDialog({
             allowStandAloneProject={false}
             species={species}
             activity={activity}
-            modelName={modelName}
-            modelVersion={modelVersion}
-            driverBandIndices={driverBandIndices}
             onSpeciesChange={onSpeciesChange}
             onActivityChange={onActivityChange}
-            onModelNameChange={onModelNameChange}
-            onModelVersionChange={onModelVersionChange}
-            onDriverBandIndicesChange={onDriverBandIndicesChange}
+            selectedEnvironmentalBands={selectedEnvironmentalBands}
+            onSelectedEnvironmentalBandsChange={onSelectedEnvironmentalBandsChange}
+            environmentalBandOptions={environmentalBandOptions}
+            explainabilityEnabled={explainabilityEnabled}
+            onExplainabilityEnabledChange={onExplainabilityEnabledChange}
+            explainModelFile={explainModelFile}
+            onExplainModelFileChange={onExplainModelFileChange}
             pendingFile={file}
             onFileChange={onFileChange}
             disabled={!canAddModel}
+            modelCardDraft={modelCardDraft}
+            onModelCardDraftChange={onModelCardDraftChange}
           />
           {createError && (
             <Alert severity="error" sx={{ mt: 2, maxWidth: formMaxWidth }}>

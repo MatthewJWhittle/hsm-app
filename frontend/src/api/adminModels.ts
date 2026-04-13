@@ -1,7 +1,14 @@
-import type { Model } from '../types/model'
+import type { Model, ModelMetadata } from '../types/model'
 import { apiBase } from '../utils/apiBase'
 import { readFetchErrorDetail } from './errors'
 import { parseModel } from './models'
+
+function appendMetadataJsonPart(form: FormData, metadata: ModelMetadata) {
+  form.append(
+    'metadata',
+    new Blob([JSON.stringify(metadata)], { type: 'application/json' }),
+  )
+}
 
 export async function createModel(params: {
   token: string
@@ -9,19 +16,20 @@ export async function createModel(params: {
   species: string
   activity: string
   file: File
-  modelName?: string
-  modelVersion?: string
-  driverBandIndicesJson?: string
+  /** Sent as a multipart part with ``Content-Type: application/json`` (not a double-encoded string). */
+  metadata?: ModelMetadata
+  serializedModelFile?: File | null
 }): Promise<Model> {
   const form = new FormData()
   form.append('project_id', params.projectId)
   form.append('species', params.species)
   form.append('activity', params.activity)
   form.append('file', params.file)
-  if (params.modelName) form.append('model_name', params.modelName)
-  if (params.modelVersion) form.append('model_version', params.modelVersion)
-  if (params.driverBandIndicesJson) {
-    form.append('driver_band_indices', params.driverBandIndicesJson)
+  if (params.metadata !== undefined) {
+    appendMetadataJsonPart(form, params.metadata)
+  }
+  if (params.serializedModelFile) {
+    form.append('serialized_model_file', params.serializedModelFile)
   }
 
   const r = await fetch(`${apiBase()}/models`, {
@@ -42,22 +50,25 @@ export async function updateModel(params: {
   species: string
   activity: string
   file?: File | null
-  modelName: string | null
-  modelVersion: string | null
   projectId?: string | null
-  driverBandIndicesJson?: string | null
+  /** When set, replaces catalog metadata; omit to leave unchanged. */
+  metadata?: ModelMetadata | null
+  serializedModelFile?: File | null
 }): Promise<Model> {
   const form = new FormData()
   form.append('species', params.species)
   form.append('activity', params.activity)
-  if (params.file) form.append('file', params.file)
-  form.append('model_name', params.modelName ?? '')
-  form.append('model_version', params.modelVersion ?? '')
+  if (params.file) {
+    form.append('file', params.file)
+  }
   if (params.projectId) {
     form.append('project_id', params.projectId)
   }
-  if (params.driverBandIndicesJson !== undefined && params.driverBandIndicesJson !== null) {
-    form.append('driver_band_indices', params.driverBandIndicesJson)
+  if (params.metadata !== undefined && params.metadata !== null) {
+    appendMetadataJsonPart(form, params.metadata)
+  }
+  if (params.serializedModelFile) {
+    form.append('serialized_model_file', params.serializedModelFile)
   }
 
   const r = await fetch(`${apiBase()}/models/${encodeURIComponent(params.modelId)}`, {

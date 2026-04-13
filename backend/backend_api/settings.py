@@ -60,6 +60,16 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("FIREBASE_AUTH_EMULATOR_HOST"),
     )
 
+    firebase_web_api_key: str | None = Field(
+        default=None,
+        description=(
+            "Firebase Web API key (Identity Toolkit). Required for POST /auth/token "
+            "against production Auth; optional in dev when using the Auth emulator "
+            "(defaults to a placeholder if unset)."
+        ),
+        validation_alias=AliasChoices("FIREBASE_WEB_API_KEY", "VITE_FIREBASE_API_KEY"),
+    )
+
     storage_backend: str = Field(
         default="local",
         description="Object storage for admin uploads: 'local' or 'gcs'.",
@@ -103,5 +113,36 @@ class Settings(BaseSettings):
         description="Maximum admin environmental (project driver) COG upload size in bytes.",
         validation_alias=AliasChoices("MAX_ENVIRONMENTAL_UPLOAD_BYTES"),
         ge=1024,
+    )
+
+    env_background_sample_rows: int = Field(
+        default=256,
+        description="Number of random pixels sampled from the environmental COG into the shared explainability background Parquet.",
+        validation_alias=AliasChoices("ENV_BACKGROUND_SAMPLE_ROWS"),
+        ge=8,
+        le=50_000,
+    )
+
+    shap_background_max_rows: int = Field(
+        default=512,
+        description=(
+            "Max rows read from explainability_background.parquet when running permutation SHAP "
+            "on GET /models/{id}/point (deterministic head slice). Limits request-time CPU; "
+            "raise for larger training backgrounds only if you accept longer point requests."
+        ),
+        validation_alias=AliasChoices("SHAP_BACKGROUND_MAX_ROWS"),
+        ge=8,
+        le=50_000,
+    )
+
+    point_inspect_timeout_seconds: float = Field(
+        default=45.0,
+        description=(
+            "Wall-clock limit for synchronous GET /models/{id}/point work (suitability + env + SHAP). "
+            "Returns 504 when exceeded; the worker thread may still finish briefly after the client disconnects."
+        ),
+        validation_alias=AliasChoices("POINT_INSPECT_TIMEOUT_SECONDS"),
+        ge=5.0,
+        le=300.0,
     )
 

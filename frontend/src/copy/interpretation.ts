@@ -12,6 +12,14 @@ export const INTERPRETATION_DECISION_SUPPORT =
 export const INTERPRETATION_DRIVERS_POINTER =
   'Click the map for a local score, drivers when available, and technical details.'
 
+/** Point inspection — variable influence (e.g. SHAP) when the model has explainability artefacts. */
+export const INTERPRETATION_INFLUENCE_CAPTION =
+  'Estimated contribution to suitability at this location (stronger magnitude = more influence).'
+
+/** Point inspection — raw environmental raster values at the click (secondary detail). */
+export const INTERPRETATION_RAW_VALUES_CAPTION =
+  'Values sampled from the environmental layers at this point.'
+
 /** Short reminder in the point-inspection HUD (repeat key caution). */
 export const INTERPRETATION_HUD_REMINDER =
   'Modelled relative suitability—not confirmed presence or absence on the ground.'
@@ -31,8 +39,9 @@ export const LAYER_DETAILS_PROJECT_METADATA_UNAVAILABLE =
   'Project metadata isn’t available in the catalog for this layer right now. The map may still show the layer correctly.'
 
 /**
- * Display line for catalog model name/version (matches admin list pattern).
+ * Display line for catalog subtitle from ``metadata.card`` (title · version).
  */
-export function formatModelCatalogLabel(model: Pick<Model, 'model_name' | 'model_version'>): string {
-  return [model.model_name, model.model_version].filter(Boolean).join(' · ') || '—'
+export function formatModelCatalogLabel(model: Pick<Model, 'metadata'>): string {
+  const c = model.metadata?.card
+  return [c?.title, c?.version].filter(Boolean).join(' · ') || '—'
 }

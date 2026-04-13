@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 SUITABILITY_FILENAME = "suitability_cog.tif"
 ENVIRONMENTAL_DRIVER_FILENAME = "environmental_cog.tif"
 
+# Fixed names under each model's artifact folder (see ``metadata.analysis.serialized_model_path``).
+SERIALIZED_MODEL_FILENAME = "serialized_model.pkl"
+EXPLAINABILITY_MODEL_FILENAME = SERIALIZED_MODEL_FILENAME  # legacy alias
+EXPLAINABILITY_BACKGROUND_FILENAME = "explainability_background.parquet"
+
 
 class ObjectStorage(Protocol):
     """Write suitability COG bytes for a model id; return catalog path fields."""
@@ -28,6 +33,12 @@ class ObjectStorage(Protocol):
 
     def write_project_driver_cog(self, project_id: str, content: bytes) -> tuple[str, str]:
         """Persist shared environmental COG for a catalog project; return ``(artifact_root, path)``."""
+
+    def write_project_artifact(self, project_id: str, relative_name: str, content: bytes) -> None:
+        """Write a non-COG file under ``projects/{project_id}/`` (e.g. explainability background Parquet)."""
+
+    def write_model_artifact(self, model_id: str, relative_name: str, content: bytes) -> None:
+        """Write a non-COG file under ``models/{model_id}/`` (e.g. sklearn pickle, parquet)."""
 
 
 class LocalObjectStorage:
@@ -54,6 +65,20 @@ class LocalObjectStorage:
         dest_path.write_bytes(content)
         artifact_root = str(dest_dir)
         return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
+
+    def write_project_artifact(self, project_id: str, relative_name: str, content: bytes) -> None:
+        _validate_artifact_relative_name(relative_name)
+        safe_id = _safe_segment(project_id)
+        dest_dir = self._root / "projects" / safe_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        (dest_dir / relative_name).write_bytes(content)
+
+    def write_model_artifact(self, model_id: str, relative_name: str, content: bytes) -> None:
+        _validate_artifact_relative_name(relative_name)
+        safe_id = _safe_segment(model_id)
+        dest_dir = self._root / "models" / safe_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        (dest_dir / relative_name).write_bytes(content)
 
 
 class GcsObjectStorage:
@@ -82,6 +107,20 @@ class GcsObjectStorage:
         artifact_root = f"gs://{self._bucket.name}/{self._prefix}projects/{safe_id}"
         return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
 
+    def write_project_artifact(self, project_id: str, relative_name: str, content: bytes) -> None:
+        _validate_artifact_relative_name(relative_name)
+        safe_id = _safe_segment(project_id)
+        blob_name = f"{self._prefix}projects/{safe_id}/{relative_name}"
+        blob = self._bucket.blob(blob_name)
+        blob.upload_from_string(content)
+
+    def write_model_artifact(self, model_id: str, relative_name: str, content: bytes) -> None:
+        _validate_artifact_relative_name(relative_name)
+        safe_id = _safe_segment(model_id)
+        blob_name = f"{self._prefix}models/{safe_id}/{relative_name}"
+        blob = self._bucket.blob(blob_name)
+        blob.upload_from_string(content)
+
 
 def normalize_gcs_prefix(prefix: str) -> str:
     """Ensure non-empty prefix ends with '/' for safe concatenation."""
@@ -95,6 +134,16 @@ def _safe_segment(model_id: str) -> str:
     if not re.match(r"^[a-zA-Z0-9._-]+$", model_id):
         raise ValueError("model id contains invalid characters")
     return model_id
+
+
+def _validate_artifact_relative_name(name: str) -> None:
+    """Reject path traversal and odd filenames for model-scoped artefacts."""
+    if not name or name.strip() != name:
+        raise ValueError("invalid artifact name")
+    if ".." in name or "/" in name or "\\" in name:
+        raise ValueError("artifact name must be a single path segment")
+    if not re.match(r"^[a-zA-Z0-9._-]+$", name):
+        raise ValueError("artifact name contains invalid characters")
 
 
 def build_object_storage(settings: Settings) -> ObjectStorage:

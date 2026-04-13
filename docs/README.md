@@ -12,6 +12,9 @@ This folder holds product, architecture, and operational documentation. The set 
 6. [Admin scope decisions](admin-scope-decisions.md) — auth, storage, ids, and project-shaped future work (issue #9)  
 7. [Solution architecture](solution-architecture.md) — high-level architecture and subsystems  
 8. [Data models](data-models.md) — models (Model, catalog, PointInspection, DriverVariable), GCS upload layout, naming, and COG/CRS validation  
-9. [Infrastructure and deployment](infrastructure-and-deployment.md) — GCP stack, cost control, what to avoid  
+9. [API integration](api-integration.md) — scripted HTTP flows (auth, multipart uploads, projects, models, CRS/COG prep, common errors) for modellers and tooling  
+10. [Serialized model requirements](serialized-model-requirements.md) — **sklearn-only** pickled estimator for **`serialized_model_file`** / on-demand SHAP (copy-paste agent brief included)  
+11. [ML artifacts and serving principles](ml-artifacts-and-serving-principles.md) — bundles, manifests, precomputation vs live inference, validation, security, and operations for model-related features  
+12. [Infrastructure and deployment](infrastructure-and-deployment.md) — GCP stack, cost control, what to avoid  
 
 Implementation detail (endpoints, components, phases): see [Application spec](../application-spec.md) in the repo root.
