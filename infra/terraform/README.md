@@ -9,6 +9,7 @@ It matches the deployment plan in `docs/deployment-runbook.md`:
 - Artifact Registry for backend images
 - Optional model-artifact GCS bucket
 - Optional Firestore Native database creation
+- Optional monthly budget alerts (Cloud Billing budget resource)
 
 ## What this creates
 
@@ -54,3 +55,17 @@ terraform plan -var-file=terraform.tfvars
 - Cloud Run env vars are revision-bound; keep full intended env set in Terraform.
 - If Firestore already exists, keep `create_firestore_database = false`.
 - For stricter production access, set `allow_unauthenticated_api = false` and front the API via Hosting/API Gateway as needed.
+
+## MVP cost guardrails implemented
+
+- `region = us-central1` (free-tier-friendly baseline)
+- Cloud Run scaling defaults:
+  - `api_min_instance_count = 0`
+  - `api_max_instance_count = 1`
+- GCS bucket versioning default disabled (`gcs_enable_versioning = false`) to avoid version-storage growth.
+- Optional budget alerts:
+  - `create_budget_alerts = true`
+  - `monthly_budget_amount_usd = 5`
+  - thresholds at `50%`, `90%`, and `100%`
+
+If you do not yet have a billing account id or notification channels, keep budget alerts disabled until ready.

@@ -1,5 +1,5 @@
 variable "project_id" {
-  description = "GCP project id (for example: hsm-dashboard)."
+  description = "GCP project id (for example: hsm-app-493209)."
   type        = string
 }
 
@@ -64,7 +64,7 @@ variable "api_min_instance_count" {
 variable "api_max_instance_count" {
   description = "Cloud Run max instances for cost control."
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "api_ingress" {
@@ -94,7 +94,7 @@ variable "create_gcs_bucket" {
 variable "gcs_bucket_name" {
   description = "GCS bucket name for model artifacts."
   type        = string
-  default     = "hsm-dashboard-model-artifacts"
+  default     = "hsm-app-493209-model-artifacts"
 }
 
 variable "gcs_bucket_location" {
@@ -103,10 +103,41 @@ variable "gcs_bucket_location" {
   default     = "US-CENTRAL1"
 }
 
+variable "gcs_enable_versioning" {
+  description = "Enable bucket object versioning (off by default to minimize storage cost)."
+  type        = bool
+  default     = false
+}
+
 variable "create_firestore_database" {
   description = "Whether Terraform should create Firestore Native database (name '(default)')."
   type        = bool
   default     = false
+}
+
+variable "create_budget_alerts" {
+  description = "Create billing budget alerts for MVP cost guardrails."
+  type        = bool
+  default     = false
+}
+
+variable "billing_account_id" {
+  description = "Billing account id for budget alerts (format: 000000-000000-000000)."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "monthly_budget_amount_usd" {
+  description = "Monthly budget amount in USD for alerting."
+  type        = number
+  default     = 5
+}
+
+variable "budget_notification_channels" {
+  description = "Optional Cloud Monitoring notification channel ids for budget alerts."
+  type        = list(string)
+  default     = []
 }
 
 variable "titiler_url" {

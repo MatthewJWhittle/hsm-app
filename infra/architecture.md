@@ -133,14 +133,23 @@ This matches the project runbook direction:
 - validate on staging
 - promote same artifact to production
 
-## 5) Defaults chosen for cost control
+## 5) Cost guardrails in this baseline
+
+- Region pinned to `us-central1` for better free-tier alignment.
+- Cloud Run limits default to `min=0` and `max=1` per API service.
+- GCS bucket versioning is disabled by default to avoid hidden storage growth.
+- Optional Cloud Billing budget alerts can be enabled in Terraform:
+  - monthly budget target (default `$5`)
+  - alert thresholds at `50%`, `90%`, `100%`
+
+## 6) Defaults chosen for cost control
 
 - Region default set to `us-central1`.
 - `min_instance_count = 0`.
 - low `max_instance_count` default.
 - no per-PR Cloud Run service creation.
 
-## 6) Current boundaries (intentional)
+## 7) Current boundaries (intentional)
 
 Not managed yet in this Terraform baseline:
 

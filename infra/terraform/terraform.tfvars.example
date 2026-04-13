@@ -15,10 +15,11 @@ api_container_image_staging = "us-central1-docker.pkg.dev/hsm-app-493209/hsm-app
 api_container_image_prod    = "us-central1-docker.pkg.dev/hsm-app-493209/hsm-app/backend:prod-sha"
 
 api_min_instance_count = 0
-api_max_instance_count = 2
+api_max_instance_count = 1
 
 create_gcs_bucket = true
 gcs_bucket_name   = "hsm-app-493209-model-artifacts"
+gcs_enable_versioning = false
 
 # Keep false when Firestore already exists in the project.
 create_firestore_database = false
@@ -28,5 +29,11 @@ titiler_url = "https://titiler-xxxxx-uc.a.run.app"
 
 firebase_web_api_key_secret_name = "firebase-web-api-key"
 
+# Budget alerts (recommended). Uses Cloud Billing budget notifications only.
+create_budget_alerts = true
+billing_account_id = "000000-000000-000000"
+monthly_budget_amount_usd = 5
+budget_notification_channels = []
+
 cors_origins_staging = "http://localhost:5173,http://127.0.0.1:5173,https://hsm-dashboard--pr123-abc.web.app"
-cors_origins_prod    = "https://hsm-app-493209.web.app,https://hsm-app-493209.firebaseapp.com"
+cors_origins_prod    = "https://hsm-dashboard.web.app,https://hsm-dashboard.firebaseapp.com"

@@ -18,6 +18,10 @@ locals {
   gcs_bucket_name = var.create_gcs_bucket ? google_storage_bucket.model_artifacts[0].name : var.gcs_bucket_name
 }
 
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
 resource "google_project_service" "required" {
   for_each                   = local.required_services
   project                    = var.project_id
@@ -46,10 +50,45 @@ resource "google_storage_bucket" "model_artifacts" {
   force_destroy               = false
 
   versioning {
-    enabled = true
+    enabled = var.gcs_enable_versioning
   }
 
   depends_on = [google_project_service.required]
+}
+
+resource "google_billing_budget" "mvp_monthly" {
+  count           = var.create_budget_alerts && var.billing_account_id != null ? 1 : 0
+  billing_account = var.billing_account_id
+  display_name    = "hsm-app-mvp-monthly-budget"
+
+  budget_filter {
+    projects = ["projects/${data.google_project.current.number}"]
+  }
+
+  amount {
+    specified_amount {
+      currency_code = "USD"
+      units         = tostring(var.monthly_budget_amount_usd)
+    }
+  }
+
+  threshold_rules {
+    threshold_percent = 0.5
+  }
+
+  threshold_rules {
+    threshold_percent = 0.9
+  }
+
+  threshold_rules {
+    threshold_percent = 1.0
+  }
+
+  all_updates_rule {
+    monitoring_notification_channels = var.budget_notification_channels
+    disable_default_iam_recipients   = false
+    schema_version                   = "1.0"
+  }
 }
 
 resource "google_firestore_database" "default" {
