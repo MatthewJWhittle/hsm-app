@@ -26,6 +26,15 @@ jobs:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_API_BASE: ${{ vars.PREVIEW_API_BASE_URL }}
         run: npm ci && npm run build
+      - name: Use preview-safe Firebase Hosting config
+        run: |
+          jq '
+            .hosting.rewrites = (
+              .hosting.rewrites
+              | map(select(has("destination")))
+            )
+          ' firebase.json > firebase.preview.json
+          mv firebase.preview.json firebase.json
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
