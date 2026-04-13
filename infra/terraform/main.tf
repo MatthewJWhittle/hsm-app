@@ -1,6 +1,7 @@
 locals {
   required_services = toset([
     "artifactregistry.googleapis.com",
+    "billingbudgets.googleapis.com",
     "cloudbuild.googleapis.com",
     "firestore.googleapis.com",
     "run.googleapis.com",
@@ -117,6 +118,14 @@ resource "google_service_account" "api_prod" {
   depends_on = [google_project_service.required]
 }
 
+resource "google_service_account" "titiler" {
+  project      = var.project_id
+  account_id   = "hsm-titiler"
+  display_name = "HSM TiTiler runtime"
+
+  depends_on = [google_project_service.required]
+}
+
 resource "google_project_iam_member" "api_staging_firestore_user" {
   project = var.project_id
   role    = "roles/datastore.user"
@@ -141,6 +150,13 @@ resource "google_storage_bucket_iam_member" "api_prod_storage_admin" {
   bucket = google_storage_bucket.model_artifacts[0].name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.api_prod.email}"
+}
+
+resource "google_storage_bucket_iam_member" "titiler_storage_viewer" {
+  count  = var.create_gcs_bucket ? 1 : 0
+  bucket = google_storage_bucket.model_artifacts[0].name
+  role   = "roles/storage.objectViewer"
+  member = "serviceAccount:${google_service_account.titiler.email}"
 }
 
 resource "google_secret_manager_secret_iam_member" "api_staging_secret_accessor" {
@@ -211,7 +227,7 @@ resource "google_cloud_run_v2_service" "api_staging" {
       }
       env {
         name  = "TITILER_URL"
-        value = var.titiler_url
+        value = google_cloud_run_v2_service.titiler.uri
       }
       env {
         name = "FIREBASE_WEB_API_KEY"
@@ -221,6 +237,10 @@ resource "google_cloud_run_v2_service" "api_staging" {
             version = "latest"
           }
         }
+      }
+      env {
+        name  = "FIREBASE_PROJECT_ID"
+        value = var.firebase_project_id
       }
     }
   }
@@ -290,7 +310,7 @@ resource "google_cloud_run_v2_service" "api_prod" {
       }
       env {
         name  = "TITILER_URL"
-        value = var.titiler_url
+        value = google_cloud_run_v2_service.titiler.uri
       }
       env {
         name = "FIREBASE_WEB_API_KEY"
@@ -300,6 +320,10 @@ resource "google_cloud_run_v2_service" "api_prod" {
             version = "latest"
           }
         }
+      }
+      env {
+        name  = "FIREBASE_PROJECT_ID"
+        value = var.firebase_project_id
       }
     }
   }
@@ -312,6 +336,60 @@ resource "google_cloud_run_v2_service" "api_prod" {
   depends_on = [
     google_project_service.required,
     google_project_iam_member.api_prod_firestore_user,
+  ]
+}
+
+resource "google_cloud_run_v2_service" "titiler" {
+  name     = var.titiler_service_name
+  location = var.region
+  ingress  = var.titiler_ingress
+
+  template {
+    service_account = google_service_account.titiler.email
+    timeout         = "${var.api_timeout_seconds}s"
+
+    scaling {
+      min_instance_count = var.titiler_min_instance_count
+      max_instance_count = var.titiler_max_instance_count
+    }
+
+    containers {
+      image = var.titiler_container_image
+
+      ports {
+        container_port = var.titiler_container_port
+      }
+
+      resources {
+        limits = {
+          cpu    = var.titiler_cpu
+          memory = var.titiler_memory
+        }
+      }
+
+      env {
+        name  = "TITILER_CACHE_DISABLE"
+        value = "true"
+      }
+      env {
+        name  = "TITILER_CACHE_TYPE"
+        value = "null"
+      }
+      env {
+        name  = "GDAL_DISABLE_READDIR_ON_OPEN"
+        value = "FALSE"
+      }
+    }
+  }
+
+  traffic {
+    percent = 100
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+  }
+
+  depends_on = [
+    google_project_service.required,
+    google_storage_bucket_iam_member.titiler_storage_viewer,
   ]
 }
 
@@ -329,6 +407,15 @@ resource "google_cloud_run_v2_service_iam_member" "api_prod_invoker" {
   project  = var.project_id
   location = var.region
   name     = google_cloud_run_v2_service.api_prod.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "titiler_invoker" {
+  count    = var.allow_unauthenticated_titiler ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.titiler.name
   role     = "roles/run.invoker"
   member   = "allUsers"
 }

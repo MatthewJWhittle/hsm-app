@@ -21,8 +21,8 @@ flowchart LR
   APISTG --> SM[Secret Manager: FIREBASE_WEB_API_KEY]
   APIPROD --> SM
 
-  APISTG -. TITILER_URL .-> TITILER[Shared TiTiler service]
-  APIPROD -. TITILER_URL .-> TITILER
+  APISTG -. TITILER_URL (from Terraform output) .-> TITILER[Cloud Run: titiler-shared]
+  APIPROD -. TITILER_URL (from Terraform output) .-> TITILER
 
   AR[Artifact Registry Docker repo] --> APISTG
   AR --> APIPROD
@@ -93,7 +93,13 @@ flowchart LR
       - `OPENAPI_ENABLED=false`
       - `TITILER_URL` (shared TiTiler endpoint)
       - `FIREBASE_WEB_API_KEY` from Secret Manager
+      - `FIREBASE_PROJECT_ID` (supports Firebase project separate from GCP data project)
   - Traffic currently points 100% to latest revision (simple baseline).
+
+- `google_cloud_run_v2_service.titiler`
+  - Shared TiTiler service managed in Terraform.
+  - API services reference TiTiler URL directly from this resource URI.
+  - Runs with its own service account and read-only storage role.
 
 ## 3) Identity and permissions flow
 

@@ -5,7 +5,7 @@ This folder contains a minimal Terraform baseline for review-first infrastructur
 It matches the deployment plan in `docs/deployment-runbook.md`:
 
 - Cloud Run API split: `api-staging` and `api-prod`
-- Shared, stable TiTiler URL (not managed here)
+- Shared TiTiler Cloud Run service (managed here)
 - Artifact Registry for backend images
 - Optional model-artifact GCS bucket
 - Optional Firestore Native database creation
@@ -16,10 +16,12 @@ It matches the deployment plan in `docs/deployment-runbook.md`:
 - Required project APIs (`run`, `artifactregistry`, `firestore`, `storage`, `secretmanager`, `cloudbuild`)
 - Artifact Registry Docker repository
 - Service accounts for API runtime (`hsm-api-staging`, `hsm-api-prod`)
-- Cloud Run v2 services (`api-staging`, `api-prod`)
+- Service account for TiTiler runtime (`hsm-titiler`)
+- Cloud Run v2 services (`api-staging`, `api-prod`, `titiler-shared`)
 - IAM bindings:
   - Firestore user role for both runtime service accounts
   - Storage object admin on model bucket (if bucket managed here)
+  - Storage object viewer for TiTiler runtime account
   - Secret Manager accessor for Firebase Web API key secret
   - Optional unauthenticated Cloud Run invoker (`allUsers`)
 - Optional GCS bucket for model artifacts
@@ -32,8 +34,9 @@ Copy `terraform.tfvars.example` to `terraform.tfvars` and set at least:
 - `project_id`
 - `api_container_image_staging`
 - `api_container_image_prod`
-- `titiler_url`
+- `titiler_container_image` (default is provided; override if needed)
 - `firebase_web_api_key_secret_name`
+- `firebase_project_id` (set to your Firebase Auth project id)
 
 ## Review-only workflow
 

@@ -9,10 +9,12 @@ artifact_registry_repository_id = "hsm-app"
 
 api_service_name_staging = "api-staging"
 api_service_name_prod    = "api-prod"
+titiler_service_name     = "titiler-shared"
 
 # Use immutable image tags (for example Git SHA tags) from Artifact Registry.
 api_container_image_staging = "us-central1-docker.pkg.dev/hsm-app-493209/hsm-app/backend:staging-sha"
 api_container_image_prod    = "us-central1-docker.pkg.dev/hsm-app-493209/hsm-app/backend:prod-sha"
+titiler_container_image     = "ghcr.io/developmentseed/titiler:latest"
 
 api_min_instance_count = 0
 api_max_instance_count = 1
@@ -24,10 +26,8 @@ gcs_enable_versioning = false
 # Keep false when Firestore already exists in the project.
 create_firestore_database = false
 
-# Shared TiTiler endpoint (kept stable across environments).
-titiler_url = "https://titiler-xxxxx-uc.a.run.app"
-
 firebase_web_api_key_secret_name = "firebase-web-api-key"
+firebase_project_id              = "hsm-dashboard"
 
 # Budget alerts (recommended). Uses Cloud Billing budget notifications only.
 create_budget_alerts = true

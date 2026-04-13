@@ -16,7 +16,9 @@ class Settings(BaseSettings):
 
     **Auth (Admin SDK):** set ``FIREBASE_AUTH_EMULATOR_HOST`` in dev (e.g.
     ``firebase-emulators:9099`` from Docker) so ``verify_id_token`` uses the Auth
-    emulator. Omit in production (use Application Default Credentials).
+    emulator. Omit in production (use Application Default Credentials). Use
+    ``FIREBASE_PROJECT_ID`` when Firebase Auth lives in a different project than
+    ``GOOGLE_CLOUD_PROJECT`` (Firestore/storage project).
 
     **CORS:** ``CORS_ORIGINS`` is a comma-separated list of allowed browser origins.
     Defaults include local dev and Firebase Hosting URLs for this project.
@@ -52,6 +54,15 @@ class Settings(BaseSettings):
         default="hsm-dashboard",
         description="GCP / Firebase project id used by the Firestore client.",
         validation_alias=AliasChoices("GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT"),
+    )
+
+    firebase_project_id: str | None = Field(
+        default=None,
+        description=(
+            "Firebase project id used by Firebase Admin token verification. "
+            "If unset, falls back to GOOGLE_CLOUD_PROJECT."
+        ),
+        validation_alias=AliasChoices("FIREBASE_PROJECT_ID"),
     )
 
     firebase_auth_emulator_host: str | None = Field(

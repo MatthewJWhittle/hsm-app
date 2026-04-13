@@ -15,6 +15,54 @@ variable "artifact_registry_repository_id" {
   default     = "hsm-app"
 }
 
+variable "titiler_service_name" {
+  description = "Cloud Run service name for shared TiTiler."
+  type        = string
+  default     = "titiler-shared"
+}
+
+variable "titiler_container_image" {
+  description = "Container image URI for TiTiler."
+  type        = string
+  default     = "ghcr.io/developmentseed/titiler:latest"
+}
+
+variable "titiler_container_port" {
+  description = "Container port exposed by TiTiler."
+  type        = number
+  default     = 8080
+}
+
+variable "titiler_cpu" {
+  description = "Cloud Run CPU limit for TiTiler container."
+  type        = string
+  default     = "1"
+}
+
+variable "titiler_memory" {
+  description = "Cloud Run memory limit for TiTiler container."
+  type        = string
+  default     = "1Gi"
+}
+
+variable "titiler_min_instance_count" {
+  description = "Cloud Run min instances for TiTiler (cost control: 0)."
+  type        = number
+  default     = 0
+}
+
+variable "titiler_max_instance_count" {
+  description = "Cloud Run max instances for TiTiler."
+  type        = number
+  default     = 1
+}
+
+variable "titiler_ingress" {
+  description = "Cloud Run ingress for TiTiler service."
+  type        = string
+  default     = "INGRESS_TRAFFIC_ALL"
+}
+
 variable "api_service_name_staging" {
   description = "Cloud Run service name for staging API."
   type        = string
@@ -85,6 +133,12 @@ variable "allow_unauthenticated_api" {
   default     = true
 }
 
+variable "allow_unauthenticated_titiler" {
+  description = "Whether to allow unauthenticated invocation for TiTiler service."
+  type        = bool
+  default     = true
+}
+
 variable "create_gcs_bucket" {
   description = "Whether Terraform should create the storage bucket for model artifacts."
   type        = bool
@@ -140,16 +194,16 @@ variable "budget_notification_channels" {
   default     = []
 }
 
-variable "titiler_url" {
-  description = "Shared TiTiler base URL consumed by frontend/API config."
-  type        = string
-  default     = ""
-}
-
 variable "firebase_web_api_key_secret_name" {
   description = "Secret Manager secret id containing FIREBASE_WEB_API_KEY."
   type        = string
   default     = "firebase-web-api-key"
+}
+
+variable "firebase_project_id" {
+  description = "Firebase project id used for token verification and Auth endpoints."
+  type        = string
+  default     = "hsm-dashboard"
 }
 
 variable "cors_origins_staging" {
