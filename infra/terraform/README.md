@@ -72,3 +72,21 @@ terraform plan -var-file=terraform.tfvars
   - thresholds at `50%`, `90%`, and `100%`
 
 If you do not yet have a billing account id or notification channels, keep budget alerts disabled until ready.
+
+## Build and push helper
+
+Use the repo helper script to build/push backend images consistently:
+
+```bash
+cp scripts/deploy-backend-image.env.example scripts/deploy-backend-image.env
+# edit values if needed
+chmod +x scripts/deploy-backend-image.sh
+./scripts/deploy-backend-image.sh
+```
+
+By default this uses the current Git short SHA as image tag and updates:
+
+- `api_container_image_staging`
+- `api_container_image_prod`
+
+in `infra/terraform/terraform.tfvars` (configurable in the env file).

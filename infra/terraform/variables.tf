@@ -24,7 +24,7 @@ variable "titiler_service_name" {
 variable "titiler_container_image" {
   description = "Container image URI for TiTiler."
   type        = string
-  default     = "ghcr.io/developmentseed/titiler:latest"
+  default     = "docker.io/developmentseed/titiler:latest"
 }
 
 variable "titiler_container_port" {

@@ -14,7 +14,7 @@ titiler_service_name     = "titiler-shared"
 # Use immutable image tags (for example Git SHA tags) from Artifact Registry.
 api_container_image_staging = "us-central1-docker.pkg.dev/hsm-app-493209/hsm-app/backend:staging-sha"
 api_container_image_prod    = "us-central1-docker.pkg.dev/hsm-app-493209/hsm-app/backend:prod-sha"
-titiler_container_image     = "ghcr.io/developmentseed/titiler:latest"
+titiler_container_image     = "docker.io/developmentseed/titiler:latest"
 
 api_min_instance_count = 0
 api_max_instance_count = 1
