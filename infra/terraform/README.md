@@ -81,6 +81,13 @@ If you do not yet have a billing account id or notification channels, keep budge
 
 Backend release automation uses Cloud Build triggers managed by Terraform (`google_cloudbuild_trigger` resources).
 
+Connection bootstrap:
+
+- Create and authorize the Cloud Build GitHub host connection once in Cloud Console (2nd gen).
+- Link `MatthewJWhittle/hsm-app` as repository `hsm-app-repo`.
+- Set `cloud_build_github_app_installation_id` in `terraform.tfvars`.
+- Import existing connection/repository into Terraform state when first adopting management.
+
 Cloud Build config files:
 
 - `cloudbuild.backend.staging.yaml` (build/push/deploy to `api-staging` on `main`)
@@ -92,3 +99,9 @@ Release promotion:
 git tag v1.0.0
 git push origin v1.0.0
 ```
+
+Cloud Build trigger service account IAM is managed by Terraform:
+
+- `roles/artifactregistry.writer`
+- `roles/run.admin`
+- `roles/iam.serviceAccountUser` on `hsm-api-staging` and `hsm-api-prod`

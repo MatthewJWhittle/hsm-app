@@ -16,8 +16,9 @@ locals {
     OPENAPI_ENABLED      = "false"
   }
 
-  gcs_bucket_name     = var.create_gcs_bucket ? google_storage_bucket.model_artifacts[0].name : var.gcs_bucket_name
-  cloud_build_enabled = var.create_cloud_build_triggers && var.cloud_build_github_app_installation_id != null
+  gcs_bucket_name                   = var.create_gcs_bucket ? google_storage_bucket.model_artifacts[0].name : var.gcs_bucket_name
+  cloud_build_enabled               = var.create_cloud_build_triggers && var.cloud_build_github_app_installation_id != null
+  cloud_build_service_account_email = "${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
 }
 
 data "google_project" "current" {
@@ -172,6 +173,34 @@ resource "google_secret_manager_secret_iam_member" "api_prod_secret_accessor" {
   secret_id = var.firebase_web_api_key_secret_name
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.api_prod.email}"
+}
+
+resource "google_project_iam_member" "cloudbuild_artifactregistry_writer" {
+  count   = local.cloud_build_enabled ? 1 : 0
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
+  member  = "serviceAccount:${local.cloud_build_service_account_email}"
+}
+
+resource "google_project_iam_member" "cloudbuild_run_admin" {
+  count   = local.cloud_build_enabled ? 1 : 0
+  project = var.project_id
+  role    = "roles/run.admin"
+  member  = "serviceAccount:${local.cloud_build_service_account_email}"
+}
+
+resource "google_service_account_iam_member" "cloudbuild_act_as_api_staging" {
+  count              = local.cloud_build_enabled ? 1 : 0
+  service_account_id = google_service_account.api_staging.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${local.cloud_build_service_account_email}"
+}
+
+resource "google_service_account_iam_member" "cloudbuild_act_as_api_prod" {
+  count              = local.cloud_build_enabled ? 1 : 0
+  service_account_id = google_service_account.api_prod.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${local.cloud_build_service_account_email}"
 }
 
 resource "google_cloud_run_v2_service" "api_staging" {
@@ -495,6 +524,9 @@ resource "google_cloudbuild_trigger" "backend_staging" {
     google_project_service.required,
     google_artifact_registry_repository.backend,
     google_cloud_run_v2_service.api_staging,
+    google_project_iam_member.cloudbuild_artifactregistry_writer,
+    google_project_iam_member.cloudbuild_run_admin,
+    google_service_account_iam_member.cloudbuild_act_as_api_staging,
   ]
 }
 
@@ -516,5 +548,8 @@ resource "google_cloudbuild_trigger" "backend_prod_release" {
   depends_on = [
     google_project_service.required,
     google_cloud_run_v2_service.api_prod,
+    google_project_iam_member.cloudbuild_artifactregistry_writer,
+    google_project_iam_member.cloudbuild_run_admin,
+    google_service_account_iam_member.cloudbuild_act_as_api_prod,
   ]
 }

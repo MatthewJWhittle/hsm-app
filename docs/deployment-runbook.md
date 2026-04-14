@@ -46,12 +46,14 @@ For PR validation, deploy a new revision on `api-staging` with `0%` traffic and 
 On pull request:
 
 1. Run tests/lint/build.
-2. Build backend image and push with an immutable tag (or deploy by digest).
-3. Deploy image to `api-staging` with `gcloud run deploy` as a new revision with `0%` traffic.
-4. Tag the revision as `pr-<number>`.
-5. Publish API test URL from the tagged revision.
-6. Deploy frontend to a Firebase Hosting preview channel.
-7. Point preview frontend to the tagged staging API URL.
+2. Deploy frontend to a Firebase Hosting preview channel.
+3. Point preview frontend to `PREVIEW_API_BASE_URL` (staging API origin).
+
+Backend staging deployment happens from `main` pushes (not from PR events):
+
+1. Merge to `main`.
+2. Cloud Build trigger `backend-staging-main` builds and pushes backend image.
+3. Cloud Build deploys image to `api-staging`.
 
 GitHub Actions settings for preview builds:
 
@@ -75,7 +77,7 @@ Backend deploys are handled by Cloud Build triggers, not GitHub Actions deploy j
 
 Notes:
 
-- This keeps environments simple while still allowing isolated API verification per PR.
+- This keeps environments simple while avoiding backend deploy churn on every PR update.
 - If PR concurrency becomes too high, revisit whether additional staging services are needed.
 
 ### Backend CD (Cloud Build)
@@ -92,8 +94,11 @@ Config files in repo:
 
 Cloud Build triggers are created by Terraform (`create_cloud_build_triggers = true`).
 
-Prerequisite for first setup: connect the GitHub repository to Cloud Build (2nd gen) and set
-`cloud_build_github_app_installation_id` in `terraform.tfvars`.
+Prerequisite for first setup:
+
+1. Create and authorize the Cloud Build GitHub host connection in Cloud Console (2nd gen).
+2. Link the repository.
+3. Set `cloud_build_github_app_installation_id` in `terraform.tfvars` so Terraform can manage the same connection resource.
 
 Release flow example:
 
@@ -108,15 +113,15 @@ Required IAM for Cloud Build deploy identity:
 - `roles/run.admin`
 - `roles/iam.serviceAccountUser` on runtime service accounts used by Cloud Run
 
+These IAM bindings are managed in Terraform.
+
 ## 5) Production release flow (CD)
 
-On merge to `main`:
-
-1. Deploy candidate revision to `api-staging`.
-2. Run smoke/integration checks.
-3. Deploy the same image digest to `api-prod` at `0%` traffic.
-4. Shift traffic gradually (for example `10% -> 50% -> 100%`).
-5. If needed, roll back by shifting traffic to a previous healthy revision.
+1. Merge to `main` to produce and validate a staging deployment.
+2. Run smoke/integration checks on staging.
+3. Create and push release tag (for example `v1.0.0`).
+4. Cloud Build trigger `backend-prod-release` builds/pushes image and deploys `api-prod`.
+5. If needed, roll back by redeploying a prior known-good release tag/image.
 
 Promotion path:
 
@@ -125,10 +130,8 @@ Promotion path:
 Release command pattern:
 
 ```bash
-gcloud run deploy api-staging \
-  --image "us-central1-docker.pkg.dev/<project>/<repo>/backend@sha256:<digest>" \
-  --region "us-central1" \
-  --project "<project>"
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 ## 6) Configuration and secret management
