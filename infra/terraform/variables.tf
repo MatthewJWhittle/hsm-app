@@ -1,5 +1,5 @@
 variable "project_id" {
-  description = "GCP project id (for example: hsm-app-493209)."
+  description = "GCP project id (for example: hsm-dashboard)."
   type        = string
 }
 
@@ -148,7 +148,7 @@ variable "create_gcs_bucket" {
 variable "gcs_bucket_name" {
   description = "GCS bucket name for model artifacts."
   type        = string
-  default     = "hsm-app-493209-model-artifacts"
+  default     = "hsm-dashboard-model-artifacts"
 }
 
 variable "gcs_bucket_location" {

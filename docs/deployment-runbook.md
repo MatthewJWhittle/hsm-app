@@ -52,6 +52,23 @@ On pull request:
 6. Deploy frontend to a Firebase Hosting preview channel.
 7. Point preview frontend to the tagged staging API URL.
 
+GitHub Actions settings for preview builds:
+
+- Secret: `VITE_FIREBASE_API_KEY`
+- Variable: `PREVIEW_API_BASE_URL`
+
+CLI examples:
+
+```bash
+gh secret set VITE_FIREBASE_API_KEY --body "<firebase-web-api-key>"
+gh variable set PREVIEW_API_BASE_URL --body "https://api-staging-<project-number>.us-central1.run.app"
+```
+
+Important:
+
+- Set `PREVIEW_API_BASE_URL` to the API origin **without** `/api`.
+- `/api` is a Firebase Hosting rewrite concern; direct Cloud Run calls use root paths like `/health`, `/models`, etc.
+
 Notes:
 
 - This keeps environments simple while still allowing isolated API verification per PR.

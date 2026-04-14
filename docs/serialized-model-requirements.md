@@ -12,7 +12,7 @@ Use the block below as the **system or task preamble** when asking another agent
 
 **Requirements — HSM API explainability pickle**
 
-1. **Runtime (server):** The API runs **Python 3.11+** and loads your file with **`pickle.load`** (or equivalent). Declared dependencies include **`scikit-learn>=1.4`**, **`numpy`**, **`pandas`**, **`shap`** — see the repo’s **`backend/pyproject.toml`**. There is **no** guarantee that arbitrary third-party or private packages (e.g. a local `sdm` or project-specific module) are installed.
+1. **Runtime (server):** The API runs **Python 3.11+** and loads your file with **`pickle.load`** (or equivalent). Declared dependencies include **`scikit-learn>=1.4`**, **`numpy`**, **`pandas`**, **`shap`**, and **`elapid`** (required to support compatible uploaded pickle models that reference `elapid` classes) — see the repo’s **`backend/pyproject.toml`**. There is **no** guarantee that arbitrary third-party or private packages (e.g. a local `sdm` or project-specific module) are installed.
 
 2. **Sklearn-only object graph:** The saved object MUST unpickle using **only importable code from the standard scientific stack**, primarily **`sklearn`**. Do **not** pickle estimators that reference **custom Python modules** from your modelling repo unless those modules are also shipped inside the API container (not supported by default). Prefer a fitted **`sklearn.pipeline.Pipeline`** (or compatible composition) built **only** from `sklearn` + `numpy` (+ `scipy` as used by sklearn).
 

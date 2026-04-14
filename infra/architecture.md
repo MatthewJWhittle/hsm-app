@@ -2,7 +2,7 @@
 
 This document explains the resources currently defined in `infra/terraform` and how they connect.
 
-Scope: this is the **minimal MVP baseline** for `hsm-app` (project id `hsm-app-493209`, region `us-central1`) and is intentionally review-first.
+Scope: this is the **minimal MVP baseline** for `hsm-app` (project id `hsm-dashboard`, region `us-central1`) and is intentionally review-first.
 
 ## 1) High-level topology
 
