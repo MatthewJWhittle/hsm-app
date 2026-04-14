@@ -11,6 +11,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+scripts/deploy-backend-image.env
 
 # Editors & OS
 .DS_Store
@@ -24,6 +25,13 @@ __pycache__/
 
 # Logs (repo root)
 *.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
 
 # Jupyter (if used at repo root)
 .ipynb_checkpoints
@@ -40,3 +48,4 @@ docs/_build/
 
 # PyPI config (sometimes at home dir symlink; ignore if present in repo)
 .pypirc
+*-firebase-adminsdk-*.json

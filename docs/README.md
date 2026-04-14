@@ -16,5 +16,6 @@ This folder holds product, architecture, and operational documentation. The set 
 10. [Serialized model requirements](serialized-model-requirements.md) — **sklearn-only** pickled estimator for **`serialized_model_file`** / on-demand SHAP (copy-paste agent brief included)  
 11. [ML artifacts and serving principles](ml-artifacts-and-serving-principles.md) — bundles, manifests, precomputation vs live inference, validation, security, and operations for model-related features  
 12. [Infrastructure and deployment](infrastructure-and-deployment.md) — GCP stack, cost control, what to avoid  
+13. [Deployment runbook (MVP)](deployment-runbook.md) — practical rollout guide for bootstrap, PR validation, and production promotion  
 
 Implementation detail (endpoints, components, phases): see [Application spec](../application-spec.md) in the repo root.

@@ -19,6 +19,13 @@ def _cors_allow_origins(settings: Settings) -> list[str]:
     return [x.strip() for x in settings.cors_origins.split(",") if x.strip()]
 
 
+def _cors_allow_origin_regex(settings: Settings) -> str | None:
+    if settings.cors_origin_regex is None:
+        return None
+    value = settings.cors_origin_regex.strip()
+    return value or None
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """
     Build the FastAPI app.
@@ -42,9 +49,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "API for Habitat Suitability Model Visualisation.\n\n"
             "**Docs:** `GET /openapi.json`, Swagger UI at `/docs`, ReDoc at `/redoc` "
             "(unless `OPENAPI_ENABLED=false`).\n\n"
-            "**Admin writes** (`POST`/`PUT` on `/models`, `/projects`, …): "
+            "**Admin writes** (`POST`/`PUT` on `/api/models`, `/api/projects`, …): "
             "`Authorization: Bearer` with a Firebase **ID** token that includes the **`admin: true`** "
-            "custom claim. Obtain tokens with **`POST /auth/token`** (JSON email/password); "
+            "custom claim. Obtain tokens with **`POST /api/auth/token`** (JSON email/password); "
             "set **`admin_only: true`** when you need a token that is rejected unless the user is an admin.\n\n"
             "**Uploads:** environmental and suitability rasters must be **Cloud Optimized GeoTIFF** "
             "in **EPSG:3857**. Model **`metadata.analysis.feature_band_names`** must resolve against "
@@ -69,15 +76,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_allow_origins(settings),
+        allow_origin_regex=_cors_allow_origin_regex(settings),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
     app.include_router(root.router)
-    app.include_router(auth.router)
-    app.include_router(projects.router)
-    app.include_router(models.router)
+    app.include_router(auth.router, prefix="/api")
+    app.include_router(projects.router, prefix="/api")
+    app.include_router(models.router, prefix="/api")
 
     if settings.openapi_enabled:
 
@@ -100,7 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "description": (
                     "Firebase ID token in `Authorization: Bearer <token>`. "
                     "Required for routes tagged `admin` (must include custom claim `admin: true`). "
-                    "Obtain via `POST /auth/token` with email/password; use `admin_only: true` "
+                    "Obtain via `POST /api/auth/token` with email/password; use `admin_only: true` "
                     "to require an admin-capable token. Optional on public catalog reads."
                 ),
             }

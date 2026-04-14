@@ -62,7 +62,7 @@ def admin_client_proj():
 def test_patch_environmental_band_definitions_sets_labels(admin_client_proj):
     c = admin_client_proj
     r = c.patch(
-        "/projects/proj-1/environmental-band-definitions",
+        "/api/projects/proj-1/environmental-band-definitions",
         headers={"Authorization": "Bearer fake.token"},
         json=[
             {"index": 0, "name": "a", "label": "Elevation", "description": "Height above sea level"},
@@ -80,7 +80,7 @@ def test_patch_environmental_band_definitions_sets_labels(admin_client_proj):
 def test_patch_environmental_band_definitions_wrong_count_422(admin_client_proj):
     c = admin_client_proj
     r = c.patch(
-        "/projects/proj-1/environmental-band-definitions",
+        "/api/projects/proj-1/environmental-band-definitions",
         headers={"Authorization": "Bearer fake.token"},
         json=[{"index": 0, "name": "a", "label": None}],
     )
@@ -91,7 +91,7 @@ def test_patch_environmental_band_definitions_wrong_count_422(admin_client_proj)
 def test_patch_environmental_band_definitions_unknown_project_404(admin_client_proj):
     c = admin_client_proj
     r = c.patch(
-        "/projects/missing-id/environmental-band-definitions",
+        "/api/projects/missing-id/environmental-band-definitions",
         headers={"Authorization": "Bearer fake.token"},
         json=[
             {"index": 0, "name": "a", "label": None},
@@ -104,7 +104,7 @@ def test_patch_environmental_band_definitions_unknown_project_404(admin_client_p
 def test_patch_environmental_band_definition_labels_partial(admin_client_proj):
     c = admin_client_proj
     r = c.patch(
-        "/projects/proj-1/environmental-band-definitions/labels",
+        "/api/projects/proj-1/environmental-band-definitions/labels",
         headers={"Authorization": "Bearer fake.token"},
         json={"a": {"name": "Alpha", "description": "first band"}},
     )
@@ -118,7 +118,7 @@ def test_patch_environmental_band_definition_labels_partial(admin_client_proj):
 def test_patch_environmental_band_definition_labels_label_wins_over_name(admin_client_proj):
     c = admin_client_proj
     r = c.patch(
-        "/projects/proj-1/environmental-band-definitions/labels",
+        "/api/projects/proj-1/environmental-band-definitions/labels",
         headers={"Authorization": "Bearer fake.token"},
         json={"b": {"label": "Beta", "name": "Ignored"}},
     )
@@ -130,7 +130,7 @@ def test_patch_environmental_band_definition_labels_label_wins_over_name(admin_c
 def test_patch_environmental_band_definition_labels_unknown_name_422(admin_client_proj):
     c = admin_client_proj
     r = c.patch(
-        "/projects/proj-1/environmental-band-definitions/labels",
+        "/api/projects/proj-1/environmental-band-definitions/labels",
         headers={"Authorization": "Bearer fake.token"},
         json={"no_such_band": {"name": "X"}},
     )
@@ -141,7 +141,7 @@ def test_patch_environmental_band_definition_labels_unknown_name_422(admin_clien
 def test_patch_environmental_band_definition_labels_empty_body_422(admin_client_proj):
     c = admin_client_proj
     r = c.patch(
-        "/projects/proj-1/environmental-band-definitions/labels",
+        "/api/projects/proj-1/environmental-band-definitions/labels",
         headers={"Authorization": "Bearer fake.token"},
         json={},
     )
@@ -154,7 +154,7 @@ def test_post_explainability_background_sample_ok(admin_client_proj):
     ) as mock_w:
         c = admin_client_proj
         r = c.post(
-            "/projects/proj-1/explainability-background-sample",
+            "/api/projects/proj-1/explainability-background-sample",
             headers={"Authorization": "Bearer fake.token"},
             json={"sample_rows": 128},
         )
@@ -173,7 +173,7 @@ def test_post_explainability_background_sample_unknown_project_404(admin_client_
     ):
         c = admin_client_proj
         r = c.post(
-            "/projects/missing-id/explainability-background-sample",
+            "/api/projects/missing-id/explainability-background-sample",
             headers={"Authorization": "Bearer fake.token"},
             json={},
         )
@@ -186,7 +186,7 @@ def test_post_explainability_background_sample_default_rows(admin_client_proj):
     ) as mock_w:
         c = admin_client_proj
         r = c.post(
-            "/projects/proj-1/explainability-background-sample",
+            "/api/projects/proj-1/explainability-background-sample",
             headers={"Authorization": "Bearer fake.token"},
             json={},
         )

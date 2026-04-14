@@ -18,7 +18,7 @@ def init_firebase_admin(settings: Settings) -> App | None:
     if firebase_admin._apps:
         return firebase_admin.get_app()
 
-    project_id = settings.google_cloud_project
+    project_id = (settings.firebase_project_id or settings.google_cloud_project).strip()
     if settings.firebase_auth_emulator_host:
         os.environ.setdefault(
             "FIREBASE_AUTH_EMULATOR_HOST",

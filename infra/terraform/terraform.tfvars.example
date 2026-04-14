@@ -1,0 +1,42 @@
+project_id = "hsm-dashboard"
+
+# Cost-minimal default: keep region in US free-tier-friendly footprint
+# (especially for Cloud Storage free allowance). For UK proximity, set
+# region = "europe-west2" and expect higher baseline/storage cost risk.
+region = "us-central1"
+
+artifact_registry_repository_id = "hsm-app"
+
+api_service_name_staging = "api-staging"
+api_service_name_prod    = "api-prod"
+titiler_service_name     = "titiler-shared"
+
+# Use immutable image tags (for example Git SHA tags) from Artifact Registry.
+api_container_image_staging = "us-central1-docker.pkg.dev/hsm-dashboard/hsm-app/backend:staging-sha"
+api_container_image_prod    = "us-central1-docker.pkg.dev/hsm-dashboard/hsm-app/backend:prod-sha"
+titiler_container_image     = "docker.io/developmentseed/titiler:latest"
+
+api_min_instance_count = 0
+api_max_instance_count = 1
+
+create_gcs_bucket = true
+gcs_bucket_name   = "hsm-dashboard-model-artifacts"
+gcs_enable_versioning = false
+
+# Keep false when Firestore already exists in the project.
+create_firestore_database = false
+
+firebase_web_api_key_secret_name = "firebase-web-api-key"
+firebase_project_id              = "hsm-dashboard"
+
+# Budget alerts (recommended). Uses Cloud Billing budget notifications only.
+create_budget_alerts = true
+billing_account_id = "000000-000000-000000"
+monthly_budget_amount_usd = 5
+budget_notification_channels = []
+
+cors_origins_staging = "http://localhost:5173,http://127.0.0.1:5173,https://hsm-dashboard--pr123-abc.web.app"
+cors_origin_regex_staging = "^https://hsm-dashboard--pr[0-9]+-[a-z0-9-]+\\.web\\.app$"
+cors_origins_prod    = "https://hsm-dashboard.web.app,https://hsm-dashboard.firebaseapp.com"
+cors_origin_regex_prod = ""
+

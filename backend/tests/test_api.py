@@ -46,7 +46,7 @@ def client():
 
 def test_get_models_returns_list(client):
     c, mock_client = client
-    r = c.get("/models")
+    r = c.get("/api/models")
     assert r.status_code == 200
     data = r.json()
     assert len(data) == 1
@@ -59,14 +59,14 @@ def test_get_models_returns_list(client):
 
 def test_get_model_by_id(client):
     c, _ = client
-    r = c.get("/models/test-bat--roosting")
+    r = c.get("/api/models/test-bat--roosting")
     assert r.status_code == 200
     assert r.json()["activity"] == "Roosting"
 
 
 def test_get_model_unknown_404(client):
     c, _ = client
-    r = c.get("/models/does-not-exist")
+    r = c.get("/api/models/does-not-exist")
     assert r.status_code == 404
 
 
@@ -82,7 +82,7 @@ def test_firestore_backend_returns_empty_list_when_no_documents(mock_client_cls)
 
     importlib.reload(main)
     with TestClient(main.app) as c:
-        r = c.get("/models")
+            r = c.get("/api/models")
     assert r.status_code == 200
     assert r.json() == []
     assert mock_client.collection.call_count == 2
@@ -116,7 +116,7 @@ def test_firestore_backend_returns_models(mock_client_cls):
 
     importlib.reload(main)
     with TestClient(main.app) as c:
-        r = c.get("/models")
+            r = c.get("/api/models")
     assert r.status_code == 200
     data = r.json()
     assert len(data) == 1
@@ -145,7 +145,7 @@ def test_catalog_validation_error_returns_503(mock_client_cls):
 
     importlib.reload(main)
     with TestClient(main.app) as c:
-        r = c.get("/models")
+            r = c.get("/api/models")
     assert r.status_code == 503
     assert "schema" in r.json()["detail"].lower()
 
@@ -171,5 +171,5 @@ def test_get_model_returns_503_when_catalog_invalid(mock_client_cls):
 
     importlib.reload(main)
     with TestClient(main.app) as c:
-        r = c.get("/models/any-id")
+            r = c.get("/api/models/any-id")
     assert r.status_code == 503

@@ -34,7 +34,7 @@ def test_point_inspect_timeout_returns_504():
             patch("backend_api.routers.models.asyncio.wait_for", _raise_timeout),
             TestClient(main.app) as client,
         ):
-            r = client.get("/models/m1/point", params={"lng": -2.0, "lat": 53.0})
+            r = client.get("/api/models/m1/point", params={"lng": -2.0, "lat": 53.0})
     assert r.status_code == 504
     detail = r.json().get("detail")
     assert isinstance(detail, dict)
@@ -58,5 +58,5 @@ def test_explainability_warmup_returns_204():
 
         importlib.reload(main)
         with TestClient(main.app) as client:
-            r = client.post("/models/m1/explainability-warmup")
+            r = client.post("/api/models/m1/explainability-warmup")
     assert r.status_code == 204

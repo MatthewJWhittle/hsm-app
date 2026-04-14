@@ -1,0 +1,52 @@
+name: Backend Deploy Prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_digest_uri:
+        description: "Artifact Registry image digest URI (e.g. us-central1-docker.pkg.dev/.../backend@sha256:...)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: backend-prod-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy_prod:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_REGION: ${{ vars.GCP_REGION }}
+      PROD_SERVICE_NAME: ${{ vars.BACKEND_PROD_SERVICE_NAME }}
+      IMAGE_DIGEST_URI: ${{ inputs.image_digest_uri }}
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - id: deploy
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
+        with:
+          service: ${{ env.PROD_SERVICE_NAME }}
+          region: ${{ env.GCP_REGION }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          image: ${{ env.IMAGE_DIGEST_URI }}
+
+      - name: Show deployed image
+        run: |
+          echo "Deployed prod image:"
+          echo "${IMAGE_DIGEST_URI}"
+          echo "Service URL:"
+          echo "${{ steps.deploy.outputs.url }}"
