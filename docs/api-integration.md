@@ -6,7 +6,7 @@ This guide is for **modellers and tooling authors** who call the HTTP API direct
 
 - **Base URL** is configurable (for example `http://127.0.0.1:8000` with Docker Compose).
 - **OpenAPI** JSON: `{BASE_URL}/openapi.json`; interactive docs: `{BASE_URL}/docs`.
-- **Admin** routes (`tags` include `admin`) require `Authorization: Bearer <Firebase ID token>` with custom claim **`admin: true`**. Obtain a suitable token with **`POST /auth/token`** (below).
+- **Admin** routes (`tags` include `admin`) require `Authorization: Bearer <Firebase ID token>` with custom claim **`admin: true`**. Obtain a suitable token with **`POST /api/auth/token`** (below).
 
 ## Concepts
 
@@ -22,7 +22,7 @@ This guide is for **modellers and tooling authors** who call the HTTP API direct
 Exchange email and password for Firebase tokens via this API (the server calls Identity Toolkit; you do not need to call Google’s REST URL yourself).
 
 ```http
-POST {BASE_URL}/auth/token
+POST {BASE_URL}/api/auth/token
 Content-Type: application/json
 ```
 
@@ -37,14 +37,14 @@ Content-Type: application/json
 Response fields you typically need:
 
 - **`id_token`** — send as `Authorization: Bearer <id_token>` on admin routes.
-- **`refresh_token`**, **`expires_in`** — for long scripts, refresh with Firebase’s token refresh flow or call **`POST /auth/token`** again.
+- **`refresh_token`**, **`expires_in`** — for long scripts, refresh with Firebase’s token refresh flow or call **`POST /api/auth/token`** again.
 
 **Example (shell)**
 
 ```bash
 export BASE_URL="http://127.0.0.1:8000"
 export TOKEN="$(
-  curl -sS -X POST "${BASE_URL}/auth/token" \
+  curl -sS -X POST "${BASE_URL}/api/auth/token" \
     -H "Content-Type: application/json" \
     -d "{\"email\":\"${HSM_EMAIL}\",\"password\":\"${HSM_PASSWORD}\",\"admin_only\":true}" \
   | jq -r '.id_token'
@@ -59,14 +59,14 @@ List visible projects and pick one by `name`, then read `id`:
 
 ```bash
 export PROJECT_ID="$(
-  curl -sS "${BASE_URL}/projects" \
+  curl -sS "${BASE_URL}/api/projects" \
   | jq -r '.[] | select(.name=="Example project name") | .id'
 )"
 ```
 
-Use **`PROJECT_ID`** as **`project_id`** on **`POST /models`** and when updating the project.
+Use **`PROJECT_ID`** as **`project_id`** on **`POST /api/models`** and when updating the project.
 
-Private projects may require `Authorization: Bearer` for **`GET /projects`** to list them.
+Private projects may require `Authorization: Bearer` for **`GET /api/projects`** to list them.
 
 ## Reprojecting to EPSG:3857
 
@@ -83,7 +83,7 @@ Apply the same idea to **any** environmental stack or suitability raster you pro
 ### Upload or replace (`PUT /projects/{project_id}`)
 
 ```http
-PUT {BASE_URL}/projects/{PROJECT_ID}
+PUT {BASE_URL}/api/projects/{PROJECT_ID}
 Authorization: Bearer {TOKEN}
 Content-Type: multipart/form-data
 ```
@@ -94,7 +94,7 @@ Content-Type: multipart/form-data
 | **`infer_band_definitions`** | String `true` (default) to **infer** machine `name`s from GDAL band descriptions. Use `false` if you supply **`environmental_band_definitions`** as explicit JSON. |
 
 ```bash
-curl -sS -X PUT "${BASE_URL}/projects/${PROJECT_ID}" \
+curl -sS -X PUT "${BASE_URL}/api/projects/${PROJECT_ID}" \
   -H "Authorization: Bearer ${TOKEN}" \
   -F "file=@/path/to/environmental_stack_cog.tif" \
   -F "infer_band_definitions=true"
@@ -107,7 +107,7 @@ After a successful upload, the service may build **`explainability_background.pa
 Human-facing **`label`** and **`description`** per machine **`name`**:
 
 ```http
-PATCH {BASE_URL}/projects/{PROJECT_ID}/environmental-band-definitions/labels
+PATCH {BASE_URL}/api/projects/{PROJECT_ID}/environmental-band-definitions/labels
 Authorization: Bearer {TOKEN}
 Content-Type: application/json
 ```
@@ -126,19 +126,19 @@ export HSM_ID_TOKEN="${TOKEN}"
 python3 scripts/apply_band_label_updates.py scripts/data/environmental_band_label_updates.json
 ```
 
-To replace the **entire** band manifest (every index `0..n-1`), use **`PATCH /projects/{project_id}/environmental-band-definitions`** with a JSON **array** (see [Data models — catalog project](data-models.md#catalog-project-shared-environmental-stack)).
+To replace the **entire** band manifest (every index `0..n-1`), use **`PATCH /api/projects/{project_id}/environmental-band-definitions`** with a JSON **array** (see [Data models — catalog project](data-models.md#catalog-project-shared-environmental-stack)).
 
 ## Suitability model upload or update
 
 ### Check for an existing model
 
 ```bash
-curl -sS "${BASE_URL}/models" -H "Authorization: Bearer ${TOKEN}" \
+curl -sS "${BASE_URL}/api/models" -H "Authorization: Bearer ${TOKEN}" \
   | jq '.[] | select(.species=="Nyctalus noctula" and .activity=="Roost")'
 ```
 
-- **No row** → **`POST /models`** (multipart requires **`file`** among other fields).
-- **Row exists** → **`PUT /models/{model_id}`** to replace the COG and/or metadata or pickle.
+- **No row** → **`POST /api/models`** (multipart requires **`file`** among other fields).
+- **Row exists** → **`PUT /api/models/{model_id}`** to replace the COG and/or metadata or pickle.
 
 **Duplicate guard:** **`POST /models`** returns **409** with **`MODEL_DUPLICATE`** when **`project_id` + `species` + `activity`** already exists.
 
@@ -173,7 +173,7 @@ Rules:
 export MODEL_ID="<uuid-from-GET-/models>"
 META="$(jq -c . < path/to/metadata.json)"
 
-curl -sS -X PUT "${BASE_URL}/models/${MODEL_ID}" \
+curl -sS -X PUT "${BASE_URL}/api/models/${MODEL_ID}" \
   -H "Authorization: Bearer ${TOKEN}" \
   --form-string "metadata=${META}" \
   -F "file=@/path/to/suitability_epsg3857_cog.tif" \
@@ -185,7 +185,7 @@ Optional multipart fields on create/update include **`project_id`**, **`species`
 ### Point inspection
 
 ```http
-GET {BASE_URL}/models/{MODEL_ID}/point?lng={WGS84_LON}&lat={WGS84_LAT}
+GET {BASE_URL}/api/models/{MODEL_ID}/point?lng={WGS84_LON}&lat={WGS84_LAT}
 ```
 
 Use coordinates **inside** the suitability raster extent (WGS84 lon/lat; the backend transforms to the raster CRS).
@@ -207,14 +207,14 @@ Validation responses use structured **`detail`**: `{ "code", "message", "context
 
 ## Quick checklist
 
-1. Obtain **`TOKEN`** (`POST /auth/token`, with **`admin_only: true`** when you need an admin-capable token).
-2. Resolve **`PROJECT_ID`** (`GET /projects`).
-3. Ensure the **environmental** COG is **3857 + COG**; **`PUT /projects/{id}`** with **`infer_band_definitions=true`** (or explicit **`environmental_band_definitions`**).
+1. Obtain **`TOKEN`** (`POST /api/auth/token`, with **`admin_only: true`** when you need an admin-capable token).
+2. Resolve **`PROJECT_ID`** (`GET /api/projects`).
+3. Ensure the **environmental** COG is **3857 + COG**; **`PUT /api/projects/{id}`** with **`infer_band_definitions=true`** (or explicit **`environmental_band_definitions`**).
 4. Optionally **`PATCH …/environmental-band-definitions/labels`** using the example JSON and script under **`scripts/data/`**.
 5. Produce **suitability** raster → **warp to 3857** → **COG**.
 6. Build **`metadata`** with **`feature_band_names`** in training column order.
-7. **`POST` or `PUT` `/models`** with multipart: **`project_id`**, **`species`**, **`activity`**, **`file`**, optional **`metadata`**, optional **`serialized_model_file`**.
-8. Verify with **`GET /models/{id}`** and **`GET …/point`** inside raster bounds.
+7. **`POST` or `PUT` `/api/models`** with multipart: **`project_id`**, **`species`**, **`activity`**, **`file`**, optional **`metadata`**, optional **`serialized_model_file`**.
+8. Verify with **`GET /api/models/{id}`** and **`GET …/point`** inside raster bounds.
 
 ## Keeping docs in sync
 
@@ -230,4 +230,4 @@ When the API changes, regenerate behaviour details from **`{BASE_URL}/openapi.js
 | [`scripts/data/environmental_band_label_updates.json`](../scripts/data/environmental_band_label_updates.json) | Example **`PATCH …/labels`** payload. |
 | [`scripts/apply_band_label_updates.py`](../scripts/apply_band_label_updates.py) | Applies label patch with env-configured auth. |
 | [`scripts/reproject_cog.sh`](../scripts/reproject_cog.sh) | Example **gdalwarp** flow to reproject a raster to **EPSG:3857** before COG upload. |
-| [`backend/backend_api/routers/models_openapi.py`](../backend/backend_api/routers/models_openapi.py) | OpenAPI multipart schema for **`POST`/`PUT` `/models`**. |
+| [`backend/backend_api/routers/models_openapi.py`](../backend/backend_api/routers/models_openapi.py) | OpenAPI multipart schema for **`POST`/`PUT` `/api/models`**. |

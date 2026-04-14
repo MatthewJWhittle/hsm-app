@@ -30,11 +30,11 @@ The main resource is a **model**: one selectable layer (species + activity + sui
 | `extras` | Optional `Record<string, string>` for custom key/value labels. |
 | `analysis` | Training / point-pipeline inputs: **`feature_band_names`** — ordered list of **machine names** matching `environmental_band_definitions[].name` on the parent project (same order as the estimator’s feature matrix). The server resolves names to band indices. Also **`serialized_model_path`** (pickled **scikit-learn–centric** fitted estimator **relative to `artifact_root`**, e.g. `serialized_model.pkl`; must unpickle without private/custom packages — see [Serialized model requirements](serialized-model-requirements.md)), **`positive_class_index`** (for `predict_proba`; default `1` at runtime if omitted), optional **`driver_cog_path`** (per-model environmental COG override relative to `artifact_root`). Invalid or duplicate names on create/update return **400** with `unknown_feature_band_names` / `duplicate_feature_band_names`. |
 
-Admin `POST/PUT /models` sends `metadata` as a multipart part with **`Content-Type: application/json`** (preferred) or a legacy **plain string** field with the same JSON text. Optional multipart field **`serialized_model_file`** writes the pickle to the model folder and sets `metadata.analysis.serialized_model_path` to the fixed filename `serialized_model.pkl`.
+Admin `POST/PUT /api/models` sends `metadata` as a multipart part with **`Content-Type: application/json`** (preferred) or a legacy **plain string** field with the same JSON text. Optional multipart field **`serialized_model_file`** writes the pickle to the model folder and sets `metadata.analysis.serialized_model_path` to the fixed filename `serialized_model.pkl`.
 
 #### Effective driver config (point inspection; not persisted)
 
-For `GET /models/{id}/point`, the backend **does not** read a stored `driver_config` blob. It builds an **effective** configuration from **`metadata.analysis`** plus the **catalog project** (when `project_id` and `environmental_band_definitions` are present): `feature_names`, `band_labels`, optional `band_descriptions`, shared background paths, etc. That merged view matches the key names the point and SHAP code paths already expect internally (e.g. `explainability_model_path` is taken from `analysis.serialized_model_path`).
+For `GET /api/models/{id}/point`, the backend **does not** read a stored `driver_config` blob. It builds an **effective** configuration from **`metadata.analysis`** plus the **catalog project** (when `project_id` and `environmental_band_definitions` are present): `feature_names`, `band_labels`, optional `band_descriptions`, shared background paths, etc. That merged view matches the key names the point and SHAP code paths already expect internally (e.g. `explainability_model_path` is taken from `analysis.serialized_model_path`).
 
 | Key (runtime) | Source |
 |---------------|--------|
@@ -55,22 +55,22 @@ Validation on save resolves **`feature_band_names`** against the project manifes
 | `description` | string? | Optional. |
 | `status` | `active` \| `archived` | Archived projects are hidden from non-admin catalog readers. |
 | `visibility` | `public` \| `private` | **Public** models are visible to anonymous catalog reads. **Private** restricts listing to **allowed_uids** (Firebase uids) and **admins**. |
-| `allowed_uids` | string[] | When `visibility` is `private`, these uids may read the project and its models (via optional `Authorization: Bearer` on `GET /projects` and `GET /models`). |
+| `allowed_uids` | string[] | When `visibility` is `private`, these uids may read the project and its models (via optional `Authorization: Bearer` on `GET /api/projects` and `GET /api/models`). |
 | `driver_artifact_root` | string | Storage prefix for the project’s shared multi-band environmental COG. |
 | `driver_cog_path` | string | Filename or path relative to `driver_artifact_root` (e.g. `environmental_cog.tif`). |
-| `environmental_band_definitions` | `{ index, name, label }[]`? | **Optional.** One entry per raster band in the environmental COG: **0-based `index`** (band order in the file), machine **`name`** (unique per project, case-insensitive), and human **`label`**. On **`POST /projects`** / **`PUT /projects/{id}`** with a file upload, you may **omit** the multipart field `environmental_band_definitions`: the server **infers** machine names from GDAL band descriptions (slugified; collisions get `_2`, `_3`, …) and returns any caveats in **`band_inference_notes`**. To require an explicit JSON array instead, send form field **`infer_band_definitions=false`**. If you **do** supply `environmental_band_definitions` JSON, validation stays strict (count and indices must match the raster). **`name`** is the join key for **`metadata.analysis.feature_band_names`** on models. |
+| `environmental_band_definitions` | `{ index, name, label }[]`? | **Optional.** One entry per raster band in the environmental COG: **0-based `index`** (band order in the file), machine **`name`** (unique per project, case-insensitive), and human **`label`**. On **`POST /api/projects`** / **`PUT /api/projects/{id}`** with a file upload, you may **omit** the multipart field `environmental_band_definitions`: the server **infers** machine names from GDAL band descriptions (slugified; collisions get `_2`, `_3`, …) and returns any caveats in **`band_inference_notes`**. To require an explicit JSON array instead, send form field **`infer_band_definitions=false`**. If you **do** supply `environmental_band_definitions` JSON, validation stays strict (count and indices must match the raster). **`name`** is the join key for **`metadata.analysis.feature_band_names`** on models. |
 | `band_inference_notes` | string[]? | **Not persisted.** Present only on upload responses when definitions were inferred (e.g. missing GDAL description, duplicate names resolved). |
 | `explainability_background_path` | string? | **Optional.** `explainability_background.parquet` under `driver_artifact_root`, built automatically when the environmental COG is uploaded (sampled pixels for SHAP; shared by all models in the project). |
 
-**Admin — replace the full band manifest:** `PATCH /projects/{project_id}/environmental-band-definitions` with a JSON **array** body (same shape as `environmental_band_definitions`, one object per band, indices `0..n-1`). Requires an existing environmental COG on the server; the band count must match the raster.
+**Admin — replace the full band manifest:** `PATCH /api/projects/{project_id}/environmental-band-definitions` with a JSON **array** body (same shape as `environmental_band_definitions`, one object per band, indices `0..n-1`). Requires an existing environmental COG on the server; the band count must match the raster.
 
-**Admin — patch labels/descriptions for one or more bands:** `PATCH /projects/{project_id}/environmental-band-definitions/labels` with a JSON **object** whose keys are each band’s machine **`name`** and whose values set **`label`** and/or **`description`** (optional **`name`** as an alias for **`label`** in bulk JSON exports; if both **`label`** and **`name`** are sent, **`label`** wins). Omitted bands are unchanged; unknown keys return **422**. Repo example payload: `scripts/data/environmental_band_label_updates.json`, applied with `scripts/apply_band_label_updates.py` (see script for env vars).
+**Admin — patch labels/descriptions for one or more bands:** `PATCH /api/projects/{project_id}/environmental-band-definitions/labels` with a JSON **object** whose keys are each band’s machine **`name`** and whose values set **`label`** and/or **`description`** (optional **`name`** as an alias for **`label`** in bulk JSON exports; if both **`label`** and **`name`** are sent, **`label`** wins). Omitted bands are unchanged; unknown keys return **422**. Repo example payload: `scripts/data/environmental_band_label_updates.json`, applied with `scripts/apply_band_label_updates.py` (see script for env vars).
 
 **Firestore:** Collection **`projects`**. **Models** stay in the top-level **`models`** collection and reference **`project_id`** (no subcollections for models under projects).
 
 **Storage layout:** Local `{LOCAL_STORAGE_ROOT}/projects/{project_id}/environmental_cog.tif` and `explainability_background.parquet` in the same folder; GCS mirror under `projects/{project_id}/` in the bucket.
 
-**API:** `GET /models` returns a list of Model. `GET /models/{id}` returns one Model. Admin: `POST /models` (body: species, activity, **COG file upload**, optional metadata; backend assigns id, writes artifacts to a named folder structure, stores `artifact_root` and paths in DB), `PUT /models/{id}`. Registering a model by **path-only** (no upload) is not part of the first admin MVP — see [Admin scope decisions — §6](admin-scope-decisions.md#6-out-of-scope-for-the-first-admin-delivery-issue-9).
+**API:** `GET /api/models` returns a list of Model. `GET /api/models/{id}` returns one Model. Admin: `POST /api/models` (body: species, activity, **COG file upload**, optional metadata; backend assigns id, writes artifacts to a named folder structure, stores `artifact_root` and paths in DB), `PUT /api/models/{id}`. Registering a model by **path-only** (no upload) is not part of the first admin MVP — see [Admin scope decisions — §6](admin-scope-decisions.md#6-out-of-scope-for-the-first-admin-delivery-issue-9).
 
 ### Raster files, folders, and naming (uploads and storage)
 
@@ -143,22 +143,22 @@ Target **under ~100 MB** per suitability COG so direct upload + validation on Cl
 
 #### API behaviour
 
-- **`POST /models` / file upload:** Run validation **after** upload to a temporary object or **before** promoting to `models/{model_id}/suitability_cog.tif`. On failure, return **422** with a structured **`detail`** object: `{ "code", "message", "context"? }` (e.g. **`code`: `COG_CRS_MISMATCH`**, **`context`**: `expected_epsg`, `got_crs`). Do not register the `Model` until validation succeeds.
-- **`POST /models`:** If another model already exists with the same **`project_id` + `species` + `activity`**, the API returns **409** with **`code`: `MODEL_DUPLICATE`** and **`existing_model_id`** in **`context`**. Use **`PUT /models/{id}`** to update an existing row, or choose a distinct activity/species string if you intentionally need two layers.
-- **`PUT /models/{id}`** replacing the COG: same validation and structured errors as POST.
+- **`POST /api/models` / file upload:** Run validation **after** upload to a temporary object or **before** promoting to `models/{model_id}/suitability_cog.tif`. On failure, return **422** with a structured **`detail`** object: `{ "code", "message", "context"? }` (e.g. **`code`: `COG_CRS_MISMATCH`**, **`context`**: `expected_epsg`, `got_crs`). Do not register the `Model` until validation succeeds.
+- **`POST /api/models`:** If another model already exists with the same **`project_id` + `species` + `activity`**, the API returns **409** with **`code`: `MODEL_DUPLICATE`** and **`existing_model_id`** in **`context`**. Use **`PUT /api/models/{id}`** to update an existing row, or choose a distinct activity/species string if you intentionally need two layers.
+- **`PUT /api/models/{id}`** replacing the COG: same validation and structured errors as POST.
 - Optionally store validation timestamp or checksum on the model document for audit.
 
 ### Driver and feature linkage
 
 Drivers must be available to the API for point inspection. Each model is tied to a **specific set of features** (the environment variables / inputs that model was built with). Design options to capture in the data model:
 
-- **Single multi-band COG:** One COG contains all driver variables (e.g. one band per feature). The model document specifies which **band names or feature ids** belong to this model. For `GET /models/{id}/point`, the API reads that subset at the requested location and returns DriverVariables. The “environment” (feature set) and the model are linked via this subset.
+- **Single multi-band COG:** One COG contains all driver variables (e.g. one band per feature). The model document specifies which **band names or feature ids** belong to this model. For `GET /api/models/{id}/point`, the API reads that subset at the requested location and returns DriverVariables. The “environment” (feature set) and the model are linked via this subset.
 - **Per-model driver raster or lookup:** Each model has its own driver dataset (path in **`metadata.analysis.driver_cog_path`**); no shared COG.
 - **Shared multi-band environmental stack (common case for scaling):** A **single raster** (or stack) of environmental variables may be **shared** — e.g. scoped to a **catalog project** — while each **model** references only the **subset of features** it uses via **`metadata.analysis.feature_band_names`** (ordered machine names). Suitability outputs remain **per-model** under each model’s artifact prefix; driver **inputs** can point at shared storage without duplicating rasters per model.
 
 The data model records **`feature_band_names`** so the API can resolve “this model → these features at this point” without clients sending raster band indices. See [Admin scope decisions](admin-scope-decisions.md) for steering.
 
-### `GET /models/{id}/point` — feature vector and explainability
+### `GET /api/models/{id}/point` — feature vector and explainability
 
 1. Read suitability from the **model’s** suitability COG (band 1), Web Mercator.
 2. If **`metadata.analysis.feature_band_names`** is set and the parent project has an environmental COG + manifest: resolve each name to a band index; sample those bands at the click from the **project** environmental COG (same CRS/extent contract as upload validation).
@@ -186,7 +186,7 @@ Used for legend (min/max, units), extent, and “what is this layer”. Can be f
 | `bounds` | [number, number, number, number]? | [minX, minY, maxX, maxY]. |
 | `resolution` | number? | Pixel size (optional). |
 
-**MVP:** Can be derived on the fly from TiTiler; add a formal response when exposing legend stats or extent via `GET /models/{id}/raster/metadata`.
+**MVP:** Can be derived on the fly from TiTiler; add a formal response when exposing legend stats or extent via `GET /api/models/{id}/raster/metadata`.
 
 ---
 
@@ -194,7 +194,7 @@ Used for legend (min/max, units), extent, and “what is this layer”. Can be f
 
 ### PointInspection (response for “value at a point”)
 
-Returned by `GET /models/{id}/point?lng=&lat=` when the user clicks the map or requests inspection.
+Returned by `GET /api/models/{id}/point?lng=&lat=` when the user clicks the map or requests inspection.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -225,9 +225,9 @@ Returned by `GET /models/{id}/point?lng=&lat=` when the user clicks the map or r
 
 ### Modeller checklist (admin uploads)
 
-- **Integration guide:** For curl-oriented flows (token acquisition, **`PUT /projects`** with **`infer_band_definitions`**, label **`PATCH`**, multipart **`metadata`**, and a troubleshooting table), see **[API integration](api-integration.md)**.
-- **Auth:** Admin `POST`/`PUT` routes require `Authorization: Bearer` with the Firebase ID token and **`admin: true`** custom claim (see OpenAPI **HTTPBearer** on `admin`-tagged operations). Obtain tokens with **`POST /auth/token`** (email/password JSON) instead of calling Identity Toolkit directly; use optional **`admin_only: true`** when you need a token that is guaranteed to carry the admin claim. **Ops:** do not log request bodies for **`POST /auth/token`** in production; apply **rate limiting** at the proxy (e.g. Cloud Run + API Gateway / Cloud Armor). Firebase **ID tokens** expire after roughly an hour — for long jobs, use the returned **`refresh_token`** with Firebase’s token refresh endpoint, or call **`POST /auth/token`** again.
-- **Idempotency:** **`POST /models`** always creates a **new** `id`. Retries with the same form fields can yield **409** if **`project_id` + `species` + `activity`** already exist; use **`GET /models`** to find the row, then **`PUT /models/{id}`**.
+- **Integration guide:** For curl-oriented flows (token acquisition, **`PUT /api/projects`** with **`infer_band_definitions`**, label **`PATCH`**, multipart **`metadata`**, and a troubleshooting table), see **[API integration](api-integration.md)**.
+- **Auth:** Admin `POST`/`PUT` routes require `Authorization: Bearer` with the Firebase ID token and **`admin: true`** custom claim (see OpenAPI **HTTPBearer** on `admin`-tagged operations). Obtain tokens with **`POST /api/auth/token`** (email/password JSON) instead of calling Identity Toolkit directly; use optional **`admin_only: true`** when you need a token that is guaranteed to carry the admin claim. **Ops:** do not log request bodies for **`POST /api/auth/token`** in production; apply **rate limiting** at the proxy (e.g. Cloud Run + API Gateway / Cloud Armor). Firebase **ID tokens** expire after roughly an hour — for long jobs, use the returned **`refresh_token`** with Firebase’s token refresh endpoint, or call **`POST /api/auth/token`** again.
+- **Idempotency:** **`POST /api/models`** always creates a **new** `id`. Retries with the same form fields can yield **409** if **`project_id` + `species` + `activity`** already exist; use **`GET /api/models`** to find the row, then **`PUT /api/models/{id}`**.
 - **Suitability COG:** Must be a valid **Cloud Optimized GeoTIFF** in **EPSG:3857**; failed validation returns structured **`422`** **`detail`** with a **`code`** (e.g. **`COG_CRS_MISMATCH`**).
 - **Environmental stack:** Shared project environmental COG should align in CRS/extent with how you trained; **`feature_band_names`** must be a subset of **`environmental_band_definitions[].name`** on that project, in training column order.
 - **Multipart `metadata`:** Send as a part with **`Content-Type: application/json`** (raw JSON object body; e.g. `FormData.append` with a `Blob` in the browser). The server still accepts a legacy **plain string** field containing the same JSON text.
@@ -246,10 +246,10 @@ Returned by `GET /models/{id}/point?lng=&lat=` when the user clicks the map or r
 
 | Model | Where used | MVP priority |
 |-------|------------|--------------|
-| **Model** | Catalog; `GET /models`, `GET /models/{id}`; admin POST/PUT | Required: `id`, species, activity, `artifact_root`, `suitability_cog_path`; optional **`metadata`**. |
+| **Model** | Catalog; `GET /api/models`, `GET /api/models/{id}`; admin POST/PUT | Required: `id`, species, activity, `artifact_root`, `suitability_cog_path`; optional **`metadata`**. |
 | **Catalog** | Firestore `models` collection or local JSON `documents[]` snapshot | Stored list of Model; id required. |
-| **RasterMetadata** | `GET /models/{id}/raster/metadata` when needed | Optional in MVP. |
-| **PointInspection** | Response of `GET /models/{id}/point` | Required for MVP. |
+| **RasterMetadata** | `GET /api/models/{id}/raster/metadata` when needed | Optional in MVP. |
+| **PointInspection** | Response of `GET /api/models/{id}/point` | Required for MVP. |
 | **DriverVariable** | Inside PointInspection.drivers | Required for MVP (simple explanation). |
 
 This gives a consistent, resource-oriented set of types for backend, frontend, and catalog storage.

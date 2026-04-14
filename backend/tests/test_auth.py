@@ -36,12 +36,12 @@ def client():
 
 
 def test_auth_me_requires_bearer(client):
-    r = client.get("/auth/me")
+    r = client.get("/api/auth/me")
     assert r.status_code == 401
 
 
 def test_auth_me_returns_uid_and_email(client):
-    r = client.get("/auth/me", headers={"Authorization": "Bearer fake.jwt.token"})
+    r = client.get("/api/auth/me", headers={"Authorization": "Bearer fake.jwt.token"})
     assert r.status_code == 200
     data = r.json()
     assert data["uid"] == "user-1"
@@ -56,7 +56,7 @@ def test_auth_token_returns_id_token(client):
             "expiresIn": "3600",
         }
         r = client.post(
-            "/auth/token",
+                "/api/auth/token",
             json={"email": "dev@example.com", "password": "secret"},
         )
         assert r.status_code == 200
@@ -75,7 +75,7 @@ def test_auth_token_invalid_password_401(client):
         side_effect=IdentityToolkitError("INVALID_PASSWORD"),
     ):
         r = client.post(
-            "/auth/token",
+                "/api/auth/token",
             json={"email": "dev@example.com", "password": "wrong"},
         )
     assert r.status_code == 401
@@ -98,7 +98,7 @@ def test_auth_token_admin_only_requires_admin_claim(client):
         ),
     ):
         r = client.post(
-            "/auth/token",
+                "/api/auth/token",
             json={
                 "email": "dev@example.com",
                 "password": "secret",
@@ -124,7 +124,7 @@ def test_auth_token_admin_only_ok_when_admin(client):
         ),
     ):
         r = client.post(
-            "/auth/token",
+                "/api/auth/token",
             json={
                 "email": "dev@example.com",
                 "password": "secret",
@@ -157,5 +157,5 @@ def test_auth_me_invalid_token_401():
 
         importlib.reload(main)
         with TestClient(main.app) as c:
-            r = c.get("/auth/me", headers={"Authorization": "Bearer x"})
+                r = c.get("/api/auth/me", headers={"Authorization": "Bearer x"})
     assert r.status_code == 401

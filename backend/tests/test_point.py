@@ -155,7 +155,7 @@ def test_point_returns_value(point_client):
     client, bounds = point_client
     lng, lat = _center_wgs84(bounds)
     r = client.get(
-        "/models/test-bat--roosting/point",
+            "/api/models/test-bat--roosting/point",
         params={"lng": lng, "lat": lat},
     )
     assert r.status_code == 200
@@ -168,7 +168,7 @@ def test_point_returns_value(point_client):
 def test_point_outside_raster_422(point_client):
     client, _bounds = point_client
     r = client.get(
-        "/models/test-bat--roosting/point",
+            "/api/models/test-bat--roosting/point",
         params={"lng": 0.0, "lat": 0.0},
     )
     assert r.status_code == 422
@@ -180,7 +180,7 @@ def test_point_unknown_model_404(point_client):
     client, bounds = point_client
     lng, lat = _center_wgs84(bounds)
     r = client.get(
-        "/models/does-not-exist/point",
+            "/api/models/does-not-exist/point",
         params={"lng": lng, "lat": lat},
     )
     assert r.status_code == 404
@@ -190,7 +190,7 @@ def test_point_lat_out_of_range_422(point_client):
     client, bounds = point_client
     lng, lat = _center_wgs84(bounds)
     r = client.get(
-        "/models/test-bat--roosting/point",
+            "/api/models/test-bat--roosting/point",
         params={"lng": lng, "lat": 100.0},
     )
     assert r.status_code == 422
@@ -214,7 +214,7 @@ def test_point_missing_cog_503(tmp_path):
         importlib.reload(main)
         with TestClient(main.app) as client:
             r = client.get(
-                "/models/test-bat--roosting/point",
+                    "/api/models/test-bat--roosting/point",
                 params={"lng": -2.5, "lat": 53.0},
             )
     assert r.status_code == 503
@@ -246,7 +246,7 @@ def test_point_nodata_pixel_422(tmp_path):
         with TestClient(main.app) as client:
             lng, lat = _center_wgs84(bounds)
             r = client.get(
-                "/models/test-bat--roosting/point",
+                    "/api/models/test-bat--roosting/point",
                 params={"lng": lng, "lat": lat},
             )
     assert r.status_code == 422
@@ -295,7 +295,7 @@ def test_point_returns_raw_environmental_values(tmp_path):
         with TestClient(main.app) as client:
             lng, lat = _center_wgs84(bounds)
             r = client.get(
-                "/models/m-with-drivers/point",
+                    "/api/models/m-with-drivers/point",
                 params={"lng": lng, "lat": lat},
             )
     assert r.status_code == 200
@@ -315,7 +315,7 @@ def test_point_drivers_empty_when_not_configured(point_client):
     client, bounds = point_client
     lng, lat = _center_wgs84(bounds)
     r = client.get(
-        "/models/test-bat--roosting/point",
+            "/api/models/test-bat--roosting/point",
         params={"lng": lng, "lat": lat},
     )
     assert r.status_code == 200
@@ -358,7 +358,7 @@ def test_point_env_raster_missing_503_when_drivers_configured(tmp_path):
         with TestClient(main.app) as client:
             lng, lat = _center_wgs84(bounds)
             r = client.get(
-                "/models/m-broken-env/point",
+                    "/api/models/m-broken-env/point",
                 params={"lng": lng, "lat": lat},
             )
     assert r.status_code == 503
@@ -421,7 +421,7 @@ def test_point_returns_shap_influence(tmp_path):
         with TestClient(main.app) as client:
             lng, lat = _center_wgs84(bounds)
             r = client.get(
-                "/models/m-shap/point",
+                    "/api/models/m-shap/point",
                 params={"lng": lng, "lat": lat},
             )
     assert r.status_code == 200
@@ -481,7 +481,7 @@ def test_point_partial_explainability_raw_without_shap(tmp_path):
         with TestClient(main.app) as client:
             lng, lat = _center_wgs84(bounds)
             r = client.get(
-                "/models/m-partial/point",
+                    "/api/models/m-partial/point",
                 params={"lng": lng, "lat": lat},
             )
     assert r.status_code == 200
@@ -520,7 +520,7 @@ def test_point_wrong_crs_422(tmp_path):
             lng = (minx + maxx) / 2.0
             lat = (miny + maxy) / 2.0
             r = client.get(
-                "/models/test-bat--roosting/point",
+                    "/api/models/test-bat--roosting/point",
                 params={"lng": lng, "lat": lat},
             )
     assert r.status_code == 422

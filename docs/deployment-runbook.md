@@ -64,13 +64,13 @@ CLI examples:
 
 ```bash
 gh secret set VITE_FIREBASE_API_KEY --body "<firebase-web-api-key>"
-gh variable set PREVIEW_API_BASE_URL --body "https://api-staging-<project-number>.us-central1.run.app"
+gh variable set PREVIEW_API_BASE_URL --body "https://api-staging-<project-number>.us-central1.run.app/api"
 ```
 
 Important:
 
-- Set `PREVIEW_API_BASE_URL` to the API origin **without** `/api`.
-- `/api` is a Firebase Hosting rewrite concern; direct Cloud Run calls use root paths like `/health`, `/models`, etc.
+- Set `PREVIEW_API_BASE_URL` to the API origin **including** `/api`.
+- Canonical API paths are `/api/*` in both Hosting and direct Cloud Run usage (for example `/api/health`, `/api/models`).
 - Configure backend CORS for previews with `CORS_ORIGIN_REGEX` (for example `^https://hsm-dashboard--pr[0-9]+-[a-z0-9-]+\\.web\\.app$`) so new PR channels do not require manual allowlist updates.
 
 Backend deploys are handled by GitHub Actions deploy workflows.

@@ -113,7 +113,7 @@ def test_post_models_requires_admin_claim():
         importlib.reload(main)
         with TestClient(main.app) as c:
             r = c.post(
-                "/models",
+                    "/api/models",
                 headers={"Authorization": "Bearer fake.token"},
                 data={
                     "project_id": "proj-1",
@@ -141,7 +141,7 @@ def test_post_models_with_explainability_uploads(catalog_docs):
             project_documents=[SAMPLE_PROJECT],
         ) as c:
             r = c.post(
-                "/models",
+                    "/api/models",
                 headers={"Authorization": "Bearer fake.token"},
                 data={
                     "project_id": "proj-1",
@@ -182,7 +182,7 @@ def test_post_models_unknown_feature_band_names_400(catalog_docs):
         project_documents=[SAMPLE_PROJECT],
     ) as c:
         r = c.post(
-            "/models",
+                "/api/models",
             headers={"Authorization": "Bearer fake.token"},
             data={
                 "project_id": "proj-1",
@@ -213,7 +213,7 @@ def test_post_models_duplicate_409(catalog_docs):
         project_documents=[SAMPLE_PROJECT],
     ) as c:
         r = c.post(
-            "/models",
+                "/api/models",
             headers={"Authorization": "Bearer fake.token"},
             data={
                 "project_id": "proj-1",
@@ -240,7 +240,7 @@ def test_post_models_201_creates_model(catalog_docs):
         project_documents=[SAMPLE_PROJECT],
     ) as c:
         r = c.post(
-            "/models",
+                "/api/models",
             headers={"Authorization": "Bearer fake.token"},
             data={
                 "project_id": "proj-1",
@@ -272,7 +272,7 @@ def test_put_models_updates_metadata(catalog_docs):
         project_documents=[SAMPLE_PROJECT],
     ) as c:
         r = c.put(
-            "/models/existing-id",
+                "/api/models/existing-id",
             headers={"Authorization": "Bearer fake.token"},
             data={"species": "Updated"},
         )
@@ -289,7 +289,7 @@ def test_put_models_unknown_404(catalog_docs):
         project_documents=[SAMPLE_PROJECT],
     ) as c:
         r = c.put(
-            "/models/missing",
+                "/api/models/missing",
             headers={"Authorization": "Bearer fake.token"},
             data={"species": "X"},
         )

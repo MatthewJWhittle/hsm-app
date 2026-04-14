@@ -35,7 +35,7 @@ flowchart LR
 - `google_project_service.required`
   - Enables required APIs:
     - Artifact Registry
-    - Cloud Build
+    - Cloud Billing Budgets
     - Firestore
     - Cloud Run
     - Secret Manager
@@ -160,8 +160,6 @@ This matches the project runbook direction:
 Not managed yet in this Terraform baseline:
 
 - Firebase Hosting config and channel rewrites
-- TiTiler provisioning (treated as shared stable external endpoint)
-- Billing budgets/alerts
 - CI/CD workflow resources (GitHub Actions remains separate)
 
 These can be added incrementally after review.
