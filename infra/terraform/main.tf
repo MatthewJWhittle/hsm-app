@@ -477,11 +477,12 @@ resource "google_cloudbuildv2_repository" "repo" {
 }
 
 resource "google_cloudbuild_trigger" "backend_staging" {
-  count    = local.cloud_build_enabled ? 1 : 0
-  project  = var.project_id
-  location = var.region
-  name     = var.cloud_build_staging_trigger_name
-  filename = "cloudbuild.backend.staging.yaml"
+  count           = local.cloud_build_enabled ? 1 : 0
+  project         = var.project_id
+  location        = var.region
+  name            = var.cloud_build_staging_trigger_name
+  filename        = "cloudbuild.backend.staging.yaml"
+  service_account = "projects/${var.project_id}/serviceAccounts/${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
 
   repository_event_config {
     repository = google_cloudbuildv2_repository.repo[0].id
@@ -498,11 +499,12 @@ resource "google_cloudbuild_trigger" "backend_staging" {
 }
 
 resource "google_cloudbuild_trigger" "backend_prod_release" {
-  count    = local.cloud_build_enabled ? 1 : 0
-  project  = var.project_id
-  location = var.region
-  name     = var.cloud_build_prod_trigger_name
-  filename = "cloudbuild.backend.prod.yaml"
+  count           = local.cloud_build_enabled ? 1 : 0
+  project         = var.project_id
+  location        = var.region
+  name            = var.cloud_build_prod_trigger_name
+  filename        = "cloudbuild.backend.prod.yaml"
+  service_account = "projects/${var.project_id}/serviceAccounts/${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
 
   repository_event_config {
     repository = google_cloudbuildv2_repository.repo[0].id
