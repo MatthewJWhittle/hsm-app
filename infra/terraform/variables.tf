@@ -212,8 +212,81 @@ variable "cors_origins_staging" {
   default     = "http://localhost:5173,http://127.0.0.1:5173"
 }
 
+variable "cors_origin_regex_staging" {
+  description = "Optional regex-based CORS origin allowlist for staging API."
+  type        = string
+  default     = ""
+}
+
 variable "cors_origins_prod" {
   description = "Comma-separated CORS origins for production API."
   type        = string
   default     = "https://hsm-dashboard.web.app,https://hsm-dashboard.firebaseapp.com"
+}
+
+variable "cors_origin_regex_prod" {
+  description = "Optional regex-based CORS origin allowlist for production API."
+  type        = string
+  default     = ""
+}
+
+variable "create_cloud_build_triggers" {
+  description = "Whether Terraform should create backend Cloud Build triggers."
+  type        = bool
+  default     = true
+}
+
+variable "cloud_build_repo_owner" {
+  description = "GitHub repository owner for Cloud Build triggers."
+  type        = string
+  default     = "MatthewJWhittle"
+}
+
+variable "cloud_build_repo_name" {
+  description = "GitHub repository name for Cloud Build triggers."
+  type        = string
+  default     = "hsm-app"
+}
+
+variable "cloud_build_main_branch_pattern" {
+  description = "Regex branch pattern for staging auto-deploy trigger."
+  type        = string
+  default     = "^main$"
+}
+
+variable "cloud_build_release_tag_pattern" {
+  description = "Regex tag pattern for production release trigger."
+  type        = string
+  default     = "^v.*$"
+}
+
+variable "cloud_build_staging_trigger_name" {
+  description = "Cloud Build trigger name for backend staging deployments."
+  type        = string
+  default     = "backend-staging-main"
+}
+
+variable "cloud_build_prod_trigger_name" {
+  description = "Cloud Build trigger name for backend production release promotions."
+  type        = string
+  default     = "backend-prod-release"
+}
+
+variable "cloud_build_connection_name" {
+  description = "Cloud Build v2 GitHub host connection name."
+  type        = string
+  default     = "github-connection"
+}
+
+variable "cloud_build_repository_link_name" {
+  description = "Cloud Build v2 linked repository resource name."
+  type        = string
+  default     = "hsm-app-repo"
+}
+
+variable "cloud_build_github_app_installation_id" {
+  description = "Optional GitHub App installation id for Cloud Build connection. Set when known."
+  type        = number
+  default     = null
+  nullable    = true
 }

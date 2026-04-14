@@ -21,7 +21,8 @@ For PR validation, deploy a new revision on `api-staging` with `0%` traffic and 
 
 ## 2) Core rules
 
-- **Build once, promote forward:** build one image per commit and tag with Git SHA.
+- **Build once, promote forward:** build one image per commit and tag immutably (recommended format: `<git-sha-12>-<arch>`, for example `abc123def456-amd64`).
+- **Clear ownership split:** Terraform manages Cloud Run service shape; CI/CD manages API revision rollout.
 - **Separate service config:** keep staging and prod as separate services to keep config boundaries clear.
 - **Revision-safe deploys:** Cloud Run env vars are revision-bound, so each deploy sets the complete intended env set.
 - **Low-ops rollouts:** use Cloud Run built-in revision tags, traffic migration, and rollback.
@@ -35,18 +36,18 @@ For PR validation, deploy a new revision on `api-staging` with `0%` traffic and 
 4. Deploy the same image to `api-prod`.
 5. Configure Firebase Hosting live channel to rewrite `/api` to `api-prod`.
 6. Confirm runtime limits and billing guardrails:
-   - `min-instances=0`
-   - `max-instances=1` or `2` initially
-   - request-based billing
-   - billing budget alerts
+  - `min-instances=0`
+  - `max-instances=1` or `2` initially
+  - request-based billing
+  - billing budget alerts
 
 ## 4) PR / development validation flow (CI)
 
 On pull request:
 
 1. Run tests/lint/build.
-2. Build backend image and push with SHA tag.
-3. Deploy image to `api-staging` as a new revision with `0%` traffic.
+2. Build backend image and push with an immutable tag (or deploy by digest).
+3. Deploy image to `api-staging` with `gcloud run deploy` as a new revision with `0%` traffic.
 4. Tag the revision as `pr-<number>`.
 5. Publish API test URL from the tagged revision.
 6. Deploy frontend to a Firebase Hosting preview channel.
@@ -68,11 +69,44 @@ Important:
 
 - Set `PREVIEW_API_BASE_URL` to the API origin **without** `/api`.
 - `/api` is a Firebase Hosting rewrite concern; direct Cloud Run calls use root paths like `/health`, `/models`, etc.
+- Configure backend CORS for previews with `CORS_ORIGIN_REGEX` (for example `^https://hsm-dashboard--pr[0-9]+-[a-z0-9-]+\\.web\\.app$`) so new PR channels do not require manual allowlist updates.
+
+Backend deploys are handled by Cloud Build triggers, not GitHub Actions deploy jobs.
 
 Notes:
 
 - This keeps environments simple while still allowing isolated API verification per PR.
 - If PR concurrency becomes too high, revisit whether additional staging services are needed.
+
+### Backend CD (Cloud Build)
+
+Use Cloud Build triggers for backend release automation:
+
+- Trigger A (automatic): push to `main` -> build/push backend image -> deploy `api-staging`
+- Trigger B (release): push a release tag (for example `v1.0.0`) -> build/push backend image -> deploy `api-prod`
+
+Config files in repo:
+
+- `cloudbuild.backend.staging.yaml`
+- `cloudbuild.backend.prod.yaml`
+
+Cloud Build triggers are created by Terraform (`create_cloud_build_triggers = true`).
+
+Prerequisite for first setup: connect the GitHub repository to Cloud Build (2nd gen) and set
+`cloud_build_github_app_installation_id` in `terraform.tfvars`.
+
+Release flow example:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Required IAM for Cloud Build deploy identity:
+
+- `roles/artifactregistry.writer`
+- `roles/run.admin`
+- `roles/iam.serviceAccountUser` on runtime service accounts used by Cloud Run
 
 ## 5) Production release flow (CD)
 
@@ -80,13 +114,22 @@ On merge to `main`:
 
 1. Deploy candidate revision to `api-staging`.
 2. Run smoke/integration checks.
-3. Deploy the same SHA image to `api-prod` at `0%` traffic.
+3. Deploy the same image digest to `api-prod` at `0%` traffic.
 4. Shift traffic gradually (for example `10% -> 50% -> 100%`).
 5. If needed, roll back by shifting traffic to a previous healthy revision.
 
 Promotion path:
 
 `build -> stage -> verify -> prod`
+
+Release command pattern:
+
+```bash
+gcloud run deploy api-staging \
+  --image "us-central1-docker.pkg.dev/<project>/<repo>/backend@sha256:<digest>" \
+  --region "us-central1" \
+  --project "<project>"
+```
 
 ## 6) Configuration and secret management
 
@@ -117,3 +160,4 @@ Priority issues linked to this runbook:
 - [#36](https://github.com/MatthewJWhittle/hsm-app/issues/36): scripted admin auth path for automation
 - [#32](https://github.com/MatthewJWhittle/hsm-app/issues/32): first-use interpretation guardrail before pilot
 - [#18](https://github.com/MatthewJWhittle/hsm-app/issues/18) and [#23](https://github.com/MatthewJWhittle/hsm-app/issues/23): CI/docs alignment hardening
+

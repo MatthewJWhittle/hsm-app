@@ -37,6 +37,7 @@ Copy `terraform.tfvars.example` to `terraform.tfvars` and set at least:
 - `titiler_container_image` (default is provided; override if needed)
 - `firebase_web_api_key_secret_name`
 - `firebase_project_id` (set to your Firebase Auth project id)
+- `create_cloud_build_triggers` and `cloud_build_repo_owner` / `cloud_build_repo_name` (if managing backend CD via Terraform)
 
 ## Review-only workflow
 
@@ -54,8 +55,11 @@ terraform plan -var-file=terraform.tfvars
 
 ## Notes
 
-- Keep image tags immutable (Git SHA).
+- Keep image tags immutable (Git SHA or digest).
+- API image rollout is handled by CI/CD (`gcloud run deploy`), while Terraform owns service configuration.
+- `api-staging` and `api-prod` ignore image drift in Terraform via `lifecycle.ignore_changes` on container image.
 - Cloud Run env vars are revision-bound; keep full intended env set in Terraform.
+- For dynamic preview channels, use `cors_origin_regex_staging` (for example Firebase PR preview URLs).
 - If Firestore already exists, keep `create_firestore_database = false`.
 - For stricter production access, set `allow_unauthenticated_api = false` and front the API via Hosting/API Gateway as needed.
 
@@ -73,20 +77,18 @@ terraform plan -var-file=terraform.tfvars
 
 If you do not yet have a billing account id or notification channels, keep budget alerts disabled until ready.
 
-## Build and push helper
+## Backend CI/CD
 
-Use the repo helper script to build/push backend images consistently:
+Backend release automation uses Cloud Build triggers managed by Terraform (`google_cloudbuild_trigger` resources).
+
+Cloud Build config files:
+
+- `cloudbuild.backend.staging.yaml` (build/push/deploy to `api-staging` on `main`)
+- `cloudbuild.backend.prod.yaml` (build/push/deploy to `api-prod` on release tags)
+
+Release promotion:
 
 ```bash
-cp scripts/deploy-backend-image.env.example scripts/deploy-backend-image.env
-# edit values if needed
-chmod +x scripts/deploy-backend-image.sh
-./scripts/deploy-backend-image.sh
+git tag v1.0.0
+git push origin v1.0.0
 ```
-
-By default this uses the current Git short SHA as image tag and updates:
-
-- `api_container_image_staging`
-- `api_container_image_prod`
-
-in `infra/terraform/terraform.tfvars` (configurable in the env file).

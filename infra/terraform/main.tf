@@ -16,7 +16,8 @@ locals {
     OPENAPI_ENABLED      = "false"
   }
 
-  gcs_bucket_name = var.create_gcs_bucket ? google_storage_bucket.model_artifacts[0].name : var.gcs_bucket_name
+  gcs_bucket_name     = var.create_gcs_bucket ? google_storage_bucket.model_artifacts[0].name : var.gcs_bucket_name
+  cloud_build_enabled = var.create_cloud_build_triggers && var.cloud_build_github_app_installation_id != null
 }
 
 data "google_project" "current" {
@@ -222,6 +223,10 @@ resource "google_cloud_run_v2_service" "api_staging" {
         value = var.cors_origins_staging
       }
       env {
+        name  = "CORS_ORIGIN_REGEX"
+        value = var.cors_origin_regex_staging
+      }
+      env {
         name  = "OPENAPI_ENABLED"
         value = local.common_env.OPENAPI_ENABLED
       }
@@ -248,6 +253,15 @@ resource "google_cloud_run_v2_service" "api_staging" {
   traffic {
     percent = 100
     type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+  }
+
+  lifecycle {
+    # CI/CD deploys new API revisions outside Terraform.
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].containers[0].image,
+    ]
   }
 
   depends_on = [
@@ -305,6 +319,10 @@ resource "google_cloud_run_v2_service" "api_prod" {
         value = var.cors_origins_prod
       }
       env {
+        name  = "CORS_ORIGIN_REGEX"
+        value = var.cors_origin_regex_prod
+      }
+      env {
         name  = "OPENAPI_ENABLED"
         value = local.common_env.OPENAPI_ENABLED
       }
@@ -331,6 +349,15 @@ resource "google_cloud_run_v2_service" "api_prod" {
   traffic {
     percent = 100
     type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+  }
+
+  lifecycle {
+    # CI/CD deploys new API revisions outside Terraform.
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].containers[0].image,
+    ]
   }
 
   depends_on = [
@@ -418,4 +445,67 @@ resource "google_cloud_run_v2_service_iam_member" "titiler_invoker" {
   name     = google_cloud_run_v2_service.titiler.name
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+resource "google_cloudbuildv2_connection" "github" {
+  count    = local.cloud_build_enabled ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = var.cloud_build_connection_name
+
+  github_config {
+    app_installation_id = var.cloud_build_github_app_installation_id
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_cloudbuildv2_repository" "repo" {
+  count             = local.cloud_build_enabled ? 1 : 0
+  project           = var.project_id
+  location          = var.region
+  name              = var.cloud_build_repository_link_name
+  parent_connection = google_cloudbuildv2_connection.github[0].id
+  remote_uri        = "https://github.com/${var.cloud_build_repo_owner}/${var.cloud_build_repo_name}.git"
+}
+
+resource "google_cloudbuild_trigger" "backend_staging" {
+  count    = local.cloud_build_enabled ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = var.cloud_build_staging_trigger_name
+  filename = "cloudbuild.backend.staging.yaml"
+
+  repository_event_config {
+    repository = google_cloudbuildv2_repository.repo[0].id
+    push {
+      branch = var.cloud_build_main_branch_pattern
+    }
+  }
+
+  depends_on = [
+    google_project_service.required,
+    google_artifact_registry_repository.backend,
+    google_cloud_run_v2_service.api_staging,
+  ]
+}
+
+resource "google_cloudbuild_trigger" "backend_prod_release" {
+  count    = local.cloud_build_enabled ? 1 : 0
+  project  = var.project_id
+  location = var.region
+  name     = var.cloud_build_prod_trigger_name
+  filename = "cloudbuild.backend.prod.yaml"
+
+  repository_event_config {
+    repository = google_cloudbuildv2_repository.repo[0].id
+    push {
+      tag = var.cloud_build_release_tag_pattern
+    }
+  }
+
+  depends_on = [
+    google_project_service.required,
+    google_cloud_run_v2_service.api_prod,
+  ]
 }

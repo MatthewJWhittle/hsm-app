@@ -19,6 +19,13 @@ def _cors_allow_origins(settings: Settings) -> list[str]:
     return [x.strip() for x in settings.cors_origins.split(",") if x.strip()]
 
 
+def _cors_allow_origin_regex(settings: Settings) -> str | None:
+    if settings.cors_origin_regex is None:
+        return None
+    value = settings.cors_origin_regex.strip()
+    return value or None
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """
     Build the FastAPI app.
@@ -69,6 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_allow_origins(settings),
+        allow_origin_regex=_cors_allow_origin_regex(settings),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

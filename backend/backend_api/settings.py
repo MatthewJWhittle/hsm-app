@@ -49,6 +49,14 @@ class Settings(BaseSettings):
         description="Comma-separated origins for CORS (browser → API cross-origin).",
         validation_alias=AliasChoices("CORS_ORIGINS"),
     )
+    cors_origin_regex: str | None = Field(
+        default=None,
+        description=(
+            "Optional regex for dynamic CORS origins (for example Firebase PR previews). "
+            "Applied in addition to CORS_ORIGINS."
+        ),
+        validation_alias=AliasChoices("CORS_ORIGIN_REGEX"),
+    )
 
     google_cloud_project: str = Field(
         default="hsm-dashboard",
