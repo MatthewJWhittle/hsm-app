@@ -1,31 +1,18 @@
 # Terraform (minimal MVP infra)
 
-This folder contains a minimal Terraform baseline for review-first infrastructure setup.
-
-It matches the deployment plan in `docs/deployment-runbook.md`:
-
-- Cloud Run API split: `api-staging` and `api-prod`
-- Shared TiTiler Cloud Run service (managed here)
-- Artifact Registry for backend images
-- Optional model-artifact GCS bucket
-- Optional Firestore Native database creation
-- Optional monthly budget alerts (Cloud Billing budget resource)
+This folder contains the long-lived infrastructure baseline. Terraform owns
+service shape and IAM; GitHub Actions owns app image rollout.
 
 ## What this creates
 
-- Required project APIs (`run`, `artifactregistry`, `firestore`, `storage`, `secretmanager`, `cloudbuild`)
+- Required project APIs (`run`, `artifactregistry`, `firestore`, `storage`, `secretmanager`)
 - Artifact Registry Docker repository
-- Service accounts for API runtime (`hsm-api-staging`, `hsm-api-prod`)
-- Service account for TiTiler runtime (`hsm-titiler`)
 - Cloud Run v2 services (`api-staging`, `api-prod`, `titiler-shared`)
-- IAM bindings:
-  - Firestore user role for both runtime service accounts
-  - Storage object admin on model bucket (if bucket managed here)
-  - Storage object viewer for TiTiler runtime account
-  - Secret Manager accessor for Firebase Web API key secret
-  - Optional unauthenticated Cloud Run invoker (`allUsers`)
+- Service accounts for runtime services
+- IAM bindings for runtime access to Firestore, GCS, and Secret Manager
 - Optional GCS bucket for model artifacts
 - Optional Firestore `(default)` database
+- Optional billing budget alerts
 
 ## Inputs you must set
 
@@ -34,16 +21,10 @@ Copy `terraform.tfvars.example` to `terraform.tfvars` and set at least:
 - `project_id`
 - `api_container_image_staging`
 - `api_container_image_prod`
-- `titiler_container_image` (default is provided; override if needed)
 - `firebase_web_api_key_secret_name`
-- `firebase_project_id` (set to your Firebase Auth project id)
-- `create_cloud_build_triggers` and `cloud_build_repo_owner` / `cloud_build_repo_name` (if managing backend CD via Terraform)
+- `firebase_project_id`
 
-## Review-only workflow
-
-No deployment has been run by this change.
-
-Recommended review commands:
+## Recommended workflow
 
 ```bash
 cd infra/terraform
@@ -51,57 +32,22 @@ terraform init
 terraform fmt -check
 terraform validate
 terraform plan -var-file=terraform.tfvars
+terraform apply -var-file=terraform.tfvars
 ```
 
-## Notes
+## Scope notes
 
 - Keep image tags immutable (Git SHA or digest).
-- API image rollout is handled by CI/CD (`gcloud run deploy`), while Terraform owns service configuration.
-- `api-staging` and `api-prod` ignore image drift in Terraform via `lifecycle.ignore_changes` on container image.
+- API image rollout is handled by GitHub Actions deploy workflows.
+- `api-staging` and `api-prod` ignore image drift in Terraform via `lifecycle.ignore_changes`.
 - Cloud Run env vars are revision-bound; keep full intended env set in Terraform.
-- For dynamic preview channels, use `cors_origin_regex_staging` (for example Firebase PR preview URLs).
 - If Firestore already exists, keep `create_firestore_database = false`.
-- For stricter production access, set `allow_unauthenticated_api = false` and front the API via Hosting/API Gateway as needed.
 
-## MVP cost guardrails implemented
+## MVP cost guardrails
 
-- `region = us-central1` (free-tier-friendly baseline)
-- Cloud Run scaling defaults:
+- `region = us-central1` baseline
+- Cloud Run default scaling:
   - `api_min_instance_count = 0`
   - `api_max_instance_count = 1`
-- GCS bucket versioning default disabled (`gcs_enable_versioning = false`) to avoid version-storage growth.
-- Optional budget alerts:
-  - `create_budget_alerts = true`
-  - `monthly_budget_amount_usd = 5`
-  - thresholds at `50%`, `90%`, and `100%`
-
-If you do not yet have a billing account id or notification channels, keep budget alerts disabled until ready.
-
-## Backend CI/CD
-
-Backend release automation uses Cloud Build triggers managed by Terraform (`google_cloudbuild_trigger` resources).
-
-Connection bootstrap:
-
-- Create and authorize the Cloud Build GitHub host connection once in Cloud Console (2nd gen).
-- Link `MatthewJWhittle/hsm-app` as repository `hsm-app-repo`.
-- Set `cloud_build_github_app_installation_id` in `terraform.tfvars`.
-- Import existing connection/repository into Terraform state when first adopting management.
-
-Cloud Build config files:
-
-- `cloudbuild.backend.staging.yaml` (build/push/deploy to `api-staging` on `main`)
-- `cloudbuild.backend.prod.yaml` (build/push/deploy to `api-prod` on release tags)
-
-Release promotion:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Cloud Build trigger service account IAM is managed by Terraform:
-
-- `roles/artifactregistry.writer`
-- `roles/run.admin`
-- `roles/iam.serviceAccountUser` on `hsm-api-staging` and `hsm-api-prod`
+- GCS versioning default disabled
+- Optional budget alerts (50%, 90%, 100% thresholds)

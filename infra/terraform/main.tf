@@ -2,7 +2,6 @@ locals {
   required_services = toset([
     "artifactregistry.googleapis.com",
     "billingbudgets.googleapis.com",
-    "cloudbuild.googleapis.com",
     "firestore.googleapis.com",
     "run.googleapis.com",
     "secretmanager.googleapis.com",
@@ -16,9 +15,7 @@ locals {
     OPENAPI_ENABLED      = "false"
   }
 
-  gcs_bucket_name                   = var.create_gcs_bucket ? google_storage_bucket.model_artifacts[0].name : var.gcs_bucket_name
-  cloud_build_enabled               = var.create_cloud_build_triggers && var.cloud_build_github_app_installation_id != null
-  cloud_build_service_account_email = "${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
+  gcs_bucket_name = var.create_gcs_bucket ? google_storage_bucket.model_artifacts[0].name : var.gcs_bucket_name
 }
 
 data "google_project" "current" {
@@ -175,33 +172,6 @@ resource "google_secret_manager_secret_iam_member" "api_prod_secret_accessor" {
   member    = "serviceAccount:${google_service_account.api_prod.email}"
 }
 
-resource "google_project_iam_member" "cloudbuild_artifactregistry_writer" {
-  count   = local.cloud_build_enabled ? 1 : 0
-  project = var.project_id
-  role    = "roles/artifactregistry.writer"
-  member  = "serviceAccount:${local.cloud_build_service_account_email}"
-}
-
-resource "google_project_iam_member" "cloudbuild_run_admin" {
-  count   = local.cloud_build_enabled ? 1 : 0
-  project = var.project_id
-  role    = "roles/run.admin"
-  member  = "serviceAccount:${local.cloud_build_service_account_email}"
-}
-
-resource "google_service_account_iam_member" "cloudbuild_act_as_api_staging" {
-  count              = local.cloud_build_enabled ? 1 : 0
-  service_account_id = google_service_account.api_staging.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${local.cloud_build_service_account_email}"
-}
-
-resource "google_service_account_iam_member" "cloudbuild_act_as_api_prod" {
-  count              = local.cloud_build_enabled ? 1 : 0
-  service_account_id = google_service_account.api_prod.name
-  role               = "roles/iam.serviceAccountUser"
-  member             = "serviceAccount:${local.cloud_build_service_account_email}"
-}
 
 resource "google_cloud_run_v2_service" "api_staging" {
   name     = var.api_service_name_staging
@@ -474,82 +444,4 @@ resource "google_cloud_run_v2_service_iam_member" "titiler_invoker" {
   name     = google_cloud_run_v2_service.titiler.name
   role     = "roles/run.invoker"
   member   = "allUsers"
-}
-
-resource "google_cloudbuildv2_connection" "github" {
-  count    = local.cloud_build_enabled ? 1 : 0
-  project  = var.project_id
-  location = var.region
-  name     = var.cloud_build_connection_name
-
-  github_config {
-    app_installation_id = var.cloud_build_github_app_installation_id
-  }
-
-  lifecycle {
-    # Connection auth token/username are created by the Console OAuth flow.
-    ignore_changes = [
-      github_config[0].authorizer_credential,
-    ]
-  }
-
-  depends_on = [google_project_service.required]
-}
-
-resource "google_cloudbuildv2_repository" "repo" {
-  count             = local.cloud_build_enabled ? 1 : 0
-  project           = var.project_id
-  location          = var.region
-  name              = var.cloud_build_repository_link_name
-  parent_connection = google_cloudbuildv2_connection.github[0].name
-  remote_uri        = "https://github.com/${var.cloud_build_repo_owner}/${var.cloud_build_repo_name}.git"
-}
-
-resource "google_cloudbuild_trigger" "backend_staging" {
-  count           = local.cloud_build_enabled ? 1 : 0
-  project         = var.project_id
-  location        = var.region
-  name            = var.cloud_build_staging_trigger_name
-  filename        = "cloudbuild.backend.staging.yaml"
-  service_account = "projects/${var.project_id}/serviceAccounts/${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
-
-  repository_event_config {
-    repository = google_cloudbuildv2_repository.repo[0].id
-    push {
-      branch = var.cloud_build_main_branch_pattern
-    }
-  }
-
-  depends_on = [
-    google_project_service.required,
-    google_artifact_registry_repository.backend,
-    google_cloud_run_v2_service.api_staging,
-    google_project_iam_member.cloudbuild_artifactregistry_writer,
-    google_project_iam_member.cloudbuild_run_admin,
-    google_service_account_iam_member.cloudbuild_act_as_api_staging,
-  ]
-}
-
-resource "google_cloudbuild_trigger" "backend_prod_release" {
-  count           = local.cloud_build_enabled ? 1 : 0
-  project         = var.project_id
-  location        = var.region
-  name            = var.cloud_build_prod_trigger_name
-  filename        = "cloudbuild.backend.prod.yaml"
-  service_account = "projects/${var.project_id}/serviceAccounts/${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
-
-  repository_event_config {
-    repository = google_cloudbuildv2_repository.repo[0].id
-    push {
-      tag = var.cloud_build_release_tag_pattern
-    }
-  }
-
-  depends_on = [
-    google_project_service.required,
-    google_cloud_run_v2_service.api_prod,
-    google_project_iam_member.cloudbuild_artifactregistry_writer,
-    google_project_iam_member.cloudbuild_run_admin,
-    google_service_account_iam_member.cloudbuild_act_as_api_prod,
-  ]
 }

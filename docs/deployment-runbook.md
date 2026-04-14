@@ -17,12 +17,12 @@ Use two Cloud Run services for the API:
 
 Do not create one Cloud Run service per PR by default.
 
-For PR validation, deploy a new revision on `api-staging` with `0%` traffic and a revision tag (for example `pr-123`), then test via the tag URL.
+For PR validation, use a Firebase Hosting preview channel for frontend changes while pointing at shared staging backend.
 
 ## 2) Core rules
 
-- **Build once, promote forward:** build one image per commit and tag immutably (recommended format: `<git-sha-12>-<arch>`, for example `abc123def456-amd64`).
-- **Clear ownership split:** Terraform manages Cloud Run service shape; CI/CD manages API revision rollout.
+- **Build once, promote forward:** build one image per commit and deploy by immutable tag or digest.
+- **Clear ownership split:** Terraform manages long-lived infra shape; GitHub Actions manages app rollout.
 - **Separate service config:** keep staging and prod as separate services to keep config boundaries clear.
 - **Revision-safe deploys:** Cloud Run env vars are revision-bound, so each deploy sets the complete intended env set.
 - **Low-ops rollouts:** use Cloud Run built-in revision tags, traffic migration, and rollback.
@@ -52,8 +52,8 @@ On pull request:
 Backend staging deployment happens from `main` pushes (not from PR events):
 
 1. Merge to `main`.
-2. Cloud Build trigger `backend-staging-main` builds and pushes backend image.
-3. Cloud Build deploys image to `api-staging`.
+2. GitHub Actions workflow `backend-deploy-staging.yml` builds and pushes backend image.
+3. GitHub Actions deploys image to `api-staging`.
 
 GitHub Actions settings for preview builds:
 
@@ -73,55 +73,45 @@ Important:
 - `/api` is a Firebase Hosting rewrite concern; direct Cloud Run calls use root paths like `/health`, `/models`, etc.
 - Configure backend CORS for previews with `CORS_ORIGIN_REGEX` (for example `^https://hsm-dashboard--pr[0-9]+-[a-z0-9-]+\\.web\\.app$`) so new PR channels do not require manual allowlist updates.
 
-Backend deploys are handled by Cloud Build triggers, not GitHub Actions deploy jobs.
+Backend deploys are handled by GitHub Actions deploy workflows.
 
 Notes:
 
 - This keeps environments simple while avoiding backend deploy churn on every PR update.
 - If PR concurrency becomes too high, revisit whether additional staging services are needed.
 
-### Backend CD (Cloud Build)
+### Backend CD (GitHub Actions)
 
-Use Cloud Build triggers for backend release automation:
+Use GitHub Actions for backend release automation:
 
-- Trigger A (automatic): push to `main` -> build/push backend image -> deploy `api-staging`
-- Trigger B (release): push a release tag (for example `v1.0.0`) -> build/push backend image -> deploy `api-prod`
+- Workflow A (`backend-deploy-staging.yml`): on `main` CI success, build/push backend image and deploy `api-staging`
+- Workflow B (`backend-deploy-prod.yml`): manual production deploy of an existing image digest to `api-prod`
 
-Config files in repo:
+Authentication uses GitHub OIDC + Workload Identity Federation (`google-github-actions/auth`).
 
-- `cloudbuild.backend.staging.yaml`
-- `cloudbuild.backend.prod.yaml`
+Required GitHub Actions repository variables for backend deploy workflows:
 
-Cloud Build triggers are created by Terraform (`create_cloud_build_triggers = true`).
+- `GCP_PROJECT_ID`
+- `GCP_REGION`
+- `ARTIFACT_REPOSITORY`
+- `BACKEND_IMAGE_NAME`
+- `BACKEND_STAGING_SERVICE_NAME`
+- `BACKEND_PROD_SERVICE_NAME`
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`
+- `GCP_DEPLOY_SERVICE_ACCOUNT`
 
-Prerequisite for first setup:
+Required repository secrets:
 
-1. Create and authorize the Cloud Build GitHub host connection in Cloud Console (2nd gen).
-2. Link the repository.
-3. Set `cloud_build_github_app_installation_id` in `terraform.tfvars` so Terraform can manage the same connection resource.
-
-Release flow example:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Required IAM for Cloud Build deploy identity:
-
-- `roles/artifactregistry.writer`
-- `roles/run.admin`
-- `roles/iam.serviceAccountUser` on runtime service accounts used by Cloud Run
-
-These IAM bindings are managed in Terraform.
+- `VITE_FIREBASE_API_KEY` (frontend build)
+- `FIREBASE_SERVICE_ACCOUNT_HSM_DASHBOARD` (Firebase Hosting deploy)
 
 ## 5) Production release flow (CD)
 
 1. Merge to `main` to produce and validate a staging deployment.
 2. Run smoke/integration checks on staging.
-3. Create and push release tag (for example `v1.0.0`).
-4. Cloud Build trigger `backend-prod-release` builds/pushes image and deploys `api-prod`.
-5. If needed, roll back by redeploying a prior known-good release tag/image.
+3. Trigger manual prod deploy workflow with the validated staging image digest.
+4. Deploy the same digest to `api-prod`.
+5. If needed, roll back by redeploying a prior known-good digest.
 
 Promotion path:
 
@@ -130,8 +120,8 @@ Promotion path:
 Release command pattern:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+gh workflow run backend-deploy-prod.yml \
+  -f image_digest_uri="us-central1-docker.pkg.dev/<project>/<repo>/backend@sha256:<digest>"
 ```
 
 ## 6) Configuration and secret management
@@ -146,7 +136,7 @@ git push origin v1.0.0
 Do:
 
 - Keep the architecture minimal for MVP.
-- Use revision tags for traceability and testing.
+- Use immutable image tags/digests for traceability.
 - Track PR number, revision tag, and SHA in CI logs.
 
 Do not:

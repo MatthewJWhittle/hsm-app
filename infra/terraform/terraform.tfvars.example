@@ -40,14 +40,3 @@ cors_origin_regex_staging = "^https://hsm-dashboard--pr[0-9]+-[a-z0-9-]+\\.web\\
 cors_origins_prod    = "https://hsm-dashboard.web.app,https://hsm-dashboard.firebaseapp.com"
 cors_origin_regex_prod = ""
 
-create_cloud_build_triggers   = true
-cloud_build_repo_owner        = "MatthewJWhittle"
-cloud_build_repo_name         = "hsm-app"
-cloud_build_main_branch_pattern = "^main$"
-cloud_build_release_tag_pattern = "^v.*$"
-cloud_build_staging_trigger_name = "backend-staging-main"
-cloud_build_prod_trigger_name    = "backend-prod-release"
-cloud_build_connection_name      = "github-connection"
-cloud_build_repository_link_name = "hsm-app-repo"
-# Set this after installing/authorizing the Cloud Build GitHub App for the repo.
-cloud_build_github_app_installation_id = null
