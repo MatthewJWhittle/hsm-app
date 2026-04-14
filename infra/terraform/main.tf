@@ -457,6 +457,13 @@ resource "google_cloudbuildv2_connection" "github" {
     app_installation_id = var.cloud_build_github_app_installation_id
   }
 
+  lifecycle {
+    # Connection auth token/username are created by the Console OAuth flow.
+    ignore_changes = [
+      github_config[0].authorizer_credential,
+    ]
+  }
+
   depends_on = [google_project_service.required]
 }
 
@@ -465,7 +472,7 @@ resource "google_cloudbuildv2_repository" "repo" {
   project           = var.project_id
   location          = var.region
   name              = var.cloud_build_repository_link_name
-  parent_connection = google_cloudbuildv2_connection.github[0].id
+  parent_connection = google_cloudbuildv2_connection.github[0].name
   remote_uri        = "https://github.com/${var.cloud_build_repo_owner}/${var.cloud_build_repo_name}.git"
 }
 
