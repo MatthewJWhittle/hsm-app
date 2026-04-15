@@ -85,7 +85,7 @@ Notes:
 Use GitHub Actions for backend release automation:
 
 - Workflow A (`backend-deploy-staging.yml`): on `main` CI success, build/push backend image and deploy `api-staging`
-- Workflow B (`backend-deploy-prod.yml`): manual production deploy of an existing image digest to `api-prod`
+- Workflow B (`backend-deploy-prod.yml`): on GitHub release publication, build the tagged commit and deploy `api-prod`
 
 Authentication uses GitHub OIDC + Workload Identity Federation (`google-github-actions/auth`).
 
@@ -109,20 +109,13 @@ Required repository secrets:
 
 1. Merge to `main` to produce and validate a staging deployment.
 2. Run smoke/integration checks on staging.
-3. Trigger manual prod deploy workflow with the validated staging image digest.
-4. Deploy the same digest to `api-prod`.
+3. Create/publish a GitHub release tag for the validated commit.
+4. GitHub Actions builds that tagged commit and deploys it to `api-prod`.
 5. If needed, roll back by redeploying a prior known-good digest.
 
 Promotion path:
 
-`build -> stage -> verify -> prod`
-
-Release command pattern:
-
-```bash
-gh workflow run backend-deploy-prod.yml \
-  -f image_digest_uri="us-central1-docker.pkg.dev/<project>/<repo>/backend@sha256:<digest>"
-```
+`build (main) -> stage -> verify -> release tag -> prod`
 
 ## 6) Configuration and secret management
 
