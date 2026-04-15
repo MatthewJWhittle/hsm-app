@@ -40,6 +40,7 @@ export function ProjectCreateDialog({
   onProjAllowedUidsChange,
   onProjFileChange,
 }: ProjectCreateDialogProps) {
+  const missingName = !projName.trim()
   return (
     <Dialog
       open={open}
@@ -56,7 +57,7 @@ export function ProjectCreateDialog({
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2, mt: 0.5 }}>
           A project groups related map layers. You can attach one optional shared environmental raster used by those layers.
         </Typography>
-        <Box component="form" id={FORM_ID} onSubmit={(e) => void onSubmit(e)}>
+        <Box component="form" id={FORM_ID} onSubmit={(e) => void onSubmit(e)} noValidate>
           <ProjectFormFields
             mode="create"
             maxWidth={formMaxWidth}
@@ -88,10 +89,15 @@ export function ProjectCreateDialog({
         >
           Cancel
         </Button>
-        <Button type="submit" form={FORM_ID} variant="contained" disabled={projCreating}>
+        <Button type="submit" form={FORM_ID} variant="contained" disabled={projCreating || missingName}>
           {projCreating ? 'Creating…' : 'Create project'}
         </Button>
       </DialogActions>
+      {missingName && (
+        <Typography variant="caption" color="text.secondary" sx={{ px: 3, pb: 2, display: 'block' }}>
+          Enter a project name to enable create.
+        </Typography>
+      )}
     </Dialog>
   )
 }

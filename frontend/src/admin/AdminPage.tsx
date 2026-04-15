@@ -7,9 +7,12 @@ import '../App.css'
 
 import { createModel, updateModel } from '../api/adminModels'
 import {
+  completeUploadSession,
   createProject,
+  initUploadSession,
   patchProjectEnvironmentalBandDefinitions,
   postRegenerateExplainabilityBackgroundSample,
+  uploadFileToSignedUrl,
   updateProject,
 } from '../api/adminProjects'
 import { fetchModelCatalog } from '../api/catalog'
@@ -681,10 +684,29 @@ export function AdminPage() {
     }
     setProjCreating(true)
     try {
+      let uploadSessionId: string | undefined = undefined
+      if (projFile) {
+        const init = await initUploadSession({
+          token,
+          filename: projFile.name,
+          contentType: projFile.type || 'image/tiff',
+          sizeBytes: projFile.size,
+        })
+        if (!init.upload_url) {
+          throw new Error('Upload session did not provide an upload URL.')
+        }
+        await uploadFileToSignedUrl({ uploadUrl: init.upload_url, file: projFile })
+        await completeUploadSession({
+          token,
+          uploadId: init.id,
+          sizeBytes: projFile.size,
+        })
+        uploadSessionId = init.id
+      }
       await createProject({
         token,
         name: projName,
-        file: projFile ?? undefined,
+        uploadSessionId,
         description: projDesc || undefined,
         visibility: projVisibility,
         allowedUids: projAllowedUids || undefined,
