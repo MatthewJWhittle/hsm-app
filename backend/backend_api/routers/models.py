@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
+from google.cloud import storage as gcs_storage
 from fastapi import (
     APIRouter,
     Depends,
@@ -52,7 +53,10 @@ from backend_api.routers.catalog_upload_utils import (
 )
 from backend_api.routers.models_openapi import OPENAPI_POST_MODELS, OPENAPI_PUT_MODEL
 from backend_api.settings import Settings
+from backend_api.schemas_upload import UploadSession
 from backend_api.storage import SERIALIZED_MODEL_FILENAME, ObjectStorage
+from backend_api.upload_session_runtime import fail_upload_session, mark_upload_session
+from backend_api.upload_sessions import get_upload_session
 from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
 
 router = APIRouter()
@@ -109,6 +113,43 @@ def _form_require_str(form: FormData, key: str) -> str:
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _download_upload_session_bytes(
+    settings: Settings, upload_session_id: str
+) -> tuple[bytes, UploadSession]:
+    """Download uploaded object bytes from a completed upload session."""
+    session = get_upload_session(settings, upload_session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="upload session not found")
+    if session.status not in ("uploaded", "validating", "deriving", "ready"):
+        raise HTTPException(
+            status_code=409,
+            detail=validation_error(
+                "UPLOAD_NOT_READY",
+                f"upload session status {session.status!r} is not ready for model create",
+            ),
+        )
+    if not settings.gcs_bucket or session.gcs_bucket != settings.gcs_bucket:
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "UPLOAD_BUCKET_MISMATCH",
+                "upload session bucket does not match configured API bucket",
+            ),
+        )
+    client = gcs_storage.Client()
+    bucket = client.bucket(session.gcs_bucket)
+    blob = bucket.blob(session.object_path)
+    if not blob.exists():
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "UPLOAD_OBJECT_MISSING",
+                "upload object not found in storage",
+            ),
+        )
+    return blob.download_as_bytes(), session
 
 
 _ADMIN_WRITE_RESPONSES: dict[int | str, dict[str, str]] = {
@@ -328,6 +369,7 @@ async def create_model(
                 context={"existing_model_id": dup.id},
             ),
         )
+    upload_session_s = _form_str(form, "upload_session_id")
     file_part = form.get("file")
     if isinstance(file_part, str):
         raise HTTPException(
@@ -338,16 +380,32 @@ async def create_model(
                 context={"field": "file"},
             ),
         )
-    if not isinstance(file_part, StarletteUploadFile):
+    if upload_session_s and isinstance(file_part, StarletteUploadFile):
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "UPLOAD_CONFLICT",
+                "provide either multipart file or upload_session_id, not both",
+            ),
+        )
+    upload_session: UploadSession | None = None
+    if upload_session_s:
+        content, upload_session = await run_in_threadpool(
+            _download_upload_session_bytes,
+            settings,
+            upload_session_s,
+        )
+    elif isinstance(file_part, StarletteUploadFile):
+        content = await file_part.read()
+    else:
         raise HTTPException(
             status_code=422,
             detail=validation_error(
                 "MISSING_FIELD",
-                "file is required.",
+                "file or upload_session_id is required.",
                 context={"field": "file"},
             ),
         )
-    content = await file_part.read()
     if not content:
         raise HTTPException(
             status_code=422,
@@ -363,9 +421,32 @@ async def create_model(
             detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
         )
 
+    if upload_session is not None:
+        try:
+            upload_session = await run_in_threadpool(
+                mark_upload_session,
+                settings,
+                upload_session,
+                status="validating",
+                stage="validate",
+            )
+        except Exception:
+            pass
     try:
         await validate_cog_bytes_threaded(content)
     except CogValidationError as e:
+        if upload_session is not None:
+            try:
+                await run_in_threadpool(
+                    fail_upload_session,
+                    settings,
+                    upload_session,
+                    stage="validate",
+                    error_code=e.code,
+                    error_message=e.message,
+                )
+            except Exception:
+                pass
         raise _cog_validation_422(e) from e
 
     model_id = str(uuid.uuid4())
@@ -420,9 +501,32 @@ async def create_model(
         validate_explainability_artifacts_for_model(model, catalog)
         return model
 
+    if upload_session is not None:
+        try:
+            upload_session = await run_in_threadpool(
+                mark_upload_session,
+                settings,
+                upload_session,
+                status="deriving",
+                stage="derive",
+            )
+        except Exception:
+            pass
     try:
         model = await run_in_threadpool(_validate_and_enrich)
     except ValueError as e:
+        if upload_session is not None:
+            try:
+                await run_in_threadpool(
+                    fail_upload_session,
+                    settings,
+                    upload_session,
+                    stage="derive",
+                    error_code="MODEL_VALIDATION",
+                    error_message=str(e),
+                )
+            except Exception:
+                pass
         raise HTTPException(
             status_code=422,
             detail=validation_error("MODEL_VALIDATION", str(e)),
@@ -431,13 +535,48 @@ async def create_model(
     def _persist() -> None:
         upsert_model(settings, model)
 
+    if upload_session is not None:
+        try:
+            upload_session = await run_in_threadpool(
+                mark_upload_session,
+                settings,
+                upload_session,
+                status="deriving",
+                stage="persist",
+            )
+        except Exception:
+            pass
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
+        if upload_session is not None:
+            try:
+                await run_in_threadpool(
+                    fail_upload_session,
+                    settings,
+                    upload_session,
+                    stage="persist",
+                    error_code="CATALOG_SAVE_FAILED",
+                    error_message=str(e),
+                )
+            except Exception:
+                pass
         raise HTTPException(
             status_code=503,
             detail=f"could not save catalog: {e}",
         ) from e
+
+    if upload_session is not None:
+        try:
+            await run_in_threadpool(
+                mark_upload_session,
+                settings,
+                upload_session,
+                status="ready",
+                stage="done",
+            )
+        except Exception:
+            pass
 
     await reload_catalog_threaded(request)
     return model

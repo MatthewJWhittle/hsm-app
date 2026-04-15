@@ -60,8 +60,9 @@ from backend_api.schemas_project import (
 )
 from backend_api.settings import Settings
 from backend_api.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
-from backend_api.upload_sessions import get_upload_session, upsert_upload_session
+from backend_api.upload_sessions import get_upload_session
 from backend_api.schemas_upload import UploadSession
+from backend_api.upload_session_runtime import fail_upload_session, mark_upload_session
 
 router = APIRouter()
 
@@ -515,9 +516,32 @@ async def create_project(
                     context={"max_bytes": settings.max_environmental_upload_bytes},
                 ),
             )
+        if uploaded_session is not None:
+            try:
+                uploaded_session = await run_in_threadpool(
+                    mark_upload_session,
+                    settings,
+                    uploaded_session,
+                    status="validating",
+                    stage="validate",
+                )
+            except Exception:
+                pass
         try:
             await validate_cog_bytes_threaded(content)
         except CogValidationError as e:
+            if uploaded_session is not None:
+                try:
+                    await run_in_threadpool(
+                        fail_upload_session,
+                        settings,
+                        uploaded_session,
+                        stage="validate",
+                        error_code=e.code,
+                        error_message=e.message,
+                    )
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=422,
                 detail=validation_error(e.code, e.message, context=e.context or None),
@@ -536,6 +560,17 @@ async def create_project(
         except Exception as e:
             raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
 
+        if uploaded_session is not None:
+            try:
+                uploaded_session = await run_in_threadpool(
+                    mark_upload_session,
+                    settings,
+                    uploaded_session,
+                    status="deriving",
+                    stage="derive",
+                )
+            except Exception:
+                pass
         try:
 
             def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
@@ -550,23 +585,31 @@ async def create_project(
             band_defs, infer_notes = await run_in_threadpool(_defs)
             inference_notes = infer_notes if infer_notes else None
         except ValueError as e:
+            if uploaded_session is not None:
+                try:
+                    await run_in_threadpool(
+                        fail_upload_session,
+                        settings,
+                        uploaded_session,
+                        stage="derive",
+                        error_code="BAND_DEFINITIONS",
+                        error_message=str(e),
+                    )
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=422,
                 detail=validation_error("BAND_DEFINITIONS", str(e)),
             ) from e
         if uploaded_session is not None and uploaded_session.status != "ready":
-            completed = uploaded_session.model_copy(
-                update={
-                    "status": "ready",
-                    "stage": "done",
-                    "updated_at": datetime.now(UTC).isoformat(),
-                    "error_code": None,
-                    "error_message": None,
-                    "error_stage": None,
-                }
-            )
             try:
-                await run_in_threadpool(upsert_upload_session, settings, completed)
+                uploaded_session = await run_in_threadpool(
+                    mark_upload_session,
+                    settings,
+                    uploaded_session,
+                    status="ready",
+                    stage="done",
+                )
             except Exception:
                 # Project create succeeded; keep request successful even if session metadata lags.
                 pass

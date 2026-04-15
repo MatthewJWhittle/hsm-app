@@ -2,6 +2,7 @@
 
 import importlib
 import json
+import os
 from contextlib import contextmanager
 from io import BytesIO
 from unittest.mock import MagicMock, patch
@@ -10,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend_api.storage import SERIALIZED_MODEL_FILENAME
+from backend_api.schemas_upload import UploadSession
 from tests.helpers import mock_firestore_client_for_documents
 
 SAMPLE_PROJECT = {
@@ -258,6 +260,68 @@ def test_post_models_201_creates_model(catalog_docs):
     assert data["project_id"] == "proj-1"
     assert "id" in data
     mock_storage.write_suitability_cog.assert_called_once()
+
+
+def test_post_models_201_with_upload_session_id(catalog_docs):
+    mock_storage = MagicMock()
+    mock_storage.write_suitability_cog.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
+    upload_session = UploadSession(
+        id="upload-1",
+        project_id="proj-1",
+        filename="suitability.tif",
+        content_type="image/tiff",
+        requested_size_bytes=10,
+        uploaded_size_bytes=10,
+        status="uploaded",
+        stage="validate",
+        gcs_bucket="hsm-dashboard-model-artifacts",
+        object_path="uploads/upload-1/suitability.tif",
+        created_by_uid="admin-1",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    class _Blob:
+        def exists(self):
+            return True
+
+        def download_as_bytes(self):
+            return b"dummy"
+
+    class _Bucket:
+        def blob(self, _path):
+            return _Blob()
+
+    class _StorageClient:
+        def bucket(self, _name):
+            return _Bucket()
+
+    with (
+        patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
+        patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
+        patch("backend_api.routers.models.get_upload_session", return_value=upload_session),
+        patch("backend_api.routers.models.gcs_storage.Client", return_value=_StorageClient()),
+        patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
+    ):
+        with _admin_client(
+            catalog_docs,
+            mock_storage,
+            project_documents=[SAMPLE_PROJECT],
+        ) as c:
+            r = c.post(
+                "/api/models",
+                headers={"Authorization": "Bearer fake.token"},
+                data={
+                    "project_id": "proj-1",
+                    "species": "New species",
+                    "activity": "Flight",
+                    "upload_session_id": "upload-1",
+                },
+            )
+    assert r.status_code == 201
 
 
 def test_put_models_updates_metadata(catalog_docs):
