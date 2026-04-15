@@ -697,6 +697,7 @@ async def update_project(
     visibility: Annotated[str | None, Form()] = None,
     allowed_uids: Annotated[str | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
+    upload_session_id: Annotated[str | None, Form()] = None,
     environmental_band_definitions: Annotated[str | None, Form()] = None,
     infer_band_definitions: Annotated[str | None, Form()] = None,
 ):
@@ -735,8 +736,24 @@ async def update_project(
     )
     inference_notes: list[str] | None = None
 
-    if file is not None:
+    uploaded_session: UploadSession | None = None
+    if file is not None and upload_session_id:
+        raise _proj_422(
+            "UPLOAD_CONFLICT",
+            "provide either multipart file or upload_session_id, not both",
+        )
+    if upload_session_id:
+        content, uploaded_session = await run_in_threadpool(
+            _download_upload_session_bytes,
+            settings,
+            upload_session_id,
+        )
+    elif file is not None:
         content = await file.read()
+    else:
+        content = None
+
+    if content is not None:
         if not content:
             raise _proj_422("EMPTY_FILE", "empty file")
         if len(content) > settings.max_environmental_upload_bytes:
@@ -748,9 +765,32 @@ async def update_project(
                     context={"max_bytes": settings.max_environmental_upload_bytes},
                 ),
             )
+        if uploaded_session is not None:
+            try:
+                uploaded_session = await run_in_threadpool(
+                    mark_upload_session,
+                    settings,
+                    uploaded_session,
+                    status="validating",
+                    stage="validate",
+                )
+            except Exception:
+                pass
         try:
             await validate_cog_bytes_threaded(content)
         except CogValidationError as e:
+            if uploaded_session is not None:
+                try:
+                    await run_in_threadpool(
+                        fail_upload_session,
+                        settings,
+                        uploaded_session,
+                        stage="validate",
+                        error_code=e.code,
+                        error_message=e.message,
+                    )
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=422,
                 detail=validation_error(e.code, e.message, context=e.context or None),
@@ -769,6 +809,17 @@ async def update_project(
         except Exception as e:
             raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
 
+        if uploaded_session is not None:
+            try:
+                uploaded_session = await run_in_threadpool(
+                    mark_upload_session,
+                    settings,
+                    uploaded_session,
+                    status="deriving",
+                    stage="derive",
+                )
+            except Exception:
+                pass
         try:
 
             def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
@@ -783,6 +834,18 @@ async def update_project(
             new_band_defs, infer_notes = await run_in_threadpool(_defs)
             inference_notes = infer_notes if infer_notes else None
         except ValueError as e:
+            if uploaded_session is not None:
+                try:
+                    await run_in_threadpool(
+                        fail_upload_session,
+                        settings,
+                        uploaded_session,
+                        stage="derive",
+                        error_code="BAND_DEFINITIONS",
+                        error_message=str(e),
+                    )
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=422,
                 detail=validation_error("BAND_DEFINITIONS", str(e)),
@@ -899,4 +962,15 @@ async def update_project(
         raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
+    if uploaded_session is not None and uploaded_session.status != "ready":
+        try:
+            await run_in_threadpool(
+                mark_upload_session,
+                settings,
+                uploaded_session,
+                status="ready",
+                stage="done",
+            )
+        except Exception:
+            pass
     return project

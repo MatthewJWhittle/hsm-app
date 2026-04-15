@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material'
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Typography } from '@mui/material'
 import { ProjectFormFields } from './ProjectFormFields'
 
 const FORM_ID = 'admin-new-project-form'
@@ -80,9 +80,12 @@ export function ProjectCreateDialog({
             </Alert>
           )}
           {projUploadStatus && (
-            <Alert severity="info" sx={{ mt: 2, maxWidth: formMaxWidth }}>
-              {projUploadStatus}
-            </Alert>
+            <Box sx={{ mt: 2, maxWidth: formMaxWidth }}>
+              <Alert severity="info" sx={{ mb: 1 }}>
+                {projUploadStatus}
+              </Alert>
+              <LinearProgress aria-label="Project upload in progress" />
+            </Box>
           )}
         </Box>
       </DialogContent>

@@ -1,4 +1,4 @@
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material'
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Typography } from '@mui/material'
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import type { ModelCardDraft } from './modelCardDraft'
 import { COG_REQUIREMENTS_INFO } from './catalogFormConstants'
@@ -128,9 +128,12 @@ export function LayerCreateDialog({
             </Alert>
           )}
           {layerUploadStatus && (
-            <Alert severity="info" sx={{ mt: 2, maxWidth: formMaxWidth }}>
-              {layerUploadStatus}
-            </Alert>
+            <Box sx={{ mt: 2, maxWidth: formMaxWidth }}>
+              <Alert severity="info" sx={{ mb: 1 }}>
+                {layerUploadStatus}
+              </Alert>
+              <LinearProgress aria-label="Layer upload in progress" />
+            </Box>
           )}
         </Box>
       </DialogContent>

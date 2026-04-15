@@ -1,4 +1,4 @@
-import { Alert, Box, Dialog, DialogContent, DialogTitle, Typography } from '@mui/material'
+import { Alert, Box, Dialog, DialogContent, DialogTitle, LinearProgress, Typography } from '@mui/material'
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 import { ProjectFormFields } from './ProjectFormFields'
 
@@ -23,6 +23,7 @@ type ProjectEditDialogProps = {
   onEditProjStatusChange: (v: 'active' | 'archived') => void
   onEditProjFileChange: (f: File | null) => void
   editProjError: string | null
+  editProjUploadStatus: string | null
   savingProjectEdit: boolean
   regenerateExplainabilitySampleRows?: number
   onRegenerateExplainabilitySampleRowsChange?: (n: number) => void
@@ -52,6 +53,7 @@ export function ProjectEditDialog({
   onEditProjStatusChange,
   onEditProjFileChange,
   editProjError,
+  editProjUploadStatus,
   savingProjectEdit,
   regenerateExplainabilitySampleRows,
   onRegenerateExplainabilitySampleRowsChange,
@@ -112,6 +114,14 @@ export function ProjectEditDialog({
             <Alert severity="error" sx={{ mt: 2 }}>
               {editProjError}
             </Alert>
+          )}
+          {editProjUploadStatus && (
+            <Box sx={{ mt: 2 }}>
+              <Alert severity="info" sx={{ mb: 1 }}>
+                {editProjUploadStatus}
+              </Alert>
+              <LinearProgress aria-label="Project environmental upload in progress" />
+            </Box>
           )}
         </Box>
       </DialogContent>

@@ -99,6 +99,7 @@ export function AdminPage() {
   const [editProjFile, setEditProjFile] = useState<File | null>(null)
   const [editProjBandDefs, setEditProjBandDefs] = useState<EnvironmentalBandDefinition[]>([])
   const [editProjError, setEditProjError] = useState<string | null>(null)
+  const [editProjUploadStatus, setEditProjUploadStatus] = useState<string | null>(null)
   const [savingProjectEdit, setSavingProjectEdit] = useState(false)
   const [regenerateExplainBgRows, setRegenerateExplainBgRows] = useState(256)
   const [regeneratingExplainBg, setRegeneratingExplainBg] = useState(false)
@@ -249,6 +250,30 @@ export function AdminPage() {
     }
     setSavingProjectEdit(true)
     try {
+      let uploadSessionId: string | undefined = undefined
+      if (editProjFile) {
+        setEditProjUploadStatus('Preparing environmental upload…')
+        const init = await initUploadSession({
+          token,
+          filename: editProjFile.name,
+          contentType: editProjFile.type || 'image/tiff',
+          sizeBytes: editProjFile.size,
+          projectId: editingProject.id,
+        })
+        if (!init.upload_url) {
+          throw new Error('Upload session did not provide an upload URL.')
+        }
+        setEditProjUploadStatus('Uploading environmental file…')
+        await uploadFileToSignedUrl({ uploadUrl: init.upload_url, file: editProjFile })
+        setEditProjUploadStatus('Finalizing environmental upload…')
+        await completeUploadSession({
+          token,
+          uploadId: init.id,
+          sizeBytes: editProjFile.size,
+        })
+        uploadSessionId = init.id
+      }
+      setEditProjUploadStatus('Saving project…')
       const updated = await updateProject({
         token,
         projectId: editingProject.id,
@@ -257,7 +282,7 @@ export function AdminPage() {
         status: editProjStatus,
         visibility: editProjVisibility,
         allowedUids: editProjAllowedUids,
-        file: editProjFile ?? undefined,
+        uploadSessionId,
       })
       let merged = updated
       if (!editProjFile && updated.driver_cog_path && editProjBandDefs.length > 0) {
@@ -294,6 +319,7 @@ export function AdminPage() {
     } catch (err) {
       setEditProjError(err instanceof Error ? err.message : 'Update failed')
     } finally {
+      setEditProjUploadStatus(null)
       setSavingProjectEdit(false)
     }
   }, [
@@ -572,6 +598,7 @@ export function AdminPage() {
         : [],
     )
     setEditProjError(null)
+    setEditProjUploadStatus(null)
     setRegenerateExplainBgRows(256)
     setRegenerateExplainBgError(null)
     setProjectEditSession((s) => s + 1)
@@ -670,6 +697,7 @@ export function AdminPage() {
     setProjectEditOpen(false)
     setEditingProject(null)
     setRegenerateExplainBgError(null)
+    setEditProjUploadStatus(null)
   }, [projectEditOpen, editingProject, editProjName, buildProjectEditSnapshot, persistProjectEdit])
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -708,6 +736,7 @@ export function AdminPage() {
         })
         uploadSessionId = init.id
       }
+      setProjUploadStatus('Creating project…')
       await createProject({
         token,
         name: projName,
@@ -999,6 +1028,7 @@ export function AdminPage() {
             onClose={() => {
               setProjectCreateOpen(false)
               setProjError(null)
+              setProjUploadStatus(null)
             }}
             formMaxWidth={FORM_MAX_WIDTH}
             projCreating={projCreating}
@@ -1022,6 +1052,7 @@ export function AdminPage() {
             onClose={() => {
               setLayerCreateOpen(false)
               setCreateError(null)
+              setLayerUploadStatus(null)
             }}
             formMaxWidth={FORM_MAX_WIDTH}
             canAddModel={canAddModel}
@@ -1070,6 +1101,7 @@ export function AdminPage() {
             onEditProjStatusChange={setEditProjStatus}
             onEditProjFileChange={setEditProjFile}
             editProjError={editProjError}
+            editProjUploadStatus={editProjUploadStatus}
             savingProjectEdit={savingProjectEdit}
             regenerateExplainabilitySampleRows={regenerateExplainBgRows}
             onRegenerateExplainabilitySampleRowsChange={setRegenerateExplainBgRows}
