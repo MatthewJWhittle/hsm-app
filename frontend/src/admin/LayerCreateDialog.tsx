@@ -13,6 +13,7 @@ type LayerCreateDialogProps = {
   canAddModel: boolean
   creating: boolean
   createError: string | null
+  layerUploadStatus: string | null
   onSubmit: (e: React.FormEvent) => void
   modelProjectId: string
   onModelProjectIdChange: (id: string) => void
@@ -41,6 +42,7 @@ export function LayerCreateDialog({
   canAddModel,
   creating,
   createError,
+  layerUploadStatus,
   onSubmit,
   modelProjectId,
   onModelProjectIdChange,
@@ -61,6 +63,16 @@ export function LayerCreateDialog({
   modelCardDraft,
   onModelCardDraftChange,
 }: LayerCreateDialogProps) {
+  const missingReason = !canAddModel
+    ? 'Create at least one active project first.'
+    : !modelProjectId
+      ? 'Select a project.'
+      : !species.trim() || !activity.trim()
+        ? 'Enter species and activity.'
+        : !file
+          ? 'Choose a suitability file.'
+          : null
+
   return (
     <Dialog
       open={open}
@@ -85,7 +97,7 @@ export function LayerCreateDialog({
         <Alert severity="info" variant="outlined" sx={{ mb: 2, maxWidth: formMaxWidth }}>
           {COG_REQUIREMENTS_INFO}
         </Alert>
-        <Box component="form" id={FORM_ID} onSubmit={onSubmit} sx={{ width: '100%', maxWidth: formMaxWidth, mx: 'auto' }}>
+        <Box component="form" id={FORM_ID} onSubmit={onSubmit} noValidate sx={{ width: '100%', maxWidth: formMaxWidth, mx: 'auto' }}>
           <MapLayerFormFields
             mode="create"
             maxWidth={formMaxWidth}
@@ -115,6 +127,11 @@ export function LayerCreateDialog({
               {createError}
             </Alert>
           )}
+          {layerUploadStatus && (
+            <Alert severity="info" sx={{ mt: 2, maxWidth: formMaxWidth }}>
+              {layerUploadStatus}
+            </Alert>
+          )}
         </Box>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
@@ -127,10 +144,15 @@ export function LayerCreateDialog({
         >
           Cancel
         </Button>
-        <Button type="submit" form={FORM_ID} variant="contained" disabled={creating || !canAddModel}>
+        <Button type="submit" form={FORM_ID} variant="contained" disabled={creating || missingReason !== null}>
           {creating ? 'Creating…' : 'Create layer'}
         </Button>
       </DialogActions>
+      {missingReason && (
+        <Typography variant="caption" color="text.secondary" sx={{ px: 3, pb: 2, display: 'block' }}>
+          {missingReason}
+        </Typography>
+      )}
     </Dialog>
   )
 }

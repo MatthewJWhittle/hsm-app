@@ -9,6 +9,7 @@ type ProjectCreateDialogProps = {
   formMaxWidth: number
   projCreating: boolean
   projError: string | null
+  projUploadStatus: string | null
   onSubmit: (e: React.FormEvent) => void
   projName: string
   projDesc: string
@@ -28,6 +29,7 @@ export function ProjectCreateDialog({
   formMaxWidth,
   projCreating,
   projError,
+  projUploadStatus,
   onSubmit,
   projName,
   projDesc,
@@ -75,6 +77,11 @@ export function ProjectCreateDialog({
           {projError && (
             <Alert severity="error" sx={{ mt: 2, maxWidth: formMaxWidth }}>
               {projError}
+            </Alert>
+          )}
+          {projUploadStatus && (
+            <Alert severity="info" sx={{ mt: 2, maxWidth: formMaxWidth }}>
+              {projUploadStatus}
             </Alert>
           )}
         </Box>

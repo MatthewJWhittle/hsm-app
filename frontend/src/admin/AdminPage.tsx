@@ -59,6 +59,7 @@ export function AdminPage() {
   const [projAllowedUids, setProjAllowedUids] = useState('')
   const [projFile, setProjFile] = useState<File | null>(null)
   const [projError, setProjError] = useState<string | null>(null)
+  const [projUploadStatus, setProjUploadStatus] = useState<string | null>(null)
   const [projCreating, setProjCreating] = useState(false)
   const [projectCreateOpen, setProjectCreateOpen] = useState(false)
 
@@ -70,6 +71,7 @@ export function AdminPage() {
   const [explainModelFile, setExplainModelFile] = useState<File | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [layerUploadStatus, setLayerUploadStatus] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [layerCreateOpen, setLayerCreateOpen] = useState(false)
   const [createCardDraft, setCreateCardDraft] = useState<ModelCardDraft>(() => emptyModelCardDraft())
@@ -686,6 +688,7 @@ export function AdminPage() {
     try {
       let uploadSessionId: string | undefined = undefined
       if (projFile) {
+        setProjUploadStatus('Preparing upload…')
         const init = await initUploadSession({
           token,
           filename: projFile.name,
@@ -695,7 +698,9 @@ export function AdminPage() {
         if (!init.upload_url) {
           throw new Error('Upload session did not provide an upload URL.')
         }
+        setProjUploadStatus('Uploading environmental file…')
         await uploadFileToSignedUrl({ uploadUrl: init.upload_url, file: projFile })
+        setProjUploadStatus('Finalizing upload…')
         await completeUploadSession({
           token,
           uploadId: init.id,
@@ -716,11 +721,13 @@ export function AdminPage() {
       setProjVisibility('public')
       setProjAllowedUids('')
       setProjFile(null)
+      setProjUploadStatus(null)
       setProjectCreateOpen(false)
       await refreshList()
     } catch (err) {
       setProjError(err instanceof Error ? err.message : 'Create project failed')
     } finally {
+      setProjUploadStatus(null)
       setProjCreating(false)
     }
   }
@@ -772,12 +779,33 @@ export function AdminPage() {
 
     setCreating(true)
     try {
+      setLayerUploadStatus('Preparing upload…')
+      const init = await initUploadSession({
+        token,
+        filename: file.name,
+        contentType: file.type || 'image/tiff',
+        sizeBytes: file.size,
+        projectId: modelProjectId,
+      })
+      if (!init.upload_url) {
+        throw new Error('Upload session did not provide an upload URL.')
+      }
+      setLayerUploadStatus('Uploading suitability file…')
+      await uploadFileToSignedUrl({ uploadUrl: init.upload_url, file })
+      setLayerUploadStatus('Finalizing upload…')
+      await completeUploadSession({
+        token,
+        uploadId: init.id,
+        sizeBytes: file.size,
+      })
+      setLayerUploadStatus('Creating layer…')
       await createModel({
         token,
         projectId: modelProjectId,
         species,
         activity,
         file,
+        uploadSessionId: init.id,
         metadata,
         serializedModelFile: explainEnabled ? explainModelFile : undefined,
       })
@@ -788,11 +816,13 @@ export function AdminPage() {
       setExplainModelFile(null)
       setCreateCardDraft(emptyModelCardDraft())
       setFile(null)
+      setLayerUploadStatus(null)
       setLayerCreateOpen(false)
       await refreshList()
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Create failed')
     } finally {
+      setLayerUploadStatus(null)
       setCreating(false)
     }
   }
@@ -973,6 +1003,7 @@ export function AdminPage() {
             formMaxWidth={FORM_MAX_WIDTH}
             projCreating={projCreating}
             projError={projError}
+            projUploadStatus={projUploadStatus}
             onSubmit={handleCreateProject}
             projName={projName}
             projDesc={projDesc}
@@ -996,6 +1027,7 @@ export function AdminPage() {
             canAddModel={canAddModel}
             creating={creating}
             createError={createError}
+            layerUploadStatus={layerUploadStatus}
             onSubmit={handleCreate}
             modelProjectId={modelProjectId}
             onModelProjectIdChange={setModelProjectId}
