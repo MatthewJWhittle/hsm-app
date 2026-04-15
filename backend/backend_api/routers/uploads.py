@@ -5,9 +5,11 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from google.cloud import storage
 
 from backend_api.auth_deps import require_admin_claims
 from backend_api.deps.settings_dep import get_settings
@@ -35,6 +37,24 @@ _ADMIN_RESPONSES: dict[int | str, dict[str, str]] = {
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _mint_signed_upload_url(
+    *,
+    bucket_name: str,
+    object_path: str,
+    content_type: str | None,
+) -> str:
+    """Create a temporary V4 signed URL for direct object upload."""
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(object_path)
+    return blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(hours=1),
+        method="PUT",
+        content_type=content_type or "application/octet-stream",
+    )
 
 
 @router.post(
@@ -86,13 +106,25 @@ async def post_upload_init(
         updated_at=now,
     )
     try:
+        upload_url = _mint_signed_upload_url(
+            bucket_name=settings.gcs_bucket,
+            object_path=object_path,
+            content_type=body.content_type,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"could not create upload URL: {e}",
+        ) from e
+
+    try:
         upsert_upload_session(settings, session)
     except Exception as e:
         raise HTTPException(
             status_code=503,
             detail=f"could not create upload session: {e}",
         ) from e
-    return to_upload_session_response(session, upload_url=None)
+    return to_upload_session_response(session, upload_url=upload_url)
 
 
 @router.get(

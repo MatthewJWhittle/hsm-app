@@ -60,12 +60,14 @@ class _FakeFirestoreClient:
 @contextmanager
 def _admin_client():
     fake_client = _FakeFirestoreClient()
+    fake_storage_client = _FakeStorageClient()
     with (
         patch(
             "backend_api.auth_deps.auth.verify_id_token",
             return_value={"uid": "admin-1", "admin": True},
         ),
         patch("google.cloud.firestore.Client", return_value=fake_client),
+        patch("backend_api.routers.uploads.storage.Client", return_value=fake_storage_client),
         patch.dict(
             os.environ,
             {
@@ -101,7 +103,7 @@ def test_upload_init_get_and_complete_lifecycle():
         assert session["stage"] == "upload"
         assert session["gcs_bucket"] == "hsm-dashboard-model-artifacts"
         assert session["object_path"].startswith(f"uploads/{upload_id}/")
-        assert session["upload_url"] is None
+        assert session["upload_url"].startswith("https://signed-upload.local/")
 
         fetched = c.get(
             f"/api/uploads/{upload_id}",
@@ -110,6 +112,7 @@ def test_upload_init_get_and_complete_lifecycle():
         assert fetched.status_code == 200
         assert fetched.json()["status"] == "pending"
         assert fetched.json()["stage"] == "upload"
+        assert fetched.json()["upload_url"] is None
 
         complete = c.post(
             f"/api/uploads/{upload_id}/complete",
@@ -170,3 +173,21 @@ def test_upload_complete_failed_status_returns_409():
             json={},
         )
         assert r.status_code == 409
+
+
+class _FakeStorageBlob:
+    def __init__(self, path: str) -> None:
+        self._path = path
+
+    def generate_signed_url(self, **_kwargs) -> str:
+        return f"https://signed-upload.local/{self._path}"
+
+
+class _FakeStorageBucket:
+    def blob(self, object_path: str) -> _FakeStorageBlob:
+        return _FakeStorageBlob(object_path)
+
+
+class _FakeStorageClient:
+    def bucket(self, _bucket_name: str) -> _FakeStorageBucket:
+        return _FakeStorageBucket()

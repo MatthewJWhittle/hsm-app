@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import UTC, datetime
 from typing import Annotated
 
+from google.cloud import storage
 from fastapi import (
     APIRouter,
     Body,
@@ -59,6 +60,8 @@ from backend_api.schemas_project import (
 )
 from backend_api.settings import Settings
 from backend_api.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
+from backend_api.upload_sessions import get_upload_session, upsert_upload_session
+from backend_api.schemas_upload import UploadSession
 
 router = APIRouter()
 
@@ -106,6 +109,43 @@ def _parse_allowed_uids(raw: str | None) -> list[str]:
             raise ValueError("allowed_uids must be a JSON array of strings")
         return [str(x) for x in data]
     return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def _download_upload_session_bytes(
+    settings: Settings, upload_session_id: str
+) -> tuple[bytes, UploadSession]:
+    """Download uploaded object bytes from a completed upload session."""
+    session = get_upload_session(settings, upload_session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="upload session not found")
+    if session.status not in ("uploaded", "validating", "deriving", "ready"):
+        raise HTTPException(
+            status_code=409,
+            detail=validation_error(
+                "UPLOAD_NOT_READY",
+                f"upload session status {session.status!r} is not ready for project create",
+            ),
+        )
+    if not settings.gcs_bucket or session.gcs_bucket != settings.gcs_bucket:
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "UPLOAD_BUCKET_MISMATCH",
+                "upload session bucket does not match configured API bucket",
+            ),
+        )
+    client = storage.Client()
+    bucket = client.bucket(session.gcs_bucket)
+    blob = bucket.blob(session.object_path)
+    if not blob.exists():
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "UPLOAD_OBJECT_MISSING",
+                "upload object not found in storage",
+            ),
+        )
+    return blob.download_as_bytes(), session
 
 
 @router.get("/projects", response_model=list[CatalogProject], tags=["catalog"])
@@ -420,6 +460,7 @@ async def create_project(
     description: Annotated[str | None, Form()] = None,
     visibility: Annotated[str, Form()] = "public",
     allowed_uids: Annotated[str | None, Form()] = None,
+    upload_session_id: Annotated[str | None, Form()] = None,
     environmental_band_definitions: Annotated[str | None, Form()] = None,
     infer_band_definitions: Annotated[str | None, Form()] = None,
 ):
@@ -445,8 +486,24 @@ async def create_project(
     cog_path: str | None = None
     band_defs: list[EnvironmentalBandDefinition] | None = None
     inference_notes: list[str] | None = None
-    if file is not None:
+    if file is not None and upload_session_id:
+        raise _proj_422(
+            "UPLOAD_CONFLICT",
+            "provide either multipart file or upload_session_id, not both",
+        )
+    uploaded_session = None
+    if upload_session_id:
+        content, uploaded_session = await run_in_threadpool(
+            _download_upload_session_bytes,
+            settings,
+            upload_session_id,
+        )
+    elif file is not None:
         content = await file.read()
+    else:
+        content = None
+
+    if content is not None:
         if not content:
             raise _proj_422("EMPTY_FILE", "empty file")
         if len(content) > settings.max_environmental_upload_bytes:
@@ -497,6 +554,22 @@ async def create_project(
                 status_code=422,
                 detail=validation_error("BAND_DEFINITIONS", str(e)),
             ) from e
+        if uploaded_session is not None and uploaded_session.status != "ready":
+            completed = uploaded_session.model_copy(
+                update={
+                    "status": "ready",
+                    "stage": "done",
+                    "updated_at": datetime.now(UTC).isoformat(),
+                    "error_code": None,
+                    "error_message": None,
+                    "error_stage": None,
+                }
+            )
+            try:
+                await run_in_threadpool(upsert_upload_session, settings, completed)
+            except Exception:
+                # Project create succeeded; keep request successful even if session metadata lags.
+                pass
 
     explain_bg_path: str | None = None
     explain_bg_rows: int | None = None
