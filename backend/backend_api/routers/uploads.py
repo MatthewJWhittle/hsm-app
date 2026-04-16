@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from datetime import timedelta
 from typing import Annotated
 
+import google.auth
 import google.auth.transport.requests
 from fastapi import APIRouter, Depends, HTTPException, status
 from google.cloud import storage
@@ -26,6 +28,7 @@ from backend_api.upload_session_transitions import complete_upload_transition
 from backend_api.upload_sessions import get_upload_session, upsert_upload_session
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _ADMIN_RESPONSES: dict[int | str, dict[str, str]] = {
     status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid bearer token"},
@@ -38,6 +41,15 @@ _ADMIN_RESPONSES: dict[int | str, dict[str, str]] = {
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _looks_like_signing_capability_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "private key" in msg
+        or "sign credentials" in msg
+        or "could not automatically determine credentials" in msg
+    )
 
 
 def _mint_signed_upload_url(
@@ -60,7 +72,11 @@ def _mint_signed_upload_url(
     try:
         return blob.generate_signed_url(**kwargs)
     except Exception as direct_err:
-        credentials = getattr(client, "_credentials", None)
+        if not _looks_like_signing_capability_error(direct_err):
+            raise
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
         signer_email = settings.gcs_signed_url_service_account or getattr(
             credentials, "service_account_email", None
         )
@@ -150,9 +166,19 @@ async def post_upload_init(
             content_type=body.content_type,
         )
     except Exception as e:
+        logger.exception(
+            "Failed to mint upload signed URL",
+            extra={
+                "bucket": settings.gcs_bucket,
+                "object_path": object_path,
+            },
+        )
         raise HTTPException(
             status_code=503,
-            detail=f"could not create upload URL: {e}",
+            detail=(
+                "could not create upload URL: signing configuration unavailable. "
+                "check runtime signer identity and IAM permissions"
+            ),
         ) from e
 
     try:

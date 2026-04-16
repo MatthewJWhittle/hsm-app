@@ -208,7 +208,6 @@ def test_mint_signed_upload_url_falls_back_to_iam_signing():
 
     class _Client:
         def __init__(self, blob):
-            self._credentials = _Creds()
             self._blob = blob
 
         def bucket(self, _name):
@@ -217,8 +216,10 @@ def test_mint_signed_upload_url_falls_back_to_iam_signing():
     from backend_api.routers import uploads as uploads_router
 
     blob = _Blob()
+    creds = _Creds()
     with (
         patch("backend_api.routers.uploads.storage.Client", return_value=_Client(blob)),
+        patch("backend_api.routers.uploads.google.auth.default", return_value=(creds, "test-project")),
         patch.dict(
             os.environ,
             {
@@ -237,6 +238,31 @@ def test_mint_signed_upload_url_falls_back_to_iam_signing():
     assert len(blob.calls) == 2
     assert "service_account_email" in blob.calls[1]
     assert blob.calls[1]["access_token"] == "ya29.token"
+
+
+def test_mint_signed_upload_url_reraises_non_signing_errors():
+    class _Blob:
+        def generate_signed_url(self, **_kwargs):
+            raise RuntimeError("bucket policy denied this operation")
+
+    class _Bucket:
+        def blob(self, _path):
+            return _Blob()
+
+    class _Client:
+        def bucket(self, _name):
+            return _Bucket()
+
+    from backend_api.routers import uploads as uploads_router
+
+    with patch("backend_api.routers.uploads.storage.Client", return_value=_Client()):
+        with pytest.raises(RuntimeError, match="bucket policy denied"):
+            uploads_router._mint_signed_upload_url(
+                settings=Settings(),
+                bucket_name="hsm-dashboard-model-artifacts",
+                object_path="uploads/u/file.tif",
+                content_type="image/tiff",
+            )
 
 
 def test_mark_upload_session_rejects_invalid_transition():
