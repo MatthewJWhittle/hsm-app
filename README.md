@@ -219,7 +219,7 @@ If you run **`uvicorn` outside Docker** with the emulator on the host, set **`FI
 
 - **CORS:** The API reads **`CORS_ORIGINS`** (comma-separated). Defaults include local dev URLs and **`https://hsm-dashboard.web.app`** / **`https://hsm-dashboard.firebaseapp.com`**. Override in Cloud Run (or your host env) if you add more web origins (for example the dev Hosting URLs below, or TiTiler allowlists).
 - **Dev Hosting (staging API):** **`hsm-dashboard-dev`** — **`https://hsm-dashboard-dev.web.app`** (and **`.firebaseapp.com`**); `/api` → **`api-staging`**. Deployed on **merge to `main`** after CI (see [`docs/deployment-runbook.md`](docs/deployment-runbook.md)).
-- **Prod Hosting:** **`hsm-dashboard`** — **`https://hsm-dashboard.web.app`**; `/api` → **`api-prod`**. Deployed in the same **`deploy-prod.yml`** run as **`api-prod`** (API step first, then Hosting; same tag), not on every merge to `main`.
+- **Prod Hosting:** **`hsm-dashboard`** — **`https://hsm-dashboard.web.app`**; `/api` → **`api-prod`**. Deployed in the same **`release-deploy-prod.yml`** run as **`api-prod`** (API step first, then Hosting; same tag), not on every merge to `main`.
 - **Hosting CI builds:** Add GitHub repository secret **`VITE_FIREBASE_API_KEY`** (Firebase Console → Project settings → Web app config). Add repository variable **`PREVIEW_API_BASE_URL`** for PR previews so map/catalog API calls target staging when the preview hosting config omits Cloud Run rewrites. Set this value to the Cloud Run API origin **including** `/api` (for example `https://api-staging-<project-number>.us-central1.run.app/api`). Workflows set **`VITE_USE_AUTH_EMULATOR=false`** and the project id for **`npm run build`**.
 
 ### Next steps
