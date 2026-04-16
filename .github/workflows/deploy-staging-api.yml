@@ -64,6 +64,7 @@ jobs:
           region: ${{ env.GCP_REGION }}
           project_id: ${{ env.GCP_PROJECT_ID }}
           image: ${{ env.IMAGE_BASE }}@${{ steps.build.outputs.digest }}
+          skip_default_labels: true
 
       - name: Show deployment image
         run: |
