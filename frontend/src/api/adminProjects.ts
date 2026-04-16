@@ -14,6 +14,7 @@ export async function createProject(params: {
   token: string
   name: string
   file?: File | null
+  uploadSessionId?: string
   description?: string
   visibility?: 'public' | 'private'
   allowedUids?: string
@@ -21,6 +22,7 @@ export async function createProject(params: {
   const form = new FormData()
   form.append('name', params.name)
   if (params.file) form.append('file', params.file)
+  if (params.uploadSessionId) form.append('upload_session_id', params.uploadSessionId)
   form.append('visibility', params.visibility ?? 'public')
   if (params.description) form.append('description', params.description)
   if (params.allowedUids !== undefined) form.append('allowed_uids', params.allowedUids)
@@ -37,6 +39,89 @@ export async function createProject(params: {
   return p
 }
 
+export type UploadSession = {
+  id: string
+  status: 'pending' | 'uploaded' | 'validating' | 'deriving' | 'ready' | 'failed'
+  stage: 'init' | 'upload' | 'validate' | 'derive' | 'persist' | 'done'
+  upload_url: string | null
+  object_path: string
+  gcs_bucket: string
+}
+
+function isUploadSession(raw: unknown): raw is UploadSession {
+  if (!raw || typeof raw !== 'object') return false
+  const rec = raw as Record<string, unknown>
+  return (
+    typeof rec.id === 'string' &&
+    typeof rec.status === 'string' &&
+    typeof rec.stage === 'string' &&
+    (rec.upload_url === null || typeof rec.upload_url === 'string') &&
+    typeof rec.object_path === 'string' &&
+    typeof rec.gcs_bucket === 'string'
+  )
+}
+
+export async function initUploadSession(params: {
+  token: string
+  filename: string
+  contentType?: string
+  sizeBytes?: number
+  projectId?: string
+}): Promise<UploadSession> {
+  const r = await fetch(`${apiBase()}/uploads/init`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      project_id: params.projectId,
+      filename: params.filename,
+      content_type: params.contentType ?? null,
+      size_bytes: params.sizeBytes ?? null,
+    }),
+  })
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  if (!isUploadSession(raw)) throw new Error('Invalid upload session init response')
+  return raw
+}
+
+export async function completeUploadSession(params: {
+  token: string
+  uploadId: string
+  sizeBytes?: number
+}): Promise<UploadSession> {
+  const r = await fetch(`${apiBase()}/uploads/${encodeURIComponent(params.uploadId)}/complete`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${params.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ size_bytes: params.sizeBytes ?? null }),
+  })
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  if (!isUploadSession(raw)) throw new Error('Invalid upload session complete response')
+  return raw
+}
+
+export async function uploadFileToSignedUrl(params: {
+  uploadUrl: string
+  file: File
+}): Promise<void> {
+  const r = await fetch(params.uploadUrl, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': params.file.type || 'application/octet-stream',
+    },
+    body: params.file,
+  })
+  if (!r.ok) {
+    throw new Error(`Upload failed (${r.status} ${r.statusText})`)
+  }
+}
+
 export async function updateProject(params: {
   token: string
   projectId: string
@@ -46,6 +131,7 @@ export async function updateProject(params: {
   visibility?: 'public' | 'private'
   allowedUids?: string | null
   file?: File | null
+  uploadSessionId?: string
 }): Promise<CatalogProject> {
   const form = new FormData()
   if (params.name !== undefined) form.append('name', params.name)
@@ -54,6 +140,7 @@ export async function updateProject(params: {
   if (params.visibility !== undefined) form.append('visibility', params.visibility)
   if (params.allowedUids !== undefined) form.append('allowed_uids', params.allowedUids ?? '')
   if (params.file) form.append('file', params.file)
+  if (params.uploadSessionId) form.append('upload_session_id', params.uploadSessionId)
 
   const r = await fetch(`${apiBase()}/projects/${encodeURIComponent(params.projectId)}`, {
     method: 'PUT',

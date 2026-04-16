@@ -16,6 +16,7 @@ export async function createModel(params: {
   species: string
   activity: string
   file: File
+  uploadSessionId?: string
   /** Sent as a multipart part with ``Content-Type: application/json`` (not a double-encoded string). */
   metadata?: ModelMetadata
   serializedModelFile?: File | null
@@ -24,7 +25,11 @@ export async function createModel(params: {
   form.append('project_id', params.projectId)
   form.append('species', params.species)
   form.append('activity', params.activity)
-  form.append('file', params.file)
+  if (params.uploadSessionId) {
+    form.append('upload_session_id', params.uploadSessionId)
+  } else {
+    form.append('file', params.file)
+  }
   if (params.metadata !== undefined) {
     appendMetadataJsonPart(form, params.metadata)
   }

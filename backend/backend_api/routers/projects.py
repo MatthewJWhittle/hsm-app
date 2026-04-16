@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from pathlib import Path
 from datetime import UTC, datetime
@@ -30,7 +31,7 @@ from backend_api.deps.catalog import get_object_storage, require_catalog_ready
 from backend_api.env_background_sample import write_project_explainability_background_parquet
 from backend_api.env_cog_bands import (
     apply_band_label_updates,
-    band_definitions_for_upload_bytes,
+    band_definitions_for_upload_path,
     count_bands_in_path,
     default_band_definitions_from_path,
     parse_band_definitions_json,
@@ -43,7 +44,7 @@ from backend_api.deps.visibility_models import (
 )
 from backend_api.routers.catalog_upload_utils import (
     reload_catalog_threaded,
-    validate_cog_bytes_threaded,
+    validate_cog_path_threaded,
 )
 from backend_api.routers.project_visibility_parse import (
     parse_status_optional,
@@ -59,6 +60,13 @@ from backend_api.schemas_project import (
 )
 from backend_api.settings import Settings
 from backend_api.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
+from backend_api.schemas_upload import UploadSession
+from backend_api.upload_session_ingest import (
+    best_effort_fail,
+    best_effort_mark,
+    download_upload_session_to_tempfile,
+    write_upload_bytes_to_tempfile,
+)
 
 router = APIRouter()
 
@@ -420,6 +428,7 @@ async def create_project(
     description: Annotated[str | None, Form()] = None,
     visibility: Annotated[str, Form()] = "public",
     allowed_uids: Annotated[str | None, Form()] = None,
+    upload_session_id: Annotated[str | None, Form()] = None,
     environmental_band_definitions: Annotated[str | None, Form()] = None,
     infer_band_definitions: Annotated[str | None, Form()] = None,
 ):
@@ -445,7 +454,21 @@ async def create_project(
     cog_path: str | None = None
     band_defs: list[EnvironmentalBandDefinition] | None = None
     inference_notes: list[str] | None = None
-    if file is not None:
+    if file is not None and upload_session_id:
+        raise _proj_422(
+            "UPLOAD_CONFLICT",
+            "provide either multipart file or upload_session_id, not both",
+        )
+    uploaded_session = None
+    upload_temp_path: Path | None = None
+    if upload_session_id:
+        upload_temp_path, uploaded_session = await run_in_threadpool(
+            download_upload_session_to_tempfile,
+            settings,
+            upload_session_id,
+            purpose="project create",
+        )
+    elif file is not None:
         content = await file.read()
         if not content:
             raise _proj_422("EMPTY_FILE", "empty file")
@@ -458,45 +481,120 @@ async def create_project(
                     context={"max_bytes": settings.max_environmental_upload_bytes},
                 ),
             )
-        try:
-            await validate_cog_bytes_threaded(content)
-        except CogValidationError as e:
-            raise HTTPException(
-                status_code=422,
-                detail=validation_error(e.code, e.message, context=e.context or None),
-            ) from e
+        upload_temp_path = await run_in_threadpool(
+            write_upload_bytes_to_tempfile, content
+        )
 
-        def _write() -> tuple[str, str]:
-            return storage.write_project_driver_cog(project_id, content)
-
-        try:
-            artifact_root, cog_path = await run_in_threadpool(_write)
-        except ValueError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=validation_error("STORAGE_LAYOUT_INVALID", str(e)),
-            ) from e
-        except Exception as e:
-            raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
-
-        try:
-
-            def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
-                return band_definitions_for_upload_bytes(
-                    content,
-                    environmental_band_definitions,
-                    infer_band_definitions=_infer_band_definitions_from_form(
-                        infer_band_definitions
+    try:
+        if upload_temp_path is not None:
+            upload_size = os.path.getsize(str(upload_temp_path))
+            if upload_size <= 0:
+                raise _proj_422("EMPTY_FILE", "empty file")
+            if upload_size > settings.max_environmental_upload_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=validation_error(
+                        "UPLOAD_TOO_LARGE",
+                        f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
+                        context={"max_bytes": settings.max_environmental_upload_bytes},
                     ),
                 )
+            uploaded_session = await run_in_threadpool(
+                best_effort_mark,
+                settings,
+                uploaded_session,
+                status="validating",
+                stage="validate",
+                context="project-create-validate",
+            )
+            try:
+                await validate_cog_path_threaded(str(upload_temp_path))
+            except CogValidationError as e:
+                await run_in_threadpool(
+                    best_effort_fail,
+                    settings,
+                    uploaded_session,
+                    stage="validate",
+                    error_code=e.code,
+                    error_message=e.message,
+                    context="project-create-cog-validate-failed",
+                )
+                raise HTTPException(
+                    status_code=422,
+                    detail=validation_error(e.code, e.message, context=e.context or None),
+                ) from e
 
-            band_defs, infer_notes = await run_in_threadpool(_defs)
-            inference_notes = infer_notes if infer_notes else None
-        except ValueError as e:
-            raise HTTPException(
-                status_code=422,
-                detail=validation_error("BAND_DEFINITIONS", str(e)),
-            ) from e
+            def _write() -> tuple[str, str]:
+                return storage.write_project_driver_cog_from_path(
+                    project_id, str(upload_temp_path)
+                )
+
+            try:
+                artifact_root, cog_path = await run_in_threadpool(_write)
+            except ValueError as e:
+                await run_in_threadpool(
+                    best_effort_fail,
+                    settings,
+                    uploaded_session,
+                    stage="persist",
+                    error_code="STORAGE_LAYOUT_INVALID",
+                    error_message=str(e),
+                    context="project-create-storage-layout-invalid",
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=validation_error("STORAGE_LAYOUT_INVALID", str(e)),
+                ) from e
+            except Exception as e:
+                await run_in_threadpool(
+                    best_effort_fail,
+                    settings,
+                    uploaded_session,
+                    stage="persist",
+                    error_code="STORAGE_WRITE_FAILED",
+                    error_message=str(e),
+                    context="project-create-storage-write-failed",
+                )
+                raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
+
+            uploaded_session = await run_in_threadpool(
+                best_effort_mark,
+                settings,
+                uploaded_session,
+                status="deriving",
+                stage="derive",
+                context="project-create-derive",
+            )
+            try:
+
+                def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
+                    return band_definitions_for_upload_path(
+                        str(upload_temp_path),
+                        environmental_band_definitions,
+                        infer_band_definitions=_infer_band_definitions_from_form(
+                            infer_band_definitions
+                        ),
+                    )
+
+                band_defs, infer_notes = await run_in_threadpool(_defs)
+                inference_notes = infer_notes if infer_notes else None
+            except ValueError as e:
+                await run_in_threadpool(
+                    best_effort_fail,
+                    settings,
+                    uploaded_session,
+                    stage="derive",
+                    error_code="BAND_DEFINITIONS",
+                    error_message=str(e),
+                    context="project-create-band-definitions",
+                )
+                raise HTTPException(
+                    status_code=422,
+                    detail=validation_error("BAND_DEFINITIONS", str(e)),
+                ) from e
+    finally:
+        if upload_temp_path is not None:
+            upload_temp_path.unlink(missing_ok=True)
 
     explain_bg_path: str | None = None
     explain_bg_rows: int | None = None
@@ -518,6 +616,15 @@ async def create_project(
             explain_bg_path = EXPLAINABILITY_BACKGROUND_FILENAME
             explain_bg_rows = settings.env_background_sample_rows
         except Exception as e:
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="derive",
+                error_code="EXPLAINABILITY_BACKGROUND_FAILED",
+                error_message=str(e),
+                context="project-create-explainability-background",
+            )
             raise HTTPException(
                 status_code=422,
                 detail=validation_error(
@@ -552,12 +659,38 @@ async def create_project(
     def _persist() -> None:
         upsert_project(settings, project)
 
+    uploaded_session = await run_in_threadpool(
+        best_effort_mark,
+        settings,
+        uploaded_session,
+        status="deriving",
+        stage="persist",
+        context="project-create-persist",
+    )
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
+        await run_in_threadpool(
+            best_effort_fail,
+            settings,
+            uploaded_session,
+            stage="persist",
+            error_code="CATALOG_SAVE_FAILED",
+            error_message=str(e),
+            context="project-create-catalog-save",
+        )
         raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
+    if uploaded_session is not None and uploaded_session.status != "ready":
+        await run_in_threadpool(
+            best_effort_mark,
+            settings,
+            uploaded_session,
+            status="ready",
+            stage="done",
+            context="project-create-done",
+        )
     return project
 
 
@@ -581,6 +714,7 @@ async def update_project(
     visibility: Annotated[str | None, Form()] = None,
     allowed_uids: Annotated[str | None, Form()] = None,
     file: Annotated[UploadFile | None, File()] = None,
+    upload_session_id: Annotated[str | None, Form()] = None,
     environmental_band_definitions: Annotated[str | None, Form()] = None,
     infer_band_definitions: Annotated[str | None, Form()] = None,
 ):
@@ -619,7 +753,21 @@ async def update_project(
     )
     inference_notes: list[str] | None = None
 
-    if file is not None:
+    uploaded_session: UploadSession | None = None
+    upload_temp_path: Path | None = None
+    if file is not None and upload_session_id:
+        raise _proj_422(
+            "UPLOAD_CONFLICT",
+            "provide either multipart file or upload_session_id, not both",
+        )
+    if upload_session_id:
+        upload_temp_path, uploaded_session = await run_in_threadpool(
+            download_upload_session_to_tempfile,
+            settings,
+            upload_session_id,
+            purpose="project update",
+        )
+    elif file is not None:
         content = await file.read()
         if not content:
             raise _proj_422("EMPTY_FILE", "empty file")
@@ -632,91 +780,166 @@ async def update_project(
                     context={"max_bytes": settings.max_environmental_upload_bytes},
                 ),
             )
-        try:
-            await validate_cog_bytes_threaded(content)
-        except CogValidationError as e:
-            raise HTTPException(
-                status_code=422,
-                detail=validation_error(e.code, e.message, context=e.context or None),
-            ) from e
+        upload_temp_path = await run_in_threadpool(
+            write_upload_bytes_to_tempfile, content
+        )
 
-        def _write() -> tuple[str, str]:
-            return storage.write_project_driver_cog(project_id, content)
-
-        try:
-            artifact_root, cog_path = await run_in_threadpool(_write)
-        except ValueError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=validation_error("STORAGE_LAYOUT_INVALID", str(e)),
-            ) from e
-        except Exception as e:
-            raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
-
-        try:
-
-            def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
-                return band_definitions_for_upload_bytes(
-                    content,
-                    environmental_band_definitions,
-                    infer_band_definitions=_infer_band_definitions_from_form(
-                        infer_band_definitions
+    try:
+        if upload_temp_path is not None:
+            upload_size = os.path.getsize(str(upload_temp_path))
+            if upload_size <= 0:
+                raise _proj_422("EMPTY_FILE", "empty file")
+            if upload_size > settings.max_environmental_upload_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=validation_error(
+                        "UPLOAD_TOO_LARGE",
+                        f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
+                        context={"max_bytes": settings.max_environmental_upload_bytes},
                     ),
                 )
-
-            new_band_defs, infer_notes = await run_in_threadpool(_defs)
-            inference_notes = infer_notes if infer_notes else None
-        except ValueError as e:
-            raise HTTPException(
-                status_code=422,
-                detail=validation_error("BAND_DEFINITIONS", str(e)),
-            ) from e
-    elif environmental_band_definitions is not None and environmental_band_definitions.strip():
-        try:
-            parsed = parse_band_definitions_json(environmental_band_definitions)
-        except (json.JSONDecodeError, ValueError) as e:
-            raise HTTPException(
-                status_code=422,
-                detail=validation_error("BAND_DEFINITION_JSON_INVALID", str(e)),
-            ) from e
-        if parsed is None:
-            new_band_defs = None
-        else:
-            abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
-            if not abs_path:
-                raise _proj_422(
-                    "ENV_COG_REQUIRED",
-                    "cannot set band definitions without an environmental COG uploaded",
-                )
-            if not Path(abs_path).is_file():
-                raise _proj_422(
-                    "ENV_COG_NOT_ON_DISK",
-                    "environmental COG not found on server; upload the file first",
-                )
-
-            def _count() -> int:
-                return count_bands_in_path(abs_path)
-
-            count = await run_in_threadpool(_count)
+            uploaded_session = await run_in_threadpool(
+                best_effort_mark,
+                settings,
+                uploaded_session,
+                status="validating",
+                stage="validate",
+                context="project-update-validate",
+            )
             try:
-                validate_band_definitions_match_raster(count, parsed)
-            except ValueError as e:
+                await validate_cog_path_threaded(str(upload_temp_path))
+            except CogValidationError as e:
+                await run_in_threadpool(
+                    best_effort_fail,
+                    settings,
+                    uploaded_session,
+                    stage="validate",
+                    error_code=e.code,
+                    error_message=e.message,
+                    context="project-update-cog-validate-failed",
+                )
                 raise HTTPException(
                     status_code=422,
-                    detail=validation_error("BAND_DEFINITION_INVALID", str(e)),
+                    detail=validation_error(e.code, e.message, context=e.context or None),
                 ) from e
-            new_band_defs = parsed
-    elif not existing.environmental_band_definitions:
-        abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
-        if abs_path and Path(abs_path).is_file():
 
-            def _backfill() -> list[EnvironmentalBandDefinition]:
-                return default_band_definitions_from_path(abs_path)
+            def _write() -> tuple[str, str]:
+                return storage.write_project_driver_cog_from_path(
+                    project_id, str(upload_temp_path)
+                )
 
             try:
-                new_band_defs = await run_in_threadpool(_backfill)
-            except OSError:
+                artifact_root, cog_path = await run_in_threadpool(_write)
+            except ValueError as e:
+                await run_in_threadpool(
+                    best_effort_fail,
+                    settings,
+                    uploaded_session,
+                    stage="persist",
+                    error_code="STORAGE_LAYOUT_INVALID",
+                    error_message=str(e),
+                    context="project-update-storage-layout-invalid",
+                )
+                raise HTTPException(
+                    status_code=400,
+                    detail=validation_error("STORAGE_LAYOUT_INVALID", str(e)),
+                ) from e
+            except Exception as e:
+                await run_in_threadpool(
+                    best_effort_fail,
+                    settings,
+                    uploaded_session,
+                    stage="persist",
+                    error_code="STORAGE_WRITE_FAILED",
+                    error_message=str(e),
+                    context="project-update-storage-write-failed",
+                )
+                raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
+
+            uploaded_session = await run_in_threadpool(
+                best_effort_mark,
+                settings,
+                uploaded_session,
+                status="deriving",
+                stage="derive",
+                context="project-update-derive",
+            )
+            try:
+
+                def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
+                    return band_definitions_for_upload_path(
+                        str(upload_temp_path),
+                        environmental_band_definitions,
+                        infer_band_definitions=_infer_band_definitions_from_form(
+                            infer_band_definitions
+                        ),
+                    )
+
+                new_band_defs, infer_notes = await run_in_threadpool(_defs)
+                inference_notes = infer_notes if infer_notes else None
+            except ValueError as e:
+                await run_in_threadpool(
+                    best_effort_fail,
+                    settings,
+                    uploaded_session,
+                    stage="derive",
+                    error_code="BAND_DEFINITIONS",
+                    error_message=str(e),
+                    context="project-update-band-definitions",
+                )
+                raise HTTPException(
+                    status_code=422,
+                    detail=validation_error("BAND_DEFINITIONS", str(e)),
+                ) from e
+        elif environmental_band_definitions is not None and environmental_band_definitions.strip():
+            try:
+                parsed = parse_band_definitions_json(environmental_band_definitions)
+            except (json.JSONDecodeError, ValueError) as e:
+                raise HTTPException(
+                    status_code=422,
+                    detail=validation_error("BAND_DEFINITION_JSON_INVALID", str(e)),
+                ) from e
+            if parsed is None:
                 new_band_defs = None
+            else:
+                abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
+                if not abs_path:
+                    raise _proj_422(
+                        "ENV_COG_REQUIRED",
+                        "cannot set band definitions without an environmental COG uploaded",
+                    )
+                if not Path(abs_path).is_file():
+                    raise _proj_422(
+                        "ENV_COG_NOT_ON_DISK",
+                        "environmental COG not found on server; upload the file first",
+                    )
+
+                def _count() -> int:
+                    return count_bands_in_path(abs_path)
+
+                count = await run_in_threadpool(_count)
+                try:
+                    validate_band_definitions_match_raster(count, parsed)
+                except ValueError as e:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=validation_error("BAND_DEFINITION_INVALID", str(e)),
+                    ) from e
+                new_band_defs = parsed
+        elif not existing.environmental_band_definitions:
+            abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
+            if abs_path and Path(abs_path).is_file():
+
+                def _backfill() -> list[EnvironmentalBandDefinition]:
+                    return default_band_definitions_from_path(abs_path)
+
+                try:
+                    new_band_defs = await run_in_threadpool(_backfill)
+                except OSError:
+                    new_band_defs = None
+    finally:
+        if upload_temp_path is not None:
+            upload_temp_path.unlink(missing_ok=True)
 
     new_explain_bg_path = existing.explainability_background_path
     new_explain_bg_rows = existing.explainability_background_sample_rows
@@ -744,6 +967,15 @@ async def update_project(
             new_explain_bg_rows = settings.env_background_sample_rows
             new_explain_bg_at = datetime.now(UTC).isoformat()
         except Exception as e:
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="derive",
+                error_code="EXPLAINABILITY_BACKGROUND_FAILED",
+                error_message=str(e),
+                context="project-update-explainability-background",
+            )
             raise HTTPException(
                 status_code=422,
                 detail=validation_error(
@@ -777,10 +1009,36 @@ async def update_project(
     def _persist() -> None:
         upsert_project(settings, project)
 
+    uploaded_session = await run_in_threadpool(
+        best_effort_mark,
+        settings,
+        uploaded_session,
+        status="deriving",
+        stage="persist",
+        context="project-update-persist",
+    )
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
+        await run_in_threadpool(
+            best_effort_fail,
+            settings,
+            uploaded_session,
+            stage="persist",
+            error_code="CATALOG_SAVE_FAILED",
+            error_message=str(e),
+            context="project-update-catalog-save",
+        )
         raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
+    if uploaded_session is not None and uploaded_session.status != "ready":
+        await run_in_threadpool(
+            best_effort_mark,
+            settings,
+            uploaded_session,
+            status="ready",
+            stage="done",
+            context="project-update-done",
+        )
     return project

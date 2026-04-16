@@ -2,14 +2,16 @@
 
 import importlib
 import json
+import os
 from contextlib import contextmanager
 from io import BytesIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend_api.storage import SERIALIZED_MODEL_FILENAME
+from backend_api.schemas_upload import UploadSession
 from tests.helpers import mock_firestore_client_for_documents
 
 SAMPLE_PROJECT = {
@@ -68,6 +70,14 @@ def _admin_client(
             "backend_api.routers.catalog_upload_utils.validate_suitability_cog_bytes",
             return_value=None,
         ),
+        patch(
+            "backend_api.routers.models.validate_cog_path_threaded",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "backend_api.routers.projects.validate_cog_path_threaded",
+            new_callable=AsyncMock,
+        ),
         patch("backend_api.routers.models.upsert_model"),
         patch(
             "backend_api.storage.build_object_storage",
@@ -84,6 +94,10 @@ def _admin_client(
 def test_post_models_requires_admin_claim():
     mock_storage = MagicMock()
     mock_storage.write_suitability_cog.return_value = ("/data/models/x", "suitability_cog.tif")
+    mock_storage.write_suitability_cog_from_path.return_value = (
+        "/data/models/x",
+        "suitability_cog.tif",
+    )
     docs = [
         {
             "id": "x",
@@ -128,6 +142,10 @@ def test_post_models_requires_admin_claim():
 def test_post_models_with_explainability_uploads(catalog_docs):
     mock_storage = MagicMock()
     mock_storage.write_suitability_cog.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
+    mock_storage.write_suitability_cog_from_path.return_value = (
         "/data/models/new-id",
         "suitability_cog.tif",
     )
@@ -176,6 +194,10 @@ def test_post_models_unknown_feature_band_names_400(catalog_docs):
         "/data/models/new-id",
         "suitability_cog.tif",
     )
+    mock_storage.write_suitability_cog_from_path.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
     with _admin_client(
         catalog_docs,
         mock_storage,
@@ -207,6 +229,10 @@ def test_post_models_duplicate_409(catalog_docs):
         "/data/models/new-id",
         "suitability_cog.tif",
     )
+    mock_storage.write_suitability_cog_from_path.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
     with _admin_client(
         catalog_docs,
         mock_storage,
@@ -234,6 +260,10 @@ def test_post_models_201_creates_model(catalog_docs):
         "/data/models/new-id",
         "suitability_cog.tif",
     )
+    mock_storage.write_suitability_cog_from_path.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
     with _admin_client(
         catalog_docs,
         mock_storage,
@@ -257,12 +287,143 @@ def test_post_models_201_creates_model(catalog_docs):
     assert data["metadata"]["card"]["title"] == "m1"
     assert data["project_id"] == "proj-1"
     assert "id" in data
-    mock_storage.write_suitability_cog.assert_called_once()
+    mock_storage.write_suitability_cog_from_path.assert_called_once()
+
+
+def test_post_models_201_with_upload_session_id(catalog_docs):
+    mock_storage = MagicMock()
+    mock_storage.write_suitability_cog_from_path.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
+    upload_session = UploadSession(
+        id="upload-1",
+        project_id="proj-1",
+        filename="suitability.tif",
+        content_type="image/tiff",
+        requested_size_bytes=10,
+        uploaded_size_bytes=10,
+        status="uploaded",
+        stage="validate",
+        gcs_bucket="hsm-dashboard-model-artifacts",
+        object_path="uploads/upload-1/suitability.tif",
+        created_by_uid="admin-1",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    class _Blob:
+        def exists(self):
+            return True
+
+        def download_to_filename(self, filename: str):
+            with open(filename, "wb") as f:
+                f.write(b"dummy")
+
+    class _Bucket:
+        def blob(self, _path):
+            return _Blob()
+
+    class _StorageClient:
+        def bucket(self, _name):
+            return _Bucket()
+
+    with (
+        patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
+        patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
+        patch("backend_api.routers.models.validate_cog_path_threaded", new_callable=AsyncMock),
+        patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
+        patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
+        patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
+    ):
+        with _admin_client(
+            catalog_docs,
+            mock_storage,
+            project_documents=[SAMPLE_PROJECT],
+        ) as c:
+            r = c.post(
+                "/api/models",
+                headers={"Authorization": "Bearer fake.token"},
+                data={
+                    "project_id": "proj-1",
+                    "species": "New species",
+                    "activity": "Flight",
+                    "upload_session_id": "upload-1",
+                },
+            )
+    assert r.status_code == 201
+
+
+def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
+    mock_storage = MagicMock()
+    mock_storage.write_suitability_cog_from_path.side_effect = RuntimeError("disk full")
+    upload_session = UploadSession(
+        id="upload-1",
+        project_id="proj-1",
+        filename="suitability.tif",
+        content_type="image/tiff",
+        requested_size_bytes=10,
+        uploaded_size_bytes=10,
+        status="uploaded",
+        stage="validate",
+        gcs_bucket="hsm-dashboard-model-artifacts",
+        object_path="uploads/upload-1/suitability.tif",
+        created_by_uid="admin-1",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    class _Blob:
+        def exists(self):
+            return True
+
+        def download_to_filename(self, filename: str):
+            with open(filename, "wb") as f:
+                f.write(b"dummy")
+
+    class _Bucket:
+        def blob(self, _path):
+            return _Blob()
+
+    class _StorageClient:
+        def bucket(self, _name):
+            return _Bucket()
+
+    with (
+        patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
+        patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
+        patch("backend_api.routers.models.validate_cog_path_threaded", new_callable=AsyncMock),
+        patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
+        patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
+        patch("backend_api.upload_session_ingest.fail_upload_session") as mock_fail_upload_session,
+        patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
+    ):
+        with _admin_client(
+            catalog_docs,
+            mock_storage,
+            project_documents=[SAMPLE_PROJECT],
+        ) as c:
+            r = c.post(
+                "/api/models",
+                headers={"Authorization": "Bearer fake.token"},
+                data={
+                    "project_id": "proj-1",
+                    "species": "New species",
+                    "activity": "Flight",
+                    "upload_session_id": "upload-1",
+                },
+            )
+    assert r.status_code == 503
+    assert mock_fail_upload_session.called
 
 
 def test_put_models_updates_metadata(catalog_docs):
     mock_storage = MagicMock()
     mock_storage.write_suitability_cog.return_value = (
+        "/data/models/existing-id",
+        "suitability_cog.tif",
+    )
+    mock_storage.write_suitability_cog_from_path.return_value = (
         "/data/models/existing-id",
         "suitability_cog.tif",
     )
@@ -294,3 +455,98 @@ def test_put_models_unknown_404(catalog_docs):
             data={"species": "X"},
         )
     assert r.status_code == 404
+
+
+def test_post_projects_upload_session_explainability_failure_not_ready():
+    mock_storage = MagicMock()
+    mock_storage.write_project_driver_cog_from_path.return_value = (
+        "/data/projects/new-id",
+        "environmental_cog.tif",
+    )
+    upload_session = UploadSession(
+        id="upload-1",
+        project_id="proj-1",
+        filename="environmental.tif",
+        content_type="image/tiff",
+        requested_size_bytes=10,
+        uploaded_size_bytes=10,
+        status="uploaded",
+        stage="validate",
+        gcs_bucket="hsm-dashboard-model-artifacts",
+        object_path="uploads/upload-1/environmental.tif",
+        created_by_uid="admin-1",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+
+    class _Blob:
+        def exists(self):
+            return True
+
+        def download_to_filename(self, filename: str):
+            with open(filename, "wb") as f:
+                f.write(b"dummy")
+
+    class _Bucket:
+        def blob(self, _path):
+            return _Blob()
+
+    class _StorageClient:
+        def bucket(self, _name):
+            return _Bucket()
+
+    with (
+        patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
+        patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
+        patch("backend_api.routers.projects.validate_cog_path_threaded", new_callable=AsyncMock),
+        patch(
+            "backend_api.routers.projects.band_definitions_for_upload_path",
+            return_value=(
+                [
+                    {"index": 0, "name": "a", "label": None},
+                    {"index": 1, "name": "b", "label": None},
+                ],
+                [],
+            ),
+        ),
+        patch(
+            "backend_api.routers.projects.write_project_explainability_background_parquet",
+            side_effect=RuntimeError("bg failed"),
+        ),
+        patch("backend_api.upload_session_ingest.mark_upload_session") as mock_mark_upload_session,
+        patch("backend_api.upload_session_ingest.fail_upload_session") as mock_fail_upload_session,
+        patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
+    ):
+        mock_mark_upload_session.side_effect = (
+            lambda settings, session, **kwargs: session.model_copy(
+                update={"status": kwargs["status"], "stage": kwargs["stage"]}
+            )
+        )
+        mock_fail_upload_session.side_effect = (
+            lambda settings, session, **kwargs: session.model_copy(
+                update={
+                    "status": "failed",
+                    "stage": kwargs["stage"],
+                    "error_code": kwargs["error_code"],
+                    "error_message": kwargs["error_message"],
+                    "error_stage": kwargs["stage"],
+                }
+            )
+        )
+        with _admin_client(
+            [],
+            mock_storage,
+            project_documents=[],
+        ) as c:
+            r = c.post(
+                "/api/projects",
+                headers={"Authorization": "Bearer fake.token"},
+                data={
+                    "name": "New Project",
+                    "upload_session_id": "upload-1",
+                },
+            )
+    assert r.status_code == 422
+    assert mock_fail_upload_session.called
+    mark_statuses = [call.kwargs.get("status") for call in mock_mark_upload_session.call_args_list]
+    assert "ready" not in mark_statuses

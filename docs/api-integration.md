@@ -80,6 +80,18 @@ Apply the same idea to **any** environmental stack or suitability raster you pro
 
 ## Environmental COG on the project
 
+### Preferred large-file flow: upload sessions
+
+For larger files, avoid sending the environmental raster through `POST /api/projects` multipart directly.
+Use upload sessions:
+
+1. `POST /api/uploads/init` (admin) with filename/content type/size
+2. `PUT` file bytes to the returned signed `upload_url`
+3. `POST /api/uploads/{upload_id}/complete`
+4. `POST /api/projects` with form field `upload_session_id={upload_id}` (and no multipart `file`)
+
+You can poll `GET /api/uploads/{upload_id}` for lifecycle status and stage (`upload`, `validate`, `derive`, `persist`, `done`).
+
 ### Upload or replace (`PUT /projects/{project_id}`)
 
 ```http
@@ -139,6 +151,17 @@ curl -sS "${BASE_URL}/api/models" -H "Authorization: Bearer ${TOKEN}" \
 
 - **No row** → **`POST /api/models`** (multipart requires **`file`** among other fields).
 - **Row exists** → **`PUT /api/models/{model_id}`** to replace the COG and/or metadata or pickle.
+
+### Preferred large-file flow for suitability COG uploads
+
+`POST /api/models` also accepts `upload_session_id` as an alternative to multipart `file`:
+
+1. `POST /api/uploads/init`
+2. upload to signed `upload_url`
+3. `POST /api/uploads/{upload_id}/complete`
+4. `POST /api/models` with form field `upload_session_id={upload_id}` (omit multipart `file`)
+
+This keeps large raster transfer off the API request body path while preserving existing model validation behavior.
 
 **Duplicate guard:** **`POST /models`** returns **409** with **`MODEL_DUPLICATE`** when **`project_id` + `species` + `activity`** already exists.
 

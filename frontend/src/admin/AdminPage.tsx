@@ -7,9 +7,12 @@ import '../App.css'
 
 import { createModel, updateModel } from '../api/adminModels'
 import {
+  completeUploadSession,
   createProject,
+  initUploadSession,
   patchProjectEnvironmentalBandDefinitions,
   postRegenerateExplainabilityBackgroundSample,
+  uploadFileToSignedUrl,
   updateProject,
 } from '../api/adminProjects'
 import { fetchModelCatalog } from '../api/catalog'
@@ -56,6 +59,7 @@ export function AdminPage() {
   const [projAllowedUids, setProjAllowedUids] = useState('')
   const [projFile, setProjFile] = useState<File | null>(null)
   const [projError, setProjError] = useState<string | null>(null)
+  const [projUploadStatus, setProjUploadStatus] = useState<string | null>(null)
   const [projCreating, setProjCreating] = useState(false)
   const [projectCreateOpen, setProjectCreateOpen] = useState(false)
 
@@ -67,6 +71,7 @@ export function AdminPage() {
   const [explainModelFile, setExplainModelFile] = useState<File | null>(null)
   const [file, setFile] = useState<File | null>(null)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [layerUploadStatus, setLayerUploadStatus] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [layerCreateOpen, setLayerCreateOpen] = useState(false)
   const [createCardDraft, setCreateCardDraft] = useState<ModelCardDraft>(() => emptyModelCardDraft())
@@ -94,6 +99,7 @@ export function AdminPage() {
   const [editProjFile, setEditProjFile] = useState<File | null>(null)
   const [editProjBandDefs, setEditProjBandDefs] = useState<EnvironmentalBandDefinition[]>([])
   const [editProjError, setEditProjError] = useState<string | null>(null)
+  const [editProjUploadStatus, setEditProjUploadStatus] = useState<string | null>(null)
   const [savingProjectEdit, setSavingProjectEdit] = useState(false)
   const [regenerateExplainBgRows, setRegenerateExplainBgRows] = useState(256)
   const [regeneratingExplainBg, setRegeneratingExplainBg] = useState(false)
@@ -230,6 +236,38 @@ export function AdminPage() {
     editModel,
   ])
 
+  const uploadViaSession = useCallback(
+    async (args: {
+      token: string
+      file: File
+      projectId?: string
+      setStatus: (value: string) => void
+      uploadingMessage: string
+      finalizingMessage: string
+    }): Promise<string> => {
+      const init = await initUploadSession({
+        token: args.token,
+        filename: args.file.name,
+        contentType: args.file.type || 'image/tiff',
+        sizeBytes: args.file.size,
+        projectId: args.projectId,
+      })
+      if (!init.upload_url) {
+        throw new Error('Upload session did not provide an upload URL.')
+      }
+      args.setStatus(args.uploadingMessage)
+      await uploadFileToSignedUrl({ uploadUrl: init.upload_url, file: args.file })
+      args.setStatus(args.finalizingMessage)
+      await completeUploadSession({
+        token: args.token,
+        uploadId: init.id,
+        sizeBytes: args.file.size,
+      })
+      return init.id
+    },
+    [],
+  )
+
   const persistProjectEdit = useCallback(async () => {
     if (!editingProject || savingProjectEdit) return
     if (!editProjName.trim()) return
@@ -244,6 +282,19 @@ export function AdminPage() {
     }
     setSavingProjectEdit(true)
     try {
+      let uploadSessionId: string | undefined = undefined
+      if (editProjFile) {
+        setEditProjUploadStatus('Preparing environmental upload…')
+        uploadSessionId = await uploadViaSession({
+          token,
+          file: editProjFile,
+          projectId: editingProject.id,
+          setStatus: (v) => setEditProjUploadStatus(v),
+          uploadingMessage: 'Uploading environmental file…',
+          finalizingMessage: 'Finalizing environmental upload…',
+        })
+      }
+      setEditProjUploadStatus('Saving project…')
       const updated = await updateProject({
         token,
         projectId: editingProject.id,
@@ -252,7 +303,7 @@ export function AdminPage() {
         status: editProjStatus,
         visibility: editProjVisibility,
         allowedUids: editProjAllowedUids,
-        file: editProjFile ?? undefined,
+        uploadSessionId,
       })
       let merged = updated
       if (!editProjFile && updated.driver_cog_path && editProjBandDefs.length > 0) {
@@ -289,6 +340,7 @@ export function AdminPage() {
     } catch (err) {
       setEditProjError(err instanceof Error ? err.message : 'Update failed')
     } finally {
+      setEditProjUploadStatus(null)
       setSavingProjectEdit(false)
     }
   }, [
@@ -303,6 +355,7 @@ export function AdminPage() {
     editProjFile,
     buildProjectEditSnapshot,
     getIdToken,
+    uploadViaSession,
   ])
 
   const persistLayerEdit = useCallback(async () => {
@@ -567,6 +620,7 @@ export function AdminPage() {
         : [],
     )
     setEditProjError(null)
+    setEditProjUploadStatus(null)
     setRegenerateExplainBgRows(256)
     setRegenerateExplainBgError(null)
     setProjectEditSession((s) => s + 1)
@@ -665,6 +719,7 @@ export function AdminPage() {
     setProjectEditOpen(false)
     setEditingProject(null)
     setRegenerateExplainBgError(null)
+    setEditProjUploadStatus(null)
   }, [projectEditOpen, editingProject, editProjName, buildProjectEditSnapshot, persistProjectEdit])
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -681,10 +736,22 @@ export function AdminPage() {
     }
     setProjCreating(true)
     try {
+      let uploadSessionId: string | undefined = undefined
+      if (projFile) {
+        setProjUploadStatus('Preparing upload…')
+        uploadSessionId = await uploadViaSession({
+          token,
+          file: projFile,
+          setStatus: (v) => setProjUploadStatus(v),
+          uploadingMessage: 'Uploading environmental file…',
+          finalizingMessage: 'Finalizing upload…',
+        })
+      }
+      setProjUploadStatus('Creating project…')
       await createProject({
         token,
         name: projName,
-        file: projFile ?? undefined,
+        uploadSessionId,
         description: projDesc || undefined,
         visibility: projVisibility,
         allowedUids: projAllowedUids || undefined,
@@ -694,11 +761,13 @@ export function AdminPage() {
       setProjVisibility('public')
       setProjAllowedUids('')
       setProjFile(null)
+      setProjUploadStatus(null)
       setProjectCreateOpen(false)
       await refreshList()
     } catch (err) {
       setProjError(err instanceof Error ? err.message : 'Create project failed')
     } finally {
+      setProjUploadStatus(null)
       setProjCreating(false)
     }
   }
@@ -750,12 +819,23 @@ export function AdminPage() {
 
     setCreating(true)
     try {
+      setLayerUploadStatus('Preparing upload…')
+      const uploadSessionId = await uploadViaSession({
+        token,
+        file,
+        projectId: modelProjectId,
+        setStatus: (v) => setLayerUploadStatus(v),
+        uploadingMessage: 'Uploading suitability file…',
+        finalizingMessage: 'Finalizing upload…',
+      })
+      setLayerUploadStatus('Creating layer…')
       await createModel({
         token,
         projectId: modelProjectId,
         species,
         activity,
         file,
+        uploadSessionId,
         metadata,
         serializedModelFile: explainEnabled ? explainModelFile : undefined,
       })
@@ -766,11 +846,13 @@ export function AdminPage() {
       setExplainModelFile(null)
       setCreateCardDraft(emptyModelCardDraft())
       setFile(null)
+      setLayerUploadStatus(null)
       setLayerCreateOpen(false)
       await refreshList()
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : 'Create failed')
     } finally {
+      setLayerUploadStatus(null)
       setCreating(false)
     }
   }
@@ -947,10 +1029,12 @@ export function AdminPage() {
             onClose={() => {
               setProjectCreateOpen(false)
               setProjError(null)
+              setProjUploadStatus(null)
             }}
             formMaxWidth={FORM_MAX_WIDTH}
             projCreating={projCreating}
             projError={projError}
+            projUploadStatus={projUploadStatus}
             onSubmit={handleCreateProject}
             projName={projName}
             projDesc={projDesc}
@@ -969,11 +1053,13 @@ export function AdminPage() {
             onClose={() => {
               setLayerCreateOpen(false)
               setCreateError(null)
+              setLayerUploadStatus(null)
             }}
             formMaxWidth={FORM_MAX_WIDTH}
             canAddModel={canAddModel}
             creating={creating}
             createError={createError}
+            layerUploadStatus={layerUploadStatus}
             onSubmit={handleCreate}
             modelProjectId={modelProjectId}
             onModelProjectIdChange={setModelProjectId}
@@ -1016,6 +1102,7 @@ export function AdminPage() {
             onEditProjStatusChange={setEditProjStatus}
             onEditProjFileChange={setEditProjFile}
             editProjError={editProjError}
+            editProjUploadStatus={editProjUploadStatus}
             savingProjectEdit={savingProjectEdit}
             regenerateExplainabilitySampleRows={regenerateExplainBgRows}
             onRegenerateExplainabilitySampleRowsChange={setRegenerateExplainBgRows}

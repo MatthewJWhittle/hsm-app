@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import Request
 from starlette.concurrency import run_in_threadpool
 
 from backend_api.catalog_service import FirestoreCatalogService
-from backend_api.cog_validation import validate_suitability_cog_bytes
+from backend_api.cog_validation import validate_suitability_cog_bytes, validate_suitability_cog_path
 
 
 async def validate_cog_bytes_threaded(content: bytes) -> None:
@@ -14,6 +16,15 @@ async def validate_cog_bytes_threaded(content: bytes) -> None:
 
     def _run() -> None:
         validate_suitability_cog_bytes(content)
+
+    await run_in_threadpool(_run)
+
+
+async def validate_cog_path_threaded(path: str) -> None:
+    """Run COG validation for an on-disk path off the event loop."""
+
+    def _run() -> None:
+        validate_suitability_cog_path(path=Path(path))
 
     await run_in_threadpool(_run)
 
