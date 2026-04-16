@@ -1,4 +1,4 @@
-# Production release: deploy api-prod first, then prod Firebase Hosting (same tag).
+# Production release: one workflow — Cloud Run api-prod, then prod Firebase Hosting (same tag).
 
 name: Deploy prod release
 
@@ -16,17 +16,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  api:
-    name: Cloud Run api-prod
+  deploy:
+    name: API + Hosting
     runs-on: ubuntu-latest
     environment: production
     env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_REGION: ${{ vars.GCP_REGION }}
       ARTIFACT_REPOSITORY: ${{ vars.ARTIFACT_REPOSITORY }}
       BACKEND_IMAGE_NAME: ${{ vars.BACKEND_IMAGE_NAME }}
       PROD_SERVICE_NAME: ${{ vars.BACKEND_PROD_SERVICE_NAME }}
-      RELEASE_TAG: ${{ github.event.release.tag_name }}
       IMAGE_BASE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPOSITORY }}/${{ vars.BACKEND_IMAGE_NAME }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -58,7 +58,8 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_BASE }}:${{ env.RELEASE_TAG }}
 
-      - id: deploy
+      - id: deploy_api
+        name: Deploy Cloud Run (api-prod)
         uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
         with:
           service: ${{ env.PROD_SERVICE_NAME }}
@@ -66,26 +67,11 @@ jobs:
           project_id: ${{ env.GCP_PROJECT_ID }}
           image: ${{ env.IMAGE_BASE }}@${{ steps.build.outputs.digest }}
 
-      - name: Show deployed image
+      - name: Log deployed image
         run: |
-          echo "Release tag:"
-          echo "${RELEASE_TAG}"
-          echo "Deployed prod image:"
-          echo "${IMAGE_BASE}@${{ steps.build.outputs.digest }}"
-          echo "Service URL:"
-          echo "${{ steps.deploy.outputs.url }}"
-
-  hosting:
-    name: Firebase Hosting prod
-    needs: api
-    runs-on: ubuntu-latest
-    environment: production
-    env:
-      RELEASE_TAG: ${{ github.event.release.tag_name }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          echo "Release tag: ${RELEASE_TAG}"
+          echo "Image: ${IMAGE_BASE}@${{ steps.build.outputs.digest }}"
+          echo "Service URL: ${{ steps.deploy_api.outputs.url }}"
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -93,7 +79,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install and build frontend
+      - name: Build frontend
         working-directory: frontend
         env:
           VITE_USE_AUTH_EMULATOR: "false"
@@ -102,7 +88,7 @@ jobs:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
         run: npm ci && npm run build
 
-      - name: Deploy Hosting (prod → api-prod)
+      - name: Deploy Firebase Hosting (prod → api-prod)
         uses: FirebaseExtended/action-hosting-deploy@73212fc153444869d3e433816aab02624792fcef # v0.10.0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
