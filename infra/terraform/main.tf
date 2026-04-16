@@ -54,6 +54,25 @@ resource "google_storage_bucket" "model_artifacts" {
     enabled = var.gcs_enable_versioning
   }
 
+  cors {
+    origin = [
+      "https://hsm-dashboard-dev.web.app",
+      "https://hsm-dashboard-dev.firebaseapp.com",
+      "https://hsm-dashboard.web.app",
+      "https://hsm-dashboard.firebaseapp.com",
+    ]
+    method = [
+      "OPTIONS",
+      "PUT",
+    ]
+    response_header = [
+      "Content-Type",
+      "x-goog-resumable",
+      "x-goog-content-sha256",
+    ]
+    max_age_seconds = 3600
+  }
+
   depends_on = [google_project_service.required]
 }
 
@@ -154,14 +173,14 @@ resource "google_storage_bucket_iam_member" "api_prod_storage_admin" {
 
 resource "google_service_account_iam_member" "api_staging_token_creator_self" {
   service_account_id = google_service_account.api_staging.name
-  role                 = "roles/iam.serviceAccountTokenCreator"
-  member               = "serviceAccount:${google_service_account.api_staging.email}"
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.api_staging.email}"
 }
 
 resource "google_service_account_iam_member" "api_prod_token_creator_self" {
   service_account_id = google_service_account.api_prod.name
-  role                 = "roles/iam.serviceAccountTokenCreator"
-  member               = "serviceAccount:${google_service_account.api_prod.email}"
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.api_prod.email}"
 }
 
 resource "google_storage_bucket_iam_member" "titiler_storage_viewer" {
