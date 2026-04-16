@@ -11,7 +11,7 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
-_MAX_ENTRIES = 8
+_MAX_ENTRIES = 4
 
 
 @dataclass(frozen=True)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import pickle
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 TOP_INFLUENCE_DRIVERS = 8
+_MAX_CONCURRENT_SHAP_COMPUTES = 2
+_shap_compute_semaphore = threading.BoundedSemaphore(_MAX_CONCURRENT_SHAP_COMPUTES)
 
 
 def cap_shap_background_rows(background: pd.DataFrame, max_rows: int) -> pd.DataFrame:
@@ -203,24 +206,26 @@ def compute_shap_driver_variables(
     if not bg_path.is_file():
         raise PointSamplingError("explainability background file not found on server")
 
-    bundle = get_or_build_shap_bundle(
-        model.id,
-        model_path,
-        bg_path,
-        max_background_rows,
-        lambda: _materialize_shap_explainer_bundle(
-            model, dc, model_path, bg_path, max_background_rows
-        ),
-    )
-    fnames = bundle.fnames
-    feature_row = feature_row.reindex(columns=fnames)
+    with _shap_compute_semaphore:
+        bundle = get_or_build_shap_bundle(
+            model.id,
+            model_path,
+            bg_path,
+            max_background_rows,
+            lambda: _materialize_shap_explainer_bundle(
+                model, dc, model_path, bg_path, max_background_rows
+            ),
+        )
+        fnames = bundle.fnames
+        feature_row = feature_row.reindex(columns=fnames)
 
-    try:
-        shap_values = bundle.explainer(feature_row)
-    except Exception:
-        logger.exception("SHAP explain failed")
-        raise PointSamplingError("could not compute variable influence at this location") from None
-
+        try:
+            shap_values = bundle.explainer(feature_row)
+        except Exception:
+            logger.exception("SHAP explain failed")
+            raise PointSamplingError(
+                "could not compute variable influence at this location"
+            ) from None
     vals = np.asarray(shap_values.values)
     if vals.ndim == 2:
         row = vals[0]
