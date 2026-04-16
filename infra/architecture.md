@@ -8,9 +8,11 @@ Scope: this is the **minimal MVP baseline** for `hsm-app` (project id `hsm-dashb
 
 ```mermaid
 flowchart LR
-  Users[Users / Browser] --> FH[Firebase Hosting]
-  FH -->|/api rewrite| APIPROD[Cloud Run: api-prod]
-  FH -->|preview env API base| APISTG[Cloud Run: api-staging]
+  Users[Users / Browser] --> FH_PROD[Hosting: hsm-dashboard]
+  Users --> FH_DEV[Hosting: hsm-dashboard-dev]
+  FH_PROD -->|/api rewrite| APIPROD[Cloud Run: api-prod]
+  FH_DEV -->|/api rewrite| APISTG[Cloud Run: api-staging]
+  FH_PROD -. PR preview + PREVIEW_API_BASE_URL .-> APISTG
 
   APISTG --> FS[(Firestore Native)]
   APIPROD --> FS

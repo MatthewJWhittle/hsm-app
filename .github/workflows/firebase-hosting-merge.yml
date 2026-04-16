@@ -1,6 +1,7 @@
-# Deploy Vite app in frontend/ to Firebase Hosting (see firebase.json → hosting.public).
+# Deploy dev Hosting (hsm-dashboard-dev → api-staging) on merge to main after CI.
+# Prod Hosting (hsm-dashboard → api-prod) deploys on GitHub Release — see deploy-prod.yml (after api-prod).
 
-name: Deploy to Firebase Hosting on merge
+name: Deploy Firebase Hosting (dev) on merge
 on:
   workflow_run:
     workflows: ["CI"]
@@ -27,9 +28,11 @@ jobs:
           VITE_FIREBASE_AUTH_DOMAIN: hsm-dashboard.firebaseapp.com
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
         run: npm ci && npm run build
-      - uses: FirebaseExtended/action-hosting-deploy@73212fc153444869d3e433816aab02624792fcef # v0.10.0
+      - name: Deploy Hosting (dev → api-staging)
+        uses: FirebaseExtended/action-hosting-deploy@73212fc153444869d3e433816aab02624792fcef # v0.10.0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_HSM_DASHBOARD }}
           channelId: live
           projectId: hsm-dashboard
+          target: dev

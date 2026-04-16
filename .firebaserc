@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "hsm-dashboard"
-  }
+  },
+  "targets": {
+    "hsm-dashboard": {
+      "hosting": {
+        "prod": [
+          "hsm-dashboard"
+        ],
+        "dev": [
+          "hsm-dashboard-dev"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }
