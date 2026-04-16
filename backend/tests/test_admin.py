@@ -5,7 +5,7 @@ import json
 import os
 from contextlib import contextmanager
 from io import BytesIO
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
