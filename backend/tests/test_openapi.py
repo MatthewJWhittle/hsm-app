@@ -16,6 +16,6 @@ def test_openapi_disabled_without_touching_global_app():
     with patch("backend_api.catalog_service.firestore.Client", return_value=mock_fs):
         app = create_app(Settings(openapi_enabled=False))
         with TestClient(app) as c:
-            assert c.get("/openapi.json").status_code == 404
-            assert c.get("/docs").status_code == 404
+            assert c.get("/api/openapi.json").status_code == 404
+            assert c.get("/api/docs").status_code == 404
             assert c.get("/health").status_code == 200
