@@ -694,7 +694,7 @@ async def create_project(
     return project
 
 
-@router.put(
+@router.patch(
     "/projects/{project_id}",
     response_model=CatalogProject,
     tags=["admin"],
@@ -730,7 +730,7 @@ async def update_project(
     ):
         raise _proj_422(
             "ENV_COG_REPLACE_ROUTE_REQUIRED",
-            "metadata updates do not accept environmental COG upload fields; use PUT /projects/{project_id}/environmental-cog",
+            "metadata updates do not accept environmental COG upload fields; use POST /projects/{project_id}/environmental-cogs",
         )
 
     new_status = (
@@ -1053,3 +1053,37 @@ async def replace_project_environmental_cog(
             context="project-update-done",
         )
     return project
+
+
+@router.post(
+    "/projects/{project_id}/environmental-cogs",
+    response_model=CatalogProject,
+    tags=["admin"],
+    responses=_ADMIN_RESPONSES,
+    summary="Create/replaces active project environmental COG via multipart file or upload session",
+)
+async def replace_project_environmental_cogs_resource(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _claims: Annotated[dict, Depends(require_admin_claims)],
+    storage: Annotated[ObjectStorage, Depends(get_object_storage)],
+    catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    project_id: str,
+    file: Annotated[UploadFile | None, File()] = None,
+    upload_session_id: Annotated[str | None, Form()] = None,
+    environmental_band_definitions: Annotated[str | None, Form()] = None,
+    infer_band_definitions: Annotated[str | None, Form()] = None,
+):
+    """Resource-style alias for environmental COG replacement endpoint."""
+    return await replace_project_environmental_cog(
+        request=request,
+        settings=settings,
+        _claims=_claims,
+        storage=storage,
+        catalog=catalog,
+        project_id=project_id,
+        file=file,
+        upload_session_id=upload_session_id,
+        environmental_band_definitions=environmental_band_definitions,
+        infer_band_definitions=infer_band_definitions,
+    )

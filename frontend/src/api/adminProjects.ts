@@ -139,7 +139,7 @@ export async function updateProject(params: {
   if (params.allowedUids !== undefined) form.append('allowed_uids', params.allowedUids ?? '')
 
   const r = await fetch(`${apiBase()}/projects/${encodeURIComponent(params.projectId)}`, {
-    method: 'PUT',
+    method: 'PATCH',
     headers: { Authorization: `Bearer ${params.token}` },
     body: form,
   })
@@ -157,7 +157,7 @@ export async function replaceProjectEnvironmentalCog(params: {
 }): Promise<CatalogProject> {
   const form = new FormData()
   form.append('upload_session_id', params.uploadSessionId)
-  const r = await fetch(`${apiBase()}/projects/${encodeURIComponent(params.projectId)}/environmental-cog`, {
+  const r = await fetch(`${apiBase()}/projects/${encodeURIComponent(params.projectId)}/environmental-cogs`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${params.token}` },
     body: form,

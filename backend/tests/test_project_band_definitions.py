@@ -197,7 +197,7 @@ def test_post_explainability_background_sample_default_rows(admin_client_proj):
         assert body.get("explainability_background_generated_at")
 
 
-def test_put_project_metadata_only_does_not_run_upload_or_derivation(admin_client_proj):
+def test_patch_project_metadata_only_does_not_run_upload_or_derivation(admin_client_proj):
     c = admin_client_proj
     with (
         patch("backend_api.routers.projects.download_upload_session_to_tempfile") as mock_download,
@@ -206,7 +206,7 @@ def test_put_project_metadata_only_does_not_run_upload_or_derivation(admin_clien
             "backend_api.routers.projects.write_project_explainability_background_parquet"
         ) as mock_bg,
     ):
-        r = c.put(
+        r = c.patch(
             "/api/projects/proj-1",
             headers={"Authorization": "Bearer fake.token"},
             data={"name": "Renamed project"},
@@ -219,15 +219,15 @@ def test_put_project_metadata_only_does_not_run_upload_or_derivation(admin_clien
         mock_bg.assert_not_called()
 
 
-def test_put_project_rejects_upload_fields_with_400(admin_client_proj):
+def test_patch_project_rejects_upload_fields_with_422(admin_client_proj):
     c = admin_client_proj
-    r = c.put(
+    r = c.patch(
         "/api/projects/proj-1",
         headers={"Authorization": "Bearer fake.token"},
         data={"name": "Renamed project", "upload_session_id": "upload-1"},
     )
-    assert r.status_code == 400
-    assert "metadata-only" in str(r.json().get("detail", "")).lower()
+    assert r.status_code == 422
+    assert "environmental-cogs" in str(r.json().get("detail", "")).lower()
 
 
 def test_post_replace_environmental_cog_uses_upload_session(admin_client_proj):
@@ -257,7 +257,7 @@ def test_post_replace_environmental_cog_uses_upload_session(admin_client_proj):
         )
         mock_mark.return_value = None
         r = c.post(
-            "/api/projects/proj-1/environmental-cog",
+            "/api/projects/proj-1/environmental-cogs",
             headers={"Authorization": "Bearer fake.token"},
             data={"upload_session_id": "upload-1"},
         )
