@@ -25,6 +25,8 @@ type ProjectEditDialogProps = {
   editProjError: string | null
   editProjUploadStatus: string | null
   savingProjectEdit: boolean
+  onUploadEnvironmentalCog: () => void | Promise<void>
+  canUploadEnvironmentalCog: boolean
   regenerateExplainabilitySampleRows?: number
   onRegenerateExplainabilitySampleRowsChange?: (n: number) => void
   onRegenerateExplainabilityBackground?: () => void | Promise<void>
@@ -55,6 +57,8 @@ export function ProjectEditDialog({
   editProjError,
   editProjUploadStatus,
   savingProjectEdit,
+  onUploadEnvironmentalCog,
+  canUploadEnvironmentalCog,
   regenerateExplainabilitySampleRows,
   onRegenerateExplainabilitySampleRowsChange,
   onRegenerateExplainabilityBackground,
@@ -76,7 +80,7 @@ export function ProjectEditDialog({
         <Typography variant="caption" component="span" display="block" color="text.secondary" fontWeight={400} sx={{ mt: 0.5 }}>
           {savingProjectEdit
             ? 'Saving…'
-            : 'Changes save automatically. Click outside to close.'}
+            : 'Metadata changes save automatically. Use Upload/Replace environmental COG for file changes.'}
         </Typography>
       </DialogTitle>
       <DialogContent sx={{ pb: 2 }}>
@@ -96,6 +100,8 @@ export function ProjectEditDialog({
             onStatusChange={onEditProjStatusChange}
             pendingFile={editProjFile}
             onFileChange={onEditProjFileChange}
+            onUploadEnvironmentalCog={onUploadEnvironmentalCog}
+            canUploadEnvironmentalCog={canUploadEnvironmentalCog}
             projectId={editingProject?.id}
             existingDriverPath={editingProject?.driver_cog_path ?? null}
             environmentalBandDefinitions={environmentalBandDefinitions}

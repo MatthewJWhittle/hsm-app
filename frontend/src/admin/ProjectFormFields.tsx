@@ -45,6 +45,8 @@ export interface ProjectFormFieldsProps {
   onStatusChange?: (value: 'active' | 'archived') => void
   pendingFile: File | null
   onFileChange: (file: File | null) => void
+  onUploadEnvironmentalCog?: () => void | Promise<void>
+  canUploadEnvironmentalCog?: boolean
   /** Edit: full id for display */
   projectId?: string
   /** Edit: existing stored path, if any */
@@ -81,6 +83,8 @@ export function ProjectFormFields({
   onStatusChange,
   pendingFile,
   onFileChange,
+  onUploadEnvironmentalCog,
+  canUploadEnvironmentalCog = false,
   projectId,
   existingDriverPath,
   environmentalBandDefinitions = [],
@@ -217,6 +221,16 @@ export function ProjectFormFields({
                 ? 'No new file selected'
                 : 'No file selected'}
           </Typography>
+          {isEdit && onUploadEnvironmentalCog && (
+            <Button
+              variant="contained"
+              size="small"
+              disabled={!canUploadEnvironmentalCog}
+              onClick={() => void onUploadEnvironmentalCog()}
+            >
+              Upload / Replace environmental COG
+            </Button>
+          )}
           {isEdit && hasCog && sortedBands.length > 0 && onRegenerateExplainabilityBackground && (
             <>
               <TextField

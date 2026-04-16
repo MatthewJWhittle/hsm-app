@@ -157,7 +157,7 @@ export function AdminPage() {
       visibility: editProjVisibility,
       allowedUids: editProjAllowedUids,
       bandDefs: editProjBandDefs,
-      pendingFileName: editProjFile?.name ?? null,
+      pendingFileName: null,
     })
   }, [
     editProjName,
@@ -166,7 +166,6 @@ export function AdminPage() {
     editProjVisibility,
     editProjAllowedUids,
     editProjBandDefs,
-    editProjFile,
   ])
 
   const buildLayerEditSnapshot = useCallback(() => {
@@ -268,11 +267,12 @@ export function AdminPage() {
     [],
   )
 
-  const persistProjectEdit = useCallback(async () => {
+  const persistProjectEdit = useCallback(async (opts?: { includeUpload?: boolean }) => {
     if (!editingProject || savingProjectEdit) return
     if (!editProjName.trim()) return
     const snap = buildProjectEditSnapshot()
-    if (snap === projectEditBaselineRef.current) return
+    const includeUpload = opts?.includeUpload === true
+    if (snap === projectEditBaselineRef.current && (!includeUpload || !editProjFile)) return
 
     setEditProjError(null)
     const token = await getIdToken(false)
@@ -283,7 +283,7 @@ export function AdminPage() {
     setSavingProjectEdit(true)
     try {
       let uploadSessionId: string | undefined = undefined
-      if (editProjFile) {
+      if (includeUpload && editProjFile) {
         setEditProjUploadStatus('Preparing environmental upload…')
         uploadSessionId = await uploadViaSession({
           token,
@@ -339,6 +339,9 @@ export function AdminPage() {
       })
     } catch (err) {
       setEditProjError(err instanceof Error ? err.message : 'Update failed')
+      if (includeUpload) {
+        setEditProjFile(null)
+      }
     } finally {
       setEditProjUploadStatus(null)
       setSavingProjectEdit(false)
@@ -357,6 +360,11 @@ export function AdminPage() {
     getIdToken,
     uploadViaSession,
   ])
+
+  const handleExplicitProjectCogUpload = useCallback(async () => {
+    if (!editProjFile) return
+    await persistProjectEdit({ includeUpload: true })
+  }, [editProjFile, persistProjectEdit])
 
   const persistLayerEdit = useCallback(async () => {
     if (!editModel || savingEdit) return
@@ -682,7 +690,6 @@ export function AdminPage() {
     editProjVisibility,
     editProjAllowedUids,
     editProjBandDefs,
-    editProjFile,
     baselineRef: projectEditBaselineRef,
     buildSnapshot: buildProjectEditSnapshot,
     persist: persistProjectEdit,
@@ -1104,6 +1111,8 @@ export function AdminPage() {
             editProjError={editProjError}
             editProjUploadStatus={editProjUploadStatus}
             savingProjectEdit={savingProjectEdit}
+            onUploadEnvironmentalCog={handleExplicitProjectCogUpload}
+            canUploadEnvironmentalCog={Boolean(editProjFile) && !savingProjectEdit}
             regenerateExplainabilitySampleRows={regenerateExplainBgRows}
             onRegenerateExplainabilitySampleRowsChange={setRegenerateExplainBgRows}
             onRegenerateExplainabilityBackground={handleRegenerateExplainabilityBackground}

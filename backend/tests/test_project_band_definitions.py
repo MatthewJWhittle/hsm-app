@@ -195,3 +195,25 @@ def test_post_explainability_background_sample_default_rows(admin_client_proj):
         body = r.json()
         assert body.get("explainability_background_sample_rows") == 256
         assert body.get("explainability_background_generated_at")
+
+
+def test_put_project_metadata_only_does_not_run_upload_or_derivation(admin_client_proj):
+    c = admin_client_proj
+    with (
+        patch("backend_api.routers.projects.download_upload_session_to_tempfile") as mock_download,
+        patch("backend_api.routers.projects.validate_cog_path_threaded") as mock_validate,
+        patch(
+            "backend_api.routers.projects.write_project_explainability_background_parquet"
+        ) as mock_bg,
+    ):
+        r = c.put(
+            "/api/projects/proj-1",
+            headers={"Authorization": "Bearer fake.token"},
+            data={"name": "Renamed project"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["name"] == "Renamed project"
+        mock_download.assert_not_called()
+        mock_validate.assert_not_called()
+        mock_bg.assert_not_called()
