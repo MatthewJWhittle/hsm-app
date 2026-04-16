@@ -21,8 +21,8 @@ For PR validation, use a Firebase Hosting preview channel for frontend changes w
 
 **Firebase Hosting (two sites, one project):**
 
-- **Prod** site id `hsm-dashboard` — live channel rewrites `/api` → Cloud Run **`api-prod`**.
-- **Dev** site id `hsm-dashboard-dev` — live channel rewrites `/api` → Cloud Run **`api-staging`** (same SPA build as prod; shared Auth/Firestore). Expected URLs: `https://hsm-dashboard-dev.web.app` (and `.firebaseapp.com`).
+- **Prod** site id `hsm-dashboard` — live channel rewrites `/api` → Cloud Run **`api-prod`**. The static bundle is deployed when you **publish a GitHub Release** (same tagged commit as `api-prod`), via `firebase-hosting-deploy-prod.yml`.
+- **Dev** site id `hsm-dashboard-dev` — live channel rewrites `/api` → Cloud Run **`api-staging`**. Deployed on **merge to `main`** after CI (`firebase-hosting-merge.yml`). Shared Auth/Firestore with prod. Expected URLs: `https://hsm-dashboard-dev.web.app` (and `.firebaseapp.com`).
 
 Create `hsm-dashboard-dev` once (`firebase hosting:sites:create` or Firebase console → Hosting → Add site), then map deploy targets in `.firebaserc` (`firebase target:apply`). See [issue #44](https://github.com/MatthewJWhittle/hsm-app/issues/44).
 
@@ -61,6 +61,7 @@ Backend staging deployment happens from `main` pushes (not from PR events):
 1. Merge to `main`.
 2. GitHub Actions workflow `backend-deploy-staging.yml` builds and pushes backend image.
 3. GitHub Actions deploys image to `api-staging`.
+4. GitHub Actions deploys the **dev** Hosting site (`hsm-dashboard-dev`) from the same `main` commit.
 
 GitHub Actions settings for preview builds:
 
@@ -92,7 +93,9 @@ Notes:
 Use GitHub Actions for backend release automation:
 
 - Workflow A (`backend-deploy-staging.yml`): on `main` CI success, build/push backend image and deploy `api-staging`
-- Workflow B (`backend-deploy-prod.yml`): on GitHub release publication, build the tagged commit and deploy `api-prod`
+- Workflow B (`firebase-hosting-merge.yml`): on `main` CI success, build frontend and deploy **dev** Hosting (`hsm-dashboard-dev`)
+- Workflow C (`backend-deploy-prod.yml`): on GitHub release publication, build the tagged commit and deploy `api-prod`
+- Workflow D (`firebase-hosting-deploy-prod.yml`): on GitHub release publication, build the tagged frontend and deploy **prod** Hosting (`hsm-dashboard`)
 
 Authentication uses GitHub OIDC + Workload Identity Federation (`google-github-actions/auth`).
 
@@ -117,12 +120,12 @@ Required repository secrets:
 1. Merge to `main` to produce and validate a staging deployment.
 2. Run smoke/integration checks on staging.
 3. Create/publish a GitHub release tag for the validated commit.
-4. GitHub Actions builds that tagged commit and deploys it to `api-prod`.
+4. GitHub Actions builds that tagged commit and deploys **`api-prod`** and **prod Hosting** (`hsm-dashboard`) in parallel (separate workflows; same tag).
 5. If needed, roll back by redeploying a prior known-good digest.
 
 Promotion path:
 
-`build (main) -> stage -> verify -> release tag -> prod`
+`build (main) -> staging API + dev Hosting -> verify -> release tag -> prod API + prod Hosting`
 
 ## 6) Configuration and secret management
 
