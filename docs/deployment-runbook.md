@@ -19,6 +19,13 @@ Do not create one Cloud Run service per PR by default.
 
 For PR validation, use a Firebase Hosting preview channel for frontend changes while pointing at shared staging backend.
 
+**Firebase Hosting (two sites, one project):**
+
+- **Prod** site id `hsm-dashboard` — live channel rewrites `/api` → Cloud Run **`api-prod`**.
+- **Dev** site id `hsm-dashboard-dev` — live channel rewrites `/api` → Cloud Run **`api-staging`** (same SPA build as prod; shared Auth/Firestore). Expected URLs: `https://hsm-dashboard-dev.web.app` (and `.firebaseapp.com`).
+
+Create `hsm-dashboard-dev` once (`firebase hosting:sites:create` or Firebase console → Hosting → Add site), then map deploy targets in `.firebaserc` (`firebase target:apply`). See [issue #44](https://github.com/MatthewJWhittle/hsm-app/issues/44).
+
 ## 2) Core rules
 
 - **Build once, promote forward:** build one image per commit and deploy by immutable tag or digest.
@@ -34,7 +41,7 @@ For PR validation, use a Firebase Hosting preview channel for frontend changes w
 2. Deploy a known-good image to `api-staging`.
 3. Validate smoke checks on staging.
 4. Deploy the same image to `api-prod`.
-5. Configure Firebase Hosting live channel to rewrite `/api` to `api-prod`.
+5. Configure Firebase Hosting: **prod** site live channel rewrites `/api` to `api-prod`; add **dev** site and map Hosting rewrites for `/api` to `api-staging` (see §1).
 6. Confirm runtime limits and billing guardrails:
   - `min-instances=0`
   - `max-instances=1` or `2` initially
