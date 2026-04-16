@@ -165,7 +165,7 @@ def test_post_explainability_background_sample_ok(admin_client_proj):
         )
         assert r.status_code == 200, r.text
         mock_w.assert_called_once()
-        assert mock_w.call_args[0][5] == 128
+        assert mock_w.call_args[0][6] == 128
         body = r.json()
         assert body.get("explainability_background_path") is not None
         assert body.get("explainability_background_sample_rows") == 128
@@ -196,7 +196,7 @@ def test_post_explainability_background_sample_default_rows(admin_client_proj):
             json={},
         )
         assert r.status_code == 200, r.text
-        assert mock_w.call_args[0][5] == 256
+        assert mock_w.call_args[0][6] == 256
         body = r.json()
         assert body.get("explainability_background_sample_rows") == 256
         assert body.get("explainability_background_generated_at")

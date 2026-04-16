@@ -183,9 +183,12 @@ def test_post_models_with_explainability_uploads(catalog_docs):
     assert body["metadata"]["analysis"]["serialized_model_path"] == SERIALIZED_MODEL_FILENAME
     assert body["metadata"]["analysis"]["feature_band_names"] == ["a", "b"]
     mid = body["id"]
-    mock_storage.write_model_artifact.assert_any_call(
-        mid, SERIALIZED_MODEL_FILENAME, b"pk"
-    )
+    mock_storage.write_model_artifact_from_path.assert_called_once()
+    call_args = mock_storage.write_model_artifact_from_path.call_args[0]
+    assert call_args[0] == mid
+    assert call_args[1] == SERIALIZED_MODEL_FILENAME
+    assert isinstance(call_args[2], str)
+    assert call_args[2]
 
 
 def test_post_models_unknown_feature_band_names_400(catalog_docs):

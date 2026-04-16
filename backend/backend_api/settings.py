@@ -121,6 +121,16 @@ class Settings(BaseSettings):
         ),
         validation_alias=AliasChoices("GCS_SIGNED_URL_SERVICE_ACCOUNT"),
     )
+    gcs_signed_read_url_ttl_seconds: int = Field(
+        default=1800,
+        description=(
+            "TTL for short-lived signed GET URLs used by raster readers "
+            "(for example /vsicurl COG reads against GCS)."
+        ),
+        validation_alias=AliasChoices("GCS_SIGNED_READ_URL_TTL_SECONDS"),
+        ge=60,
+        le=86400,
+    )
 
     openapi_enabled: bool = Field(
         default=True,

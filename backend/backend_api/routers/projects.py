@@ -29,7 +29,10 @@ from backend_api.catalog_write import upsert_project
 from backend_api.api_errors import validation_error
 from backend_api.cog_validation import CogValidationError
 from backend_api.deps.catalog import get_object_storage, require_catalog_ready
-from backend_api.env_background_sample import write_project_explainability_background_parquet
+from backend_api.env_background_sample import (
+    sanitize_exception_for_client,
+    write_project_explainability_background_parquet,
+)
 from backend_api.env_cog_bands import (
     apply_band_label_updates,
     band_definitions_for_upload_path,
@@ -404,7 +407,7 @@ async def post_explainability_background_sample(
             detail=validation_error(
                 "EXPLAINABILITY_BACKGROUND_FAILED",
                 "could not build explainability background sample from COG",
-                context={"cause": str(e)},
+                context={"cause": sanitize_exception_for_client(e)},
             ),
         ) from e
 
@@ -651,7 +654,7 @@ async def create_project(
                 detail=validation_error(
                     "EXPLAINABILITY_BACKGROUND_FAILED",
                     "could not build explainability background sample from COG",
-                    context={"cause": str(e)},
+                    context={"cause": sanitize_exception_for_client(e)},
                 ),
             ) from e
 
@@ -1075,7 +1078,7 @@ async def replace_project_environmental_cogs(
                         project_id=project_id,
                         phase="derive",
                         uploaded_session=uploaded_session,
-                        extra={"cause": str(e)},
+                        extra={"cause": sanitize_exception_for_client(e)},
                     ),
                 ),
             ) from e

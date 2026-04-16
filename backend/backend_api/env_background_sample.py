@@ -5,6 +5,7 @@ from __future__ import annotations
 import tempfile
 from datetime import timedelta
 from pathlib import Path
+import re
 
 import google.auth
 import google.auth.transport.requests
@@ -75,7 +76,7 @@ def _mint_signed_read_url_for_gcs_uri(settings: Settings, gcs_uri: str) -> str:
     blob = bucket.blob(object_path)
     kwargs = {
         "version": "v4",
-        "expiration": timedelta(minutes=15),
+        "expiration": timedelta(seconds=settings.gcs_signed_read_url_ttl_seconds),
         "method": "GET",
     }
     try:
@@ -169,8 +170,6 @@ def sample_background_parquet_to_tempfile(
     names = [d.name for d in defs]
 
     rng = np.random.default_rng(seed)
-    rows: list[list[float]] = []
-
     with rasterio.open(cog_uri) as src:
         n_bands = int(src.count)
         if n_bands != len(defs):
@@ -181,9 +180,11 @@ def sample_background_parquet_to_tempfile(
         if height < 1 or width < 1:
             raise ValueError("raster has invalid dimensions")
 
+        rows = np.empty((n_samples, n_bands), dtype=np.float64)
+        filled = 0
         max_attempts = max(n_samples * 20, n_samples + 100)
         attempts = 0
-        while len(rows) < n_samples and attempts < max_attempts:
+        while filled < n_samples and attempts < max_attempts:
             attempts += 1
             row = int(rng.integers(0, height))
             col = int(rng.integers(0, width))
@@ -194,11 +195,12 @@ def sample_background_parquet_to_tempfile(
             vals = data[:, 0, 0].astype(np.float64)
             if not np.all(np.isfinite(vals)):
                 continue
-            rows.append([float(x) for x in vals])
+            rows[filled, :] = vals
+            filled += 1
 
-        if len(rows) < n_samples:
+        if filled < n_samples:
             raise ValueError(
-                f"could only sample {len(rows)} valid pixels (try smaller n_samples or check nodata)"
+                f"could only sample {filled} valid pixels (try smaller n_samples or check nodata)"
             )
 
     with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
@@ -206,3 +208,13 @@ def sample_background_parquet_to_tempfile(
     df = pd.DataFrame(rows, columns=names)
     df.to_parquet(tmp_path, engine="pyarrow", index=False)
     return tmp_path
+
+
+def sanitize_exception_for_client(exc: Exception) -> str:
+    """
+    Strip URL query strings/tokens from exception text before returning to API clients.
+    """
+    msg = str(exc)
+    # Drop query parameters that may contain signed URL tokens.
+    msg = re.sub(r"https?://[^\s?]+[?][^\s]+", "<redacted-url>", msg)
+    return msg

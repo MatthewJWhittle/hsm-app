@@ -206,7 +206,13 @@ def compute_shap_driver_variables(
     if not bg_path.is_file():
         raise PointSamplingError("explainability background file not found on server")
 
-    with _shap_compute_semaphore:
+    acquired = _shap_compute_semaphore.acquire(blocking=False)
+    if not acquired:
+        raise PointSamplingError(
+            "explainability is temporarily busy; retry shortly",
+            code="EXPLAINABILITY_BUSY",
+        )
+    try:
         bundle = get_or_build_shap_bundle(
             model.id,
             model_path,
@@ -226,6 +232,8 @@ def compute_shap_driver_variables(
             raise PointSamplingError(
                 "could not compute variable influence at this location"
             ) from None
+    finally:
+        _shap_compute_semaphore.release()
     vals = np.asarray(shap_values.values)
     if vals.ndim == 2:
         row = vals[0]
