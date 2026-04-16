@@ -113,6 +113,15 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("GCS_OBJECT_PREFIX"),
     )
 
+    gcs_signed_url_service_account: str | None = Field(
+        default=None,
+        description=(
+            "Optional service account email used for IAM-based GCS signed URL generation "
+            "when runtime credentials do not include a local private key."
+        ),
+        validation_alias=AliasChoices("GCS_SIGNED_URL_SERVICE_ACCOUNT"),
+    )
+
     openapi_enabled: bool = Field(
         default=True,
         description="If false, disable OpenAPI schema and Swagger/ReDoc UIs.",

@@ -88,6 +88,33 @@ def _admin_client():
             yield client
 
 
+@contextmanager
+def _admin_client_with_signed_url_fallback(*, storage_client, auth_default_return):
+    fake_client = _FakeFirestoreClient()
+    with (
+        patch(
+            "backend_api.auth_deps.auth.verify_id_token",
+            return_value={"uid": "admin-1", "admin": True},
+        ),
+        patch("google.cloud.firestore.Client", return_value=fake_client),
+        patch("backend_api.routers.uploads.storage.Client", return_value=storage_client),
+        patch("backend_api.routers.uploads.google.auth.default", return_value=auth_default_return),
+        patch.dict(
+            os.environ,
+            {
+                "STORAGE_BACKEND": "gcs",
+                "GCS_BUCKET": "hsm-dashboard-model-artifacts",
+            },
+            clear=False,
+        ),
+    ):
+        import backend_api.main as main
+
+        importlib.reload(main)
+        with TestClient(main.app) as client:
+            yield client
+
+
 def test_upload_init_get_and_complete_lifecycle():
     with _admin_client() as c:
         init = c.post(
@@ -177,6 +204,218 @@ def test_upload_complete_failed_status_returns_409():
             json={},
         )
         assert r.status_code == 409
+
+
+def test_upload_init_falls_back_to_iam_signed_url_when_direct_signing_fails():
+    class _Creds:
+        service_account_email = "hsm-api-staging@hsm-dashboard.iam.gserviceaccount.com"
+        expired = False
+
+        def __init__(self):
+            self.token = "ya29.token"
+
+    class _Blob:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def generate_signed_url(self, **kwargs):
+            self.calls.append(kwargs)
+            if "service_account_email" not in kwargs:
+                raise RuntimeError("you need a private key to sign credentials")
+            assert kwargs["service_account_email"] == _Creds.service_account_email
+            assert kwargs["access_token"] == "ya29.token"
+            return "https://signed-upload.local/fallback"
+
+    class _Bucket:
+        def __init__(self, blob):
+            self._blob = blob
+
+        def blob(self, _path):
+            return self._blob
+
+    class _Client:
+        def __init__(self, blob):
+            self._blob = blob
+
+        def bucket(self, _name):
+            return _Bucket(self._blob)
+
+    blob = _Blob()
+    creds = _Creds()
+    signer_sa = _Creds.service_account_email
+
+    storage_client = _Client(blob)
+    with (
+        _admin_client_with_signed_url_fallback(
+            storage_client=storage_client,
+            auth_default_return=(creds, "test-project"),
+        ) as c,
+        patch.dict(
+            os.environ,
+            {
+                "GCS_SIGNED_URL_SERVICE_ACCOUNT": signer_sa,
+            },
+            clear=False,
+        ),
+    ):
+        init = c.post(
+            "/api/uploads/init",
+            headers={"Authorization": "Bearer fake.token"},
+            json={
+                "filename": "env_stack.tif",
+                "content_type": "image/tiff",
+                "size_bytes": 123,
+            },
+        )
+        assert init.status_code == 201
+        assert init.json()["upload_url"] == "https://signed-upload.local/fallback"
+        assert len(blob.calls) == 2
+
+
+def test_mint_signed_upload_url_falls_back_to_iam_signing():
+    class _Creds:
+        service_account_email = "hsm-api-staging@hsm-dashboard.iam.gserviceaccount.com"
+
+        def __init__(self):
+            self.token = None
+
+        def refresh(self, _request):
+            self.token = "ya29.token"
+
+    class _Blob:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def generate_signed_url(self, **kwargs):
+            self.calls.append(kwargs)
+            if "service_account_email" not in kwargs:
+                raise RuntimeError("you need a private key to sign credentials")
+            return "https://signed-upload.local/fallback"
+
+    class _Bucket:
+        def __init__(self, blob):
+            self._blob = blob
+
+        def blob(self, _path):
+            return self._blob
+
+    class _Client:
+        def __init__(self, blob):
+            self._blob = blob
+
+        def bucket(self, _name):
+            return _Bucket(self._blob)
+
+    from backend_api.routers import uploads as uploads_router
+
+    blob = _Blob()
+    creds = _Creds()
+    with (
+        patch("backend_api.routers.uploads.storage.Client", return_value=_Client(blob)),
+        patch("backend_api.routers.uploads.google.auth.default", return_value=(creds, "test-project")),
+        patch.dict(
+            os.environ,
+            {
+                "GCS_SIGNED_URL_SERVICE_ACCOUNT": "hsm-api-staging@hsm-dashboard.iam.gserviceaccount.com",
+            },
+            clear=False,
+        ),
+    ):
+        url = uploads_router._mint_signed_upload_url(
+            settings=Settings(),
+            bucket_name="hsm-dashboard-model-artifacts",
+            object_path="uploads/u/file.tif",
+            content_type="image/tiff",
+        )
+    assert url.endswith("/fallback")
+    assert len(blob.calls) == 2
+    assert "service_account_email" in blob.calls[1]
+    assert blob.calls[1]["access_token"] == "ya29.token"
+
+
+def test_mint_signed_upload_url_reraises_non_signing_errors():
+    class _Blob:
+        def generate_signed_url(self, **_kwargs):
+            raise RuntimeError("bucket policy denied this operation")
+
+    class _Bucket:
+        def blob(self, _path):
+            return _Blob()
+
+    class _Client:
+        def bucket(self, _name):
+            return _Bucket()
+
+    from backend_api.routers import uploads as uploads_router
+
+    with patch("backend_api.routers.uploads.storage.Client", return_value=_Client()):
+        with pytest.raises(RuntimeError, match="bucket policy denied"):
+            uploads_router._mint_signed_upload_url(
+                settings=Settings(),
+                bucket_name="hsm-dashboard-model-artifacts",
+                object_path="uploads/u/file.tif",
+                content_type="image/tiff",
+            )
+
+
+def test_mint_signed_upload_url_uses_existing_adc_token_without_refresh():
+    class _Creds:
+        service_account_email = "hsm-api-staging@hsm-dashboard.iam.gserviceaccount.com"
+        expired = False
+
+        def __init__(self):
+            self.token = "ya29.cached-token"
+
+        def refresh(self, _request):
+            raise AssertionError("refresh should not be called when token is valid")
+
+    class _Blob:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def generate_signed_url(self, **kwargs):
+            self.calls.append(kwargs)
+            if "service_account_email" not in kwargs:
+                raise RuntimeError("you need a private key to sign credentials")
+            return "https://signed-upload.local/fallback"
+
+    class _Bucket:
+        def __init__(self, blob):
+            self._blob = blob
+
+        def blob(self, _path):
+            return self._blob
+
+    class _Client:
+        def __init__(self, blob):
+            self._blob = blob
+
+        def bucket(self, _name):
+            return _Bucket(self._blob)
+
+    from backend_api.routers import uploads as uploads_router
+
+    blob = _Blob()
+    creds = _Creds()
+    with (
+        patch("backend_api.routers.uploads.storage.Client", return_value=_Client(blob)),
+        patch("backend_api.routers.uploads.google.auth.default", return_value=(creds, "test-project")),
+        patch.dict(
+            os.environ,
+            {
+                "GCS_SIGNED_URL_SERVICE_ACCOUNT": "hsm-api-staging@hsm-dashboard.iam.gserviceaccount.com",
+            },
+            clear=False,
+        ),
+    ):
+        url = uploads_router._mint_signed_upload_url(
+            settings=Settings(),
+            bucket_name="hsm-dashboard-model-artifacts",
+            object_path="uploads/u/file.tif",
+            content_type="image/tiff",
+        )
+    assert url.endswith("/fallback")
+    assert blob.calls[1]["access_token"] == "ya29.cached-token"
 
 
 def test_mark_upload_session_rejects_invalid_transition():
