@@ -1,4 +1,4 @@
-name: Backend Deploy Staging
+name: Deploy staging API
 
 on:
   workflow_run:

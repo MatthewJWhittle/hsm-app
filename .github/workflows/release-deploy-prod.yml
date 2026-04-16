@@ -1,6 +1,6 @@
-# Production release: one workflow — Cloud Run api-prod, then prod Firebase Hosting (same tag).
+# Production release: one workflow - Cloud Run api-prod, then prod Firebase Hosting (same tag).
 
-name: Deploy prod release
+name: Release deploy (prod API + Hosting)
 
 on:
   release:
@@ -88,7 +88,7 @@ jobs:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
         run: npm ci && npm run build
 
-      - name: Deploy Firebase Hosting (prod → api-prod)
+      - name: Deploy Firebase Hosting (prod -> api-prod)
         uses: FirebaseExtended/action-hosting-deploy@73212fc153444869d3e433816aab02624792fcef # v0.10.0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
