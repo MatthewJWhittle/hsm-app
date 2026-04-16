@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import os
 from contextlib import contextmanager
+from datetime import timedelta
 from unittest.mock import patch
 
 import pytest
@@ -270,6 +271,9 @@ def test_upload_init_falls_back_to_iam_signed_url_when_direct_signing_fails():
         assert init.status_code == 201
         assert init.json()["upload_url"] == "https://signed-upload.local/fallback"
         assert len(blob.calls) == 2
+        # Ensure signed URLs remain short-lived to reduce blast radius of leaks.
+        assert blob.calls[0]["expiration"] == timedelta(minutes=15)
+        assert blob.calls[1]["expiration"] == timedelta(minutes=15)
 
 
 def test_mint_signed_upload_url_falls_back_to_iam_signing():
@@ -331,6 +335,9 @@ def test_mint_signed_upload_url_falls_back_to_iam_signing():
     assert len(blob.calls) == 2
     assert "service_account_email" in blob.calls[1]
     assert blob.calls[1]["access_token"] == "ya29.token"
+    # Both direct and IAM fallback paths should use the same short-lived expiry.
+    assert blob.calls[0]["expiration"] == timedelta(minutes=15)
+    assert blob.calls[1]["expiration"] == timedelta(minutes=15)
 
 
 def test_mint_signed_upload_url_reraises_non_signing_errors():

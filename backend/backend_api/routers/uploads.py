@@ -72,7 +72,7 @@ def _mint_signed_upload_url(
     blob = bucket.blob(object_path)
     kwargs = {
         "version": "v4",
-        "expiration": timedelta(hours=1),
+        "expiration": timedelta(minutes=15),
         "method": "PUT",
         "content_type": content_type or "application/octet-stream",
     }
@@ -252,6 +252,30 @@ async def post_upload_complete(
         ) from e
     if existing is None:
         raise HTTPException(status_code=404, detail="upload session not found")
+
+    if settings.storage_backend.strip().lower() == "gcs":
+        client = storage.Client()
+        bucket = client.bucket(existing.gcs_bucket)
+        blob = bucket.blob(existing.object_path)
+        try:
+            exists = blob.exists() if hasattr(blob, "exists") else True
+        except Exception as e:
+            logger.exception(
+                "Failed to verify uploaded object existence in storage",
+                extra={
+                    "bucket": existing.gcs_bucket,
+                    "object_path": existing.object_path,
+                },
+            )
+            raise HTTPException(
+                status_code=503,
+                detail="could not verify uploaded object in storage",
+            ) from e
+        if not exists:
+            raise HTTPException(
+                status_code=400,
+                detail="uploaded object not found in storage",
+            )
 
     try:
         updated = complete_upload_transition(
