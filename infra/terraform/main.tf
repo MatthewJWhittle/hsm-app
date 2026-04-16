@@ -3,6 +3,7 @@ locals {
     "artifactregistry.googleapis.com",
     "billingbudgets.googleapis.com",
     "firestore.googleapis.com",
+    "iamcredentials.googleapis.com",
     "run.googleapis.com",
     "secretmanager.googleapis.com",
     "storage.googleapis.com",
@@ -151,6 +152,18 @@ resource "google_storage_bucket_iam_member" "api_prod_storage_admin" {
   member = "serviceAccount:${google_service_account.api_prod.email}"
 }
 
+resource "google_service_account_iam_member" "api_staging_token_creator_self" {
+  service_account_id = google_service_account.api_staging.name
+  role                 = "roles/iam.serviceAccountTokenCreator"
+  member               = "serviceAccount:${google_service_account.api_staging.email}"
+}
+
+resource "google_service_account_iam_member" "api_prod_token_creator_self" {
+  service_account_id = google_service_account.api_prod.name
+  role                 = "roles/iam.serviceAccountTokenCreator"
+  member               = "serviceAccount:${google_service_account.api_prod.email}"
+}
+
 resource "google_storage_bucket_iam_member" "titiler_storage_viewer" {
   count  = var.create_gcs_bucket ? 1 : 0
   bucket = google_storage_bucket.model_artifacts[0].name
@@ -216,6 +229,10 @@ resource "google_cloud_run_v2_service" "api_staging" {
       env {
         name  = "GCS_OBJECT_PREFIX"
         value = local.common_env.GCS_OBJECT_PREFIX
+      }
+      env {
+        name  = "GCS_SIGNED_URL_SERVICE_ACCOUNT"
+        value = google_service_account.api_staging.email
       }
       env {
         name  = "CORS_ORIGINS"
@@ -312,6 +329,10 @@ resource "google_cloud_run_v2_service" "api_prod" {
       env {
         name  = "GCS_OBJECT_PREFIX"
         value = local.common_env.GCS_OBJECT_PREFIX
+      }
+      env {
+        name  = "GCS_SIGNED_URL_SERVICE_ACCOUNT"
+        value = google_service_account.api_prod.email
       }
       env {
         name  = "CORS_ORIGINS"

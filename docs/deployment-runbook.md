@@ -125,6 +125,7 @@ Signed URL IAM requirement:
 
 - The Cloud Run runtime identity must be able to sign blobs for the configured signer service account.
 - Grant `roles/iam.serviceAccountTokenCreator` on the signer service account to the Cloud Run runtime service account principal.
+- Enable the IAM Service Account Credentials API (`iamcredentials.googleapis.com`).
 - Keep `roles/storage.objectAdmin` (or least-privilege equivalent) on the target bucket for object upload and read.
 
 ## 5) Production release flow (CD)

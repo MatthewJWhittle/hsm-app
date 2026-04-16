@@ -95,7 +95,8 @@ You can poll `GET /api/uploads/{upload_id}` for lifecycle status and stage (`upl
 **Runtime signing config (Cloud Run):**
 
 - Upload session init mints a V4 signed URL in the API runtime.
-- In token-only runtime credential environments, set `GCS_SIGNED_URL_SERVICE_ACCOUNT` and ensure signer IAM permission (`iam.serviceAccounts.signBlob` via Token Creator role) so signed URL minting succeeds.
+- In token-only runtime credential environments, ensure the runtime service account can mint signed URLs via IAM signing (Token Creator role with `iam.serviceAccounts.signBlob`).
+  - This repo’s Terraform sets `GCS_SIGNED_URL_SERVICE_ACCOUNT` to the runtime API service account email by default.
 
 ### Upload or replace (`PUT /projects/{project_id}`)
 
