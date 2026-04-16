@@ -363,7 +363,7 @@ def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
         patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
         patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
         patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
-        patch("backend_api.routers.models.best_effort_fail") as mock_best_effort_fail,
+        patch("backend_api.upload_session_ingest.fail_upload_session") as mock_fail_upload_session,
         patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
     ):
         with _admin_client(
@@ -382,7 +382,7 @@ def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
                 },
             )
     assert r.status_code == 503
-    assert mock_best_effort_fail.called
+    assert mock_fail_upload_session.called
 
 
 def test_put_models_updates_metadata(catalog_docs):
@@ -476,12 +476,26 @@ def test_post_projects_upload_session_explainability_failure_not_ready():
             "backend_api.routers.projects.write_project_explainability_background_parquet",
             side_effect=RuntimeError("bg failed"),
         ),
-        patch("backend_api.routers.projects.best_effort_mark") as mock_mark,
-        patch("backend_api.routers.projects.best_effort_fail") as mock_fail,
+        patch("backend_api.upload_session_ingest.mark_upload_session") as mock_mark_upload_session,
+        patch("backend_api.upload_session_ingest.fail_upload_session") as mock_fail_upload_session,
         patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
     ):
-        # Keep runtime mark behavior lightweight while allowing call assertions.
-        mock_mark.side_effect = lambda settings, session, **kwargs: session
+        mock_mark_upload_session.side_effect = (
+            lambda settings, session, **kwargs: session.model_copy(
+                update={"status": kwargs["status"], "stage": kwargs["stage"]}
+            )
+        )
+        mock_fail_upload_session.side_effect = (
+            lambda settings, session, **kwargs: session.model_copy(
+                update={
+                    "status": "failed",
+                    "stage": kwargs["stage"],
+                    "error_code": kwargs["error_code"],
+                    "error_message": kwargs["error_message"],
+                    "error_stage": kwargs["stage"],
+                }
+            )
+        )
         with _admin_client(
             [],
             mock_storage,
@@ -496,6 +510,6 @@ def test_post_projects_upload_session_explainability_failure_not_ready():
                 },
             )
     assert r.status_code == 422
-    assert mock_fail.called
-    mark_statuses = [call.kwargs.get("status") for call in mock_mark.call_args_list]
+    assert mock_fail_upload_session.called
+    mark_statuses = [call.kwargs.get("status") for call in mock_mark_upload_session.call_args_list]
     assert "ready" not in mark_statuses

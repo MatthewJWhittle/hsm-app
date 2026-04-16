@@ -8,7 +8,11 @@ from fastapi import HTTPException
 from google.cloud import storage
 
 from backend_api.api_errors import validation_error
-from backend_api.schemas_upload import UploadSession
+from backend_api.schemas_upload import (
+    UploadSession,
+    UploadSessionStage,
+    UploadSessionStatus,
+)
 from backend_api.settings import Settings
 from backend_api.upload_session_runtime import fail_upload_session, mark_upload_session
 from backend_api.upload_sessions import get_upload_session
@@ -57,8 +61,8 @@ def best_effort_mark(
     settings: Settings,
     session: UploadSession | None,
     *,
-    status: str,
-    stage: str,
+    status: UploadSessionStatus,
+    stage: UploadSessionStage,
     context: str,
 ) -> UploadSession | None:
     """Attempt non-terminal transition and log on failure."""
@@ -82,7 +86,7 @@ def best_effort_fail(
     settings: Settings,
     session: UploadSession | None,
     *,
-    stage: str,
+    stage: UploadSessionStage,
     error_code: str,
     error_message: str,
     context: str,
