@@ -217,3 +217,53 @@ def test_put_project_metadata_only_does_not_run_upload_or_derivation(admin_clien
         mock_download.assert_not_called()
         mock_validate.assert_not_called()
         mock_bg.assert_not_called()
+
+
+def test_put_project_rejects_upload_fields_with_400(admin_client_proj):
+    c = admin_client_proj
+    r = c.put(
+        "/api/projects/proj-1",
+        headers={"Authorization": "Bearer fake.token"},
+        data={"name": "Renamed project", "upload_session_id": "upload-1"},
+    )
+    assert r.status_code == 400
+    assert "metadata-only" in str(r.json().get("detail", "")).lower()
+
+
+def test_post_replace_environmental_cog_uses_upload_session(admin_client_proj):
+    c = admin_client_proj
+    with (
+        patch(
+            "backend_api.routers.projects.download_upload_session_to_tempfile"
+        ) as mock_download,
+        patch("backend_api.routers.projects.validate_cog_path_threaded") as mock_validate,
+        patch(
+            "backend_api.routers.projects.write_project_explainability_background_parquet"
+        ) as mock_bg,
+        patch(
+            "backend_api.routers.projects.band_definitions_for_upload_path"
+        ) as mock_band_defs,
+        patch("backend_api.routers.projects.best_effort_mark") as mock_mark,
+    ):
+        from pathlib import Path
+
+        mock_download.return_value = (Path("/tmp/fake-upload.tif"), None)
+        mock_band_defs.return_value = (
+            [
+                {"index": 0, "name": "a", "label": None},
+                {"index": 1, "name": "b", "label": None},
+            ],
+            [],
+        )
+        mock_mark.return_value = None
+        r = c.post(
+            "/api/projects/proj-1/environmental-cog",
+            headers={"Authorization": "Bearer fake.token"},
+            data={"upload_session_id": "upload-1"},
+        )
+        assert r.status_code == 200, r.text
+        mock_download.assert_called_once()
+        mock_validate.assert_called_once()
+        mock_bg.assert_called_once()
+        body = r.json()
+        assert body["id"] == "proj-1"

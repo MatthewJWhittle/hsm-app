@@ -11,6 +11,7 @@ import {
   createProject,
   initUploadSession,
   patchProjectEnvironmentalBandDefinitions,
+  replaceProjectEnvironmentalCog,
   postRegenerateExplainabilityBackgroundSample,
   uploadFileToSignedUrl,
   updateProject,
@@ -295,16 +296,22 @@ export function AdminPage() {
         })
       }
       setEditProjUploadStatus('Saving project…')
-      const updated = await updateProject({
-        token,
-        projectId: editingProject.id,
-        name: editProjName.trim(),
-        description: editProjDesc.trim() || null,
-        status: editProjStatus,
-        visibility: editProjVisibility,
-        allowedUids: editProjAllowedUids,
-        uploadSessionId,
-      })
+      const updated =
+        uploadSessionId !== undefined
+          ? await replaceProjectEnvironmentalCog({
+              token,
+              projectId: editingProject.id,
+              uploadSessionId,
+            })
+          : await updateProject({
+              token,
+              projectId: editingProject.id,
+              name: editProjName.trim(),
+              description: editProjDesc.trim() || null,
+              status: editProjStatus,
+              visibility: editProjVisibility,
+              allowedUids: editProjAllowedUids,
+            })
       let merged = updated
       if (!editProjFile && updated.driver_cog_path && editProjBandDefs.length > 0) {
         merged = await patchProjectEnvironmentalBandDefinitions({

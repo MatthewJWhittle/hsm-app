@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { useDebouncedProjectAutosave } from './useAdminDebouncedAutosave'
 
-globalThis.IS_REACT_ACT_ENVIRONMENT = true
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT =
+  true
 
 function HookHarness(props: {
   editProjName: string

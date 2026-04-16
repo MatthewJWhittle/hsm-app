@@ -699,7 +699,7 @@ async def create_project(
     response_model=CatalogProject,
     tags=["admin"],
     responses=_ADMIN_RESPONSES,
-    summary="Update catalog project metadata and/or replace environmental COG",
+    summary="Update catalog project metadata only",
 )
 async def update_project(
     request: Request,
@@ -718,14 +718,20 @@ async def update_project(
     environmental_band_definitions: Annotated[str | None, Form()] = None,
     infer_band_definitions: Annotated[str | None, Form()] = None,
 ):
-    """Update project (admin only).
-
-    When replacing the environmental COG, band definitions can be omitted to infer from the
-    file (see ``infer_band_definitions`` on ``POST /projects``).
-    """
+    """Update project metadata only (admin only)."""
     existing = catalog.get_project(project_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="project not found")
+    if (
+        file is not None
+        or upload_session_id is not None
+        or environmental_band_definitions is not None
+        or infer_band_definitions is not None
+    ):
+        raise _proj_422(
+            "ENV_COG_REPLACE_ROUTE_REQUIRED",
+            "metadata updates do not accept environmental COG upload fields; use PUT /projects/{project_id}/environmental-cog",
+        )
 
     new_status = (
         parse_status_optional(status) if status is not None else existing.status
@@ -746,6 +752,74 @@ async def update_project(
             detail=validation_error("ALLOWED_UIDS_INVALID", str(e)),
         ) from e
 
+    now = datetime.now(UTC).isoformat()
+    project = CatalogProject(
+        id=project_id,
+        name=name.strip() if name is not None else existing.name,
+        description=(
+            description.strip() if description is not None else existing.description
+        ),
+        status=new_status,
+        visibility=new_visibility,
+        allowed_uids=new_uids if new_uids is not None else existing.allowed_uids,
+        driver_artifact_root=existing.driver_artifact_root,
+        driver_cog_path=existing.driver_cog_path,
+        environmental_band_definitions=existing.environmental_band_definitions,
+        band_inference_notes=existing.band_inference_notes,
+        explainability_background_path=existing.explainability_background_path,
+        explainability_background_sample_rows=existing.explainability_background_sample_rows,
+        explainability_background_generated_at=existing.explainability_background_generated_at,
+        created_at=existing.created_at,
+        updated_at=now,
+    )
+
+    def _persist() -> None:
+        upsert_project(settings, project)
+
+    try:
+        await run_in_threadpool(_persist)
+    except Exception as e:
+        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
+
+    await reload_catalog_threaded(request)
+    return project
+
+
+@router.put(
+    "/projects/{project_id}/environmental-cog",
+    response_model=CatalogProject,
+    tags=["admin"],
+    responses=_ADMIN_RESPONSES,
+    summary="Replace project environmental COG via multipart file or upload session",
+)
+async def replace_project_environmental_cog(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    _claims: Annotated[dict, Depends(require_admin_claims)],
+    storage: Annotated[ObjectStorage, Depends(get_object_storage)],
+    catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    project_id: str,
+    file: Annotated[UploadFile | None, File()] = None,
+    upload_session_id: Annotated[str | None, Form()] = None,
+    environmental_band_definitions: Annotated[str | None, Form()] = None,
+    infer_band_definitions: Annotated[str | None, Form()] = None,
+):
+    """Replace a project's environmental COG (admin only)."""
+    existing = catalog.get_project(project_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    if file is not None and upload_session_id:
+        raise _proj_422(
+            "UPLOAD_CONFLICT",
+            "provide either multipart file or upload_session_id, not both",
+        )
+    if file is None and upload_session_id is None:
+        raise _proj_422(
+            "MISSING_UPLOAD",
+            "provide multipart file or upload_session_id",
+        )
+
     artifact_root = existing.driver_artifact_root
     cog_path = existing.driver_cog_path
     new_band_defs: list[EnvironmentalBandDefinition] | None = (
@@ -755,11 +829,6 @@ async def update_project(
 
     uploaded_session: UploadSession | None = None
     upload_temp_path: Path | None = None
-    if file is not None and upload_session_id:
-        raise _proj_422(
-            "UPLOAD_CONFLICT",
-            "provide either multipart file or upload_session_id, not both",
-        )
     if upload_session_id:
         upload_temp_path, uploaded_session = await run_in_threadpool(
             download_upload_session_to_tempfile,
@@ -891,52 +960,6 @@ async def update_project(
                     status_code=422,
                     detail=validation_error("BAND_DEFINITIONS", str(e)),
                 ) from e
-        elif environmental_band_definitions is not None and environmental_band_definitions.strip():
-            try:
-                parsed = parse_band_definitions_json(environmental_band_definitions)
-            except (json.JSONDecodeError, ValueError) as e:
-                raise HTTPException(
-                    status_code=422,
-                    detail=validation_error("BAND_DEFINITION_JSON_INVALID", str(e)),
-                ) from e
-            if parsed is None:
-                new_band_defs = None
-            else:
-                abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
-                if not abs_path:
-                    raise _proj_422(
-                        "ENV_COG_REQUIRED",
-                        "cannot set band definitions without an environmental COG uploaded",
-                    )
-                if not Path(abs_path).is_file():
-                    raise _proj_422(
-                        "ENV_COG_NOT_ON_DISK",
-                        "environmental COG not found on server; upload the file first",
-                    )
-
-                def _count() -> int:
-                    return count_bands_in_path(abs_path)
-
-                count = await run_in_threadpool(_count)
-                try:
-                    validate_band_definitions_match_raster(count, parsed)
-                except ValueError as e:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=validation_error("BAND_DEFINITION_INVALID", str(e)),
-                    ) from e
-                new_band_defs = parsed
-        elif not existing.environmental_band_definitions:
-            abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
-            if abs_path and Path(abs_path).is_file():
-
-                def _backfill() -> list[EnvironmentalBandDefinition]:
-                    return default_band_definitions_from_path(abs_path)
-
-                try:
-                    new_band_defs = await run_in_threadpool(_backfill)
-                except OSError:
-                    new_band_defs = None
     finally:
         if upload_temp_path is not None:
             upload_temp_path.unlink(missing_ok=True)
@@ -944,12 +967,7 @@ async def update_project(
     new_explain_bg_path = existing.explainability_background_path
     new_explain_bg_rows = existing.explainability_background_sample_rows
     new_explain_bg_at = existing.explainability_background_generated_at
-    if (
-        new_band_defs
-        and artifact_root
-        and cog_path
-        and (file is not None or not existing.explainability_background_path)
-    ):
+    if new_band_defs and artifact_root and cog_path:
         try:
 
             def _bg() -> None:
@@ -986,24 +1004,17 @@ async def update_project(
             ) from e
 
     now = datetime.now(UTC).isoformat()
-    project = CatalogProject(
-        id=project_id,
-        name=name.strip() if name is not None else existing.name,
-        description=(
-            description.strip() if description is not None else existing.description
-        ),
-        status=new_status,
-        visibility=new_visibility,
-        allowed_uids=new_uids if new_uids is not None else existing.allowed_uids,
-        driver_artifact_root=artifact_root,
-        driver_cog_path=cog_path,
-        environmental_band_definitions=new_band_defs,
-        band_inference_notes=inference_notes,
-        explainability_background_path=new_explain_bg_path,
-        explainability_background_sample_rows=new_explain_bg_rows,
-        explainability_background_generated_at=new_explain_bg_at,
-        created_at=existing.created_at,
-        updated_at=now,
+    project = existing.model_copy(
+        update={
+            "driver_artifact_root": artifact_root,
+            "driver_cog_path": cog_path,
+            "environmental_band_definitions": new_band_defs,
+            "band_inference_notes": inference_notes,
+            "explainability_background_path": new_explain_bg_path,
+            "explainability_background_sample_rows": new_explain_bg_rows,
+            "explainability_background_generated_at": new_explain_bg_at,
+            "updated_at": now,
+        }
     )
 
     def _persist() -> None:
