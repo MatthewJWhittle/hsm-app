@@ -6,7 +6,17 @@ from datetime import UTC, datetime
 
 from backend_api.schemas_upload import UploadSession, UploadSessionStage, UploadSessionStatus
 from backend_api.settings import Settings
+from backend_api.upload_session_transitions import can_transition_status
 from backend_api.upload_sessions import upsert_upload_session
+
+
+def _assert_status_transition(session: UploadSession, target_status: UploadSessionStatus) -> None:
+    if target_status == session.status:
+        return
+    if not can_transition_status(session.status, target_status):
+        raise ValueError(
+            f"invalid upload session status transition: {session.status!r} -> {target_status!r}"
+        )
 
 
 def mark_upload_session(
@@ -17,6 +27,7 @@ def mark_upload_session(
     stage: UploadSessionStage,
 ) -> UploadSession:
     """Persist a non-error lifecycle update and return the updated session."""
+    _assert_status_transition(session, status)
     updated = session.model_copy(
         update={
             "status": status,
@@ -40,6 +51,7 @@ def fail_upload_session(
     error_message: str,
 ) -> UploadSession:
     """Persist a terminal failed state and return the updated session."""
+    _assert_status_transition(session, "failed")
     updated = session.model_copy(
         update={
             "status": "failed",

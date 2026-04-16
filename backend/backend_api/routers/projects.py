@@ -553,11 +553,35 @@ async def create_project(
         try:
             artifact_root, cog_path = await run_in_threadpool(_write)
         except ValueError as e:
+            if uploaded_session is not None:
+                try:
+                    await run_in_threadpool(
+                        fail_upload_session,
+                        settings,
+                        uploaded_session,
+                        stage="persist",
+                        error_code="STORAGE_LAYOUT_INVALID",
+                        error_message=str(e),
+                    )
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=400,
                 detail=validation_error("STORAGE_LAYOUT_INVALID", str(e)),
             ) from e
         except Exception as e:
+            if uploaded_session is not None:
+                try:
+                    await run_in_threadpool(
+                        fail_upload_session,
+                        settings,
+                        uploaded_session,
+                        stage="persist",
+                        error_code="STORAGE_WRITE_FAILED",
+                        error_message=str(e),
+                    )
+                except Exception:
+                    pass
             raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
 
         if uploaded_session is not None:
@@ -601,18 +625,6 @@ async def create_project(
                 status_code=422,
                 detail=validation_error("BAND_DEFINITIONS", str(e)),
             ) from e
-        if uploaded_session is not None and uploaded_session.status != "ready":
-            try:
-                uploaded_session = await run_in_threadpool(
-                    mark_upload_session,
-                    settings,
-                    uploaded_session,
-                    status="ready",
-                    stage="done",
-                )
-            except Exception:
-                # Project create succeeded; keep request successful even if session metadata lags.
-                pass
 
     explain_bg_path: str | None = None
     explain_bg_rows: int | None = None
@@ -634,6 +646,18 @@ async def create_project(
             explain_bg_path = EXPLAINABILITY_BACKGROUND_FILENAME
             explain_bg_rows = settings.env_background_sample_rows
         except Exception as e:
+            if uploaded_session is not None:
+                try:
+                    await run_in_threadpool(
+                        fail_upload_session,
+                        settings,
+                        uploaded_session,
+                        stage="derive",
+                        error_code="EXPLAINABILITY_BACKGROUND_FAILED",
+                        error_message=str(e),
+                    )
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=422,
                 detail=validation_error(
@@ -668,12 +692,47 @@ async def create_project(
     def _persist() -> None:
         upsert_project(settings, project)
 
+    if uploaded_session is not None:
+        try:
+            uploaded_session = await run_in_threadpool(
+                mark_upload_session,
+                settings,
+                uploaded_session,
+                status="deriving",
+                stage="persist",
+            )
+        except Exception:
+            pass
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
+        if uploaded_session is not None:
+            try:
+                await run_in_threadpool(
+                    fail_upload_session,
+                    settings,
+                    uploaded_session,
+                    stage="persist",
+                    error_code="CATALOG_SAVE_FAILED",
+                    error_message=str(e),
+                )
+            except Exception:
+                pass
         raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
+    if uploaded_session is not None and uploaded_session.status != "ready":
+        try:
+            await run_in_threadpool(
+                mark_upload_session,
+                settings,
+                uploaded_session,
+                status="ready",
+                stage="done",
+            )
+        except Exception:
+            # Project create succeeded; keep request successful even if session metadata lags.
+            pass
     return project
 
 
@@ -802,11 +861,35 @@ async def update_project(
         try:
             artifact_root, cog_path = await run_in_threadpool(_write)
         except ValueError as e:
+            if uploaded_session is not None:
+                try:
+                    await run_in_threadpool(
+                        fail_upload_session,
+                        settings,
+                        uploaded_session,
+                        stage="persist",
+                        error_code="STORAGE_LAYOUT_INVALID",
+                        error_message=str(e),
+                    )
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=400,
                 detail=validation_error("STORAGE_LAYOUT_INVALID", str(e)),
             ) from e
         except Exception as e:
+            if uploaded_session is not None:
+                try:
+                    await run_in_threadpool(
+                        fail_upload_session,
+                        settings,
+                        uploaded_session,
+                        stage="persist",
+                        error_code="STORAGE_WRITE_FAILED",
+                        error_message=str(e),
+                    )
+                except Exception:
+                    pass
             raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
 
         if uploaded_session is not None:
@@ -923,6 +1006,18 @@ async def update_project(
             new_explain_bg_rows = settings.env_background_sample_rows
             new_explain_bg_at = datetime.now(UTC).isoformat()
         except Exception as e:
+            if uploaded_session is not None:
+                try:
+                    await run_in_threadpool(
+                        fail_upload_session,
+                        settings,
+                        uploaded_session,
+                        stage="derive",
+                        error_code="EXPLAINABILITY_BACKGROUND_FAILED",
+                        error_message=str(e),
+                    )
+                except Exception:
+                    pass
             raise HTTPException(
                 status_code=422,
                 detail=validation_error(
@@ -956,9 +1051,32 @@ async def update_project(
     def _persist() -> None:
         upsert_project(settings, project)
 
+    if uploaded_session is not None:
+        try:
+            uploaded_session = await run_in_threadpool(
+                mark_upload_session,
+                settings,
+                uploaded_session,
+                status="deriving",
+                stage="persist",
+            )
+        except Exception:
+            pass
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
+        if uploaded_session is not None:
+            try:
+                await run_in_threadpool(
+                    fail_upload_session,
+                    settings,
+                    uploaded_session,
+                    stage="persist",
+                    error_code="CATALOG_SAVE_FAILED",
+                    error_message=str(e),
+                )
+            except Exception:
+                pass
         raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)

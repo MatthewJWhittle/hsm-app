@@ -457,8 +457,32 @@ async def create_model(
     try:
         artifact_root, suitability_cog_path = await run_in_threadpool(_write)
     except ValueError as e:
+        if upload_session is not None:
+            try:
+                await run_in_threadpool(
+                    fail_upload_session,
+                    settings,
+                    upload_session,
+                    stage="persist",
+                    error_code="STORAGE_LAYOUT_INVALID",
+                    error_message=str(e),
+                )
+            except Exception:
+                pass
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
+        if upload_session is not None:
+            try:
+                await run_in_threadpool(
+                    fail_upload_session,
+                    settings,
+                    upload_session,
+                    stage="persist",
+                    error_code="STORAGE_WRITE_FAILED",
+                    error_message=str(e),
+                )
+            except Exception:
+                pass
         raise HTTPException(
             status_code=503,
             detail=f"could not store file: {e}",

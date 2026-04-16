@@ -7,7 +7,11 @@ import os
 from contextlib import contextmanager
 from unittest.mock import patch
 
+import pytest
 from fastapi.testclient import TestClient
+from backend_api.upload_session_runtime import mark_upload_session
+from backend_api.settings import Settings
+from backend_api.schemas_upload import UploadSession
 
 
 class _FakeDoc:
@@ -173,6 +177,36 @@ def test_upload_complete_failed_status_returns_409():
             json={},
         )
         assert r.status_code == 409
+
+
+def test_mark_upload_session_rejects_invalid_transition():
+    session = UploadSession(
+        id="upload-1",
+        project_id=None,
+        filename="env.tif",
+        content_type="image/tiff",
+        requested_size_bytes=10,
+        uploaded_size_bytes=10,
+        checksum_sha256=None,
+        status="failed",
+        stage="validate",
+        gcs_bucket="hsm-dashboard-model-artifacts",
+        object_path="uploads/upload-1/env.tif",
+        created_by_uid="admin-1",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+        error_code="VALIDATION",
+        error_message="bad file",
+        error_stage="validate",
+    )
+    with patch("backend_api.upload_session_runtime.upsert_upload_session"):
+        with pytest.raises(ValueError, match="invalid upload session status transition"):
+            mark_upload_session(
+                Settings(),
+                session,
+                status="ready",
+                stage="done",
+            )
 
 
 class _FakeStorageBlob:
