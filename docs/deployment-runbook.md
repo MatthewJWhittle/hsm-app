@@ -88,9 +88,9 @@ Notes:
 - This keeps environments simple while avoiding backend deploy churn on every PR update.
 - If PR concurrency becomes too high, revisit whether additional staging services are needed.
 
-### Backend CD (GitHub Actions)
+### CD — deploy workflows (GitHub Actions)
 
-Use GitHub Actions for backend release automation:
+Use GitHub Actions for staging rollouts and prod releases:
 
 - Workflow A (`backend-deploy-staging.yml`): on `main` CI success, build/push backend image and deploy `api-staging`
 - Workflow B (`firebase-hosting-merge.yml`): on `main` CI success, build frontend and deploy **dev** Hosting (`hsm-dashboard-dev`)
