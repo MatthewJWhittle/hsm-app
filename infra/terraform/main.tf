@@ -13,7 +13,7 @@ locals {
     GOOGLE_CLOUD_PROJECT = var.project_id
     STORAGE_BACKEND      = "gcs"
     GCS_OBJECT_PREFIX    = ""
-    OPENAPI_ENABLED      = "false"
+    OPENAPI_ENABLED      = "true"
   }
 
   gcs_bucket_name = var.create_gcs_bucket ? google_storage_bucket.model_artifacts[0].name : var.gcs_bucket_name
