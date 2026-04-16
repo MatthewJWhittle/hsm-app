@@ -44,8 +44,18 @@ class ObjectStorage(Protocol):
     def write_project_artifact(self, project_id: str, relative_name: str, content: bytes) -> None:
         """Write a non-COG file under ``projects/{project_id}/`` (e.g. explainability background Parquet)."""
 
+    def write_project_artifact_from_path(
+        self, project_id: str, relative_name: str, source_path: str
+    ) -> None:
+        """Write a non-COG file under ``projects/{project_id}/`` from a local path."""
+
     def write_model_artifact(self, model_id: str, relative_name: str, content: bytes) -> None:
         """Write a non-COG file under ``models/{model_id}/`` (e.g. sklearn pickle, parquet)."""
+
+    def write_model_artifact_from_path(
+        self, model_id: str, relative_name: str, source_path: str
+    ) -> None:
+        """Write a non-COG file under ``models/{model_id}/`` from a local path."""
 
 
 class LocalObjectStorage:
@@ -98,12 +108,30 @@ class LocalObjectStorage:
         dest_dir.mkdir(parents=True, exist_ok=True)
         (dest_dir / relative_name).write_bytes(content)
 
+    def write_project_artifact_from_path(
+        self, project_id: str, relative_name: str, source_path: str
+    ) -> None:
+        _validate_artifact_relative_name(relative_name)
+        safe_id = _safe_segment(project_id)
+        dest_dir = self._root / "projects" / safe_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_path, str(dest_dir / relative_name))
+
     def write_model_artifact(self, model_id: str, relative_name: str, content: bytes) -> None:
         _validate_artifact_relative_name(relative_name)
         safe_id = _safe_segment(model_id)
         dest_dir = self._root / "models" / safe_id
         dest_dir.mkdir(parents=True, exist_ok=True)
         (dest_dir / relative_name).write_bytes(content)
+
+    def write_model_artifact_from_path(
+        self, model_id: str, relative_name: str, source_path: str
+    ) -> None:
+        _validate_artifact_relative_name(relative_name)
+        safe_id = _safe_segment(model_id)
+        dest_dir = self._root / "models" / safe_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_path, str(dest_dir / relative_name))
 
 
 class GcsObjectStorage:
@@ -155,12 +183,30 @@ class GcsObjectStorage:
         blob = self._bucket.blob(blob_name)
         blob.upload_from_string(content)
 
+    def write_project_artifact_from_path(
+        self, project_id: str, relative_name: str, source_path: str
+    ) -> None:
+        _validate_artifact_relative_name(relative_name)
+        safe_id = _safe_segment(project_id)
+        blob_name = f"{self._prefix}projects/{safe_id}/{relative_name}"
+        blob = self._bucket.blob(blob_name)
+        blob.upload_from_filename(source_path)
+
     def write_model_artifact(self, model_id: str, relative_name: str, content: bytes) -> None:
         _validate_artifact_relative_name(relative_name)
         safe_id = _safe_segment(model_id)
         blob_name = f"{self._prefix}models/{safe_id}/{relative_name}"
         blob = self._bucket.blob(blob_name)
         blob.upload_from_string(content)
+
+    def write_model_artifact_from_path(
+        self, model_id: str, relative_name: str, source_path: str
+    ) -> None:
+        _validate_artifact_relative_name(relative_name)
+        safe_id = _safe_segment(model_id)
+        blob_name = f"{self._prefix}models/{safe_id}/{relative_name}"
+        blob = self._bucket.blob(blob_name)
+        blob.upload_from_filename(source_path)
 
 
 def normalize_gcs_prefix(prefix: str) -> str:
