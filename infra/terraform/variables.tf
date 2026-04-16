@@ -100,7 +100,7 @@ variable "api_cpu" {
 variable "api_memory" {
   description = "Cloud Run memory limit for API containers."
   type        = string
-  default     = "1Gi"
+  default     = "2Gi"
 }
 
 variable "api_min_instance_count" {
