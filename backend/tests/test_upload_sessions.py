@@ -265,6 +265,66 @@ def test_mint_signed_upload_url_reraises_non_signing_errors():
             )
 
 
+def test_mint_signed_upload_url_uses_existing_adc_token_without_refresh():
+    class _Creds:
+        service_account_email = "hsm-api-staging@hsm-dashboard.iam.gserviceaccount.com"
+        expired = False
+
+        def __init__(self):
+            self.token = "ya29.cached-token"
+
+        def refresh(self, _request):
+            raise AssertionError("refresh should not be called when token is valid")
+
+    class _Blob:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def generate_signed_url(self, **kwargs):
+            self.calls.append(kwargs)
+            if "service_account_email" not in kwargs:
+                raise RuntimeError("you need a private key to sign credentials")
+            return "https://signed-upload.local/fallback"
+
+    class _Bucket:
+        def __init__(self, blob):
+            self._blob = blob
+
+        def blob(self, _path):
+            return self._blob
+
+    class _Client:
+        def __init__(self, blob):
+            self._blob = blob
+
+        def bucket(self, _name):
+            return _Bucket(self._blob)
+
+    from backend_api.routers import uploads as uploads_router
+
+    blob = _Blob()
+    creds = _Creds()
+    with (
+        patch("backend_api.routers.uploads.storage.Client", return_value=_Client(blob)),
+        patch("backend_api.routers.uploads.google.auth.default", return_value=(creds, "test-project")),
+        patch.dict(
+            os.environ,
+            {
+                "GCS_SIGNED_URL_SERVICE_ACCOUNT": "hsm-api-staging@hsm-dashboard.iam.gserviceaccount.com",
+            },
+            clear=False,
+        ),
+    ):
+        url = uploads_router._mint_signed_upload_url(
+            settings=Settings(),
+            bucket_name="hsm-dashboard-model-artifacts",
+            object_path="uploads/u/file.tif",
+            content_type="image/tiff",
+        )
+    assert url.endswith("/fallback")
+    assert blob.calls[1]["access_token"] == "ya29.cached-token"
+
+
 def test_mark_upload_session_rejects_invalid_transition():
     session = UploadSession(
         id="upload-1",

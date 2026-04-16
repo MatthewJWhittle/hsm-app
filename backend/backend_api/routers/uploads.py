@@ -11,8 +11,10 @@ from typing import Annotated
 
 import google.auth
 import google.auth.transport.requests
+from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from fastapi import APIRouter, Depends, HTTPException, status
 from google.cloud import storage
+from google.cloud.exceptions import GoogleCloudError
 
 from backend_api.auth_deps import require_admin_claims
 from backend_api.deps.settings_dep import get_settings
@@ -44,6 +46,11 @@ def _now_iso() -> str:
 
 
 def _looks_like_signing_capability_error(exc: Exception) -> bool:
+    if isinstance(exc, (DefaultCredentialsError, RefreshError)):
+        return True
+    if isinstance(exc, GoogleCloudError):
+        # Storage SDK surfaces signing/runtime auth issues through GoogleCloudError subclasses.
+        return True
     msg = str(exc).lower()
     return (
         "private key" in msg
@@ -89,9 +96,12 @@ def _mint_signed_upload_url(
             raise RuntimeError(
                 "storage client has no credentials available for IAM signed URL fallback"
             ) from direct_err
-        request = google.auth.transport.requests.Request()
-        credentials.refresh(request)
         access_token = getattr(credentials, "token", None)
+        is_expired = bool(getattr(credentials, "expired", False))
+        if not access_token or is_expired:
+            request = google.auth.transport.requests.Request()
+            credentials.refresh(request)
+            access_token = getattr(credentials, "token", None)
         if not access_token:
             raise RuntimeError(
                 "could not refresh access token for IAM signed URL fallback"
