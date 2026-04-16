@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import io
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -29,8 +29,13 @@ def write_project_explainability_background_parquet(
     Returns the relative catalog path (fixed filename).
     """
     uri = resolve_env_cog_uri_for_sampling(artifact_root, cog_path)
-    data = sample_background_parquet_bytes(uri, band_defs, n_samples)
-    storage.write_project_artifact(project_id, EXPLAINABILITY_BACKGROUND_FILENAME, data)
+    tmp_path = sample_background_parquet_to_tempfile(uri, band_defs, n_samples)
+    try:
+        storage.write_project_artifact_from_path(
+            project_id, EXPLAINABILITY_BACKGROUND_FILENAME, str(tmp_path)
+        )
+    finally:
+        tmp_path.unlink(missing_ok=True)
     return EXPLAINABILITY_BACKGROUND_FILENAME
 
 
@@ -60,6 +65,23 @@ def sample_background_parquet_bytes(
     Column names are ``EnvironmentalBandDefinition.name`` sorted by ``index``.
     Skips windows that contain NaN in any band.
     """
+    tmp_path = sample_background_parquet_to_tempfile(
+        cog_uri, band_definitions, n_samples, seed=seed
+    )
+    try:
+        return tmp_path.read_bytes()
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def sample_background_parquet_to_tempfile(
+    cog_uri: str,
+    band_definitions: list[EnvironmentalBandDefinition],
+    n_samples: int,
+    *,
+    seed: int | None = None,
+) -> Path:
+    """Randomly sample pixels and write Parquet directly to a temp file."""
     defs = sorted(band_definitions, key=lambda d: d.index)
     names = [d.name for d in defs]
 
@@ -96,7 +118,8 @@ def sample_background_parquet_bytes(
                 f"could only sample {len(rows)} valid pixels (try smaller n_samples or check nodata)"
             )
 
+    with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
     df = pd.DataFrame(rows, columns=names)
-    buf = io.BytesIO()
-    df.to_parquet(buf, engine="pyarrow", index=False)
-    return buf.getvalue()
+    df.to_parquet(tmp_path, engine="pyarrow", index=False)
+    return tmp_path

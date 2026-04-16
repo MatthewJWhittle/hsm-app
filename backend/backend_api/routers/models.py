@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
@@ -49,7 +50,6 @@ from backend_api.schemas import Model, ModelAnalysis, ModelMetadata, PointInspec
 from backend_api.schemas_admin import parse_metadata_multipart_part
 from backend_api.routers.catalog_upload_utils import (
     reload_catalog_threaded,
-    validate_cog_bytes_threaded,
     validate_cog_path_threaded,
 )
 from backend_api.routers.models_openapi import OPENAPI_POST_MODELS, OPENAPI_PUT_MODEL
@@ -60,11 +60,12 @@ from backend_api.upload_session_ingest import (
     best_effort_fail,
     best_effort_mark,
     download_upload_session_to_tempfile,
-    write_upload_bytes_to_tempfile,
+    write_upload_file_to_tempfile,
 )
 from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _find_model_by_triplet(
@@ -152,26 +153,38 @@ async def _merge_serialized_model_upload(
     """Write optional sklearn upload and set ``metadata.analysis.serialized_model_path``."""
     if serialized_model_file is None:
         return metadata
-    content = await serialized_model_file.read()
-    if not content:
-        raise HTTPException(
-            status_code=422,
-            detail=validation_error(
-                "EMPTY_FILE",
-                "serialized_model_file is empty.",
-                context={"field": "serialized_model_file"},
-            ),
+    upload_temp_path = await write_upload_file_to_tempfile(
+        serialized_model_file,
+        max_bytes=settings.max_upload_bytes,
+        suffix=".pkl",
+    )
+    logger.info("model_serialized_upload_ingest model_id=%s", model_id)
+    try:
+        upload_size = upload_temp_path.stat().st_size
+        logger.info(
+            "model_serialized_upload_size model_id=%s upload_bytes=%s",
+            model_id,
+            upload_size,
         )
-    if len(content) > settings.max_upload_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"serialized_model_file exceeds max size {settings.max_upload_bytes} bytes",
-        )
+        if upload_size <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(
+                    "EMPTY_FILE",
+                    "serialized_model_file is empty.",
+                    context={"field": "serialized_model_file"},
+                ),
+            )
 
-    def _write_m() -> None:
-        storage.write_model_artifact(model_id, SERIALIZED_MODEL_FILENAME, content)
+        def _write_m() -> None:
+            storage.write_model_artifact_from_path(
+                model_id, SERIALIZED_MODEL_FILENAME, str(upload_temp_path)
+            )
 
-    await run_in_threadpool(_write_m)
+        await run_in_threadpool(_write_m)
+        logger.info("model_serialized_upload_persist_ok model_id=%s", model_id)
+    finally:
+        upload_temp_path.unlink(missing_ok=True)
     analysis = (metadata.analysis if metadata else None) or ModelAnalysis()
     analysis = analysis.model_copy(update={"serialized_model_path": SERIALIZED_MODEL_FILENAME})
     base = metadata or ModelMetadata()
@@ -358,6 +371,13 @@ async def create_model(
         )
     upload_session: UploadSession | None = None
     upload_temp_path = None
+    model_id = str(uuid.uuid4())
+    logger.info(
+        "model_create_start model_id=%s has_multipart=%s has_session=%s",
+        model_id,
+        isinstance(file_part, StarletteUploadFile),
+        bool(upload_session_s),
+    )
     if upload_session_s:
         upload_temp_path, upload_session = await run_in_threadpool(
             download_upload_session_to_tempfile,
@@ -365,25 +385,17 @@ async def create_model(
             upload_session_s,
             purpose="model create",
         )
-    elif isinstance(file_part, StarletteUploadFile):
-        content = await file_part.read()
-        if not content:
-            raise HTTPException(
-                status_code=422,
-                detail=validation_error(
-                    "EMPTY_FILE",
-                    "file is empty.",
-                    context={"field": "file"},
-                ),
-            )
-        if len(content) > settings.max_upload_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
-            )
-        upload_temp_path = await run_in_threadpool(
-            write_upload_bytes_to_tempfile, content
+        logger.info(
+            "model_create_ingest_session model_id=%s upload_session_id=%s",
+            model_id,
+            upload_session_s,
         )
+    elif isinstance(file_part, StarletteUploadFile):
+        upload_temp_path = await write_upload_file_to_tempfile(
+            file_part,
+            max_bytes=settings.max_upload_bytes,
+        )
+        logger.info("model_create_ingest_multipart model_id=%s", model_id)
     else:
         raise HTTPException(
             status_code=422,
@@ -393,9 +405,14 @@ async def create_model(
                 context={"field": "file"},
             ),
         )
-    model_id = str(uuid.uuid4())
     try:
         upload_size = os.path.getsize(str(upload_temp_path))
+        logger.info(
+            "model_create_upload_size model_id=%s upload_bytes=%s upload_session_id=%s",
+            model_id,
+            upload_size,
+            upload_session.id if upload_session else None,
+        )
         if upload_size <= 0:
             raise HTTPException(
                 status_code=422,
@@ -420,7 +437,9 @@ async def create_model(
             context="model-create-validate",
         )
         try:
+            logger.info("model_create_validate_start model_id=%s", model_id)
             await validate_cog_path_threaded(str(upload_temp_path))
+            logger.info("model_create_validate_ok model_id=%s", model_id)
         except CogValidationError as e:
             await run_in_threadpool(
                 best_effort_fail,
@@ -438,6 +457,11 @@ async def create_model(
 
         try:
             artifact_root, suitability_cog_path = await run_in_threadpool(_write)
+            logger.info(
+                "model_create_persist_cog_ok model_id=%s artifact_root=%s",
+                model_id,
+                artifact_root,
+            )
         except ValueError as e:
             await run_in_threadpool(
                 best_effort_fail,
@@ -542,6 +566,7 @@ async def create_model(
     )
     try:
         await run_in_threadpool(_persist)
+        logger.info("model_create_catalog_save_ok model_id=%s", model_id)
     except Exception as e:
         await run_in_threadpool(
             best_effort_fail,
@@ -594,6 +619,11 @@ async def update_model(
     model_id = existing.id
     artifact_root = existing.artifact_root
     suitability_cog_path = existing.suitability_cog_path
+    logger.info(
+        "model_update_start model_id=%s has_multipart=%s",
+        model_id,
+        isinstance(form.get("file"), StarletteUploadFile),
+    )
 
     file_part = form.get("file")
     if file_part is not None and not isinstance(file_part, StarletteUploadFile):
@@ -606,38 +636,55 @@ async def update_model(
             ),
         )
     if isinstance(file_part, StarletteUploadFile):
-        content = await file_part.read()
-        if not content:
-            raise HTTPException(
-                status_code=422,
-                detail=validation_error(
-                    "EMPTY_FILE",
-                    "file is empty.",
-                    context={"field": "file"},
-                ),
-            )
-        if len(content) > settings.max_upload_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
-            )
+        upload_temp_path = await write_upload_file_to_tempfile(
+            file_part,
+            max_bytes=settings.max_upload_bytes,
+        )
+        logger.info("model_update_ingest_multipart model_id=%s", model_id)
         try:
-            await validate_cog_bytes_threaded(content)
-        except CogValidationError as e:
-            raise _cog_validation_422(e) from e
+            upload_size = upload_temp_path.stat().st_size
+            logger.info(
+                "model_update_upload_size model_id=%s upload_bytes=%s",
+                model_id,
+                upload_size,
+            )
+            if upload_size <= 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail=validation_error(
+                        "EMPTY_FILE",
+                        "file is empty.",
+                        context={"field": "file"},
+                    ),
+                )
+            try:
+                logger.info("model_update_validate_start model_id=%s", model_id)
+                await validate_cog_path_threaded(str(upload_temp_path))
+                logger.info("model_update_validate_ok model_id=%s", model_id)
+            except CogValidationError as e:
+                raise _cog_validation_422(e) from e
 
-        def _write() -> tuple[str, str]:
-            return storage.write_suitability_cog(model_id, content)
+            def _write() -> tuple[str, str]:
+                return storage.write_suitability_cog_from_path(
+                    model_id, str(upload_temp_path)
+                )
 
-        try:
-            artifact_root, suitability_cog_path = await run_in_threadpool(_write)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        except Exception as e:
-            raise HTTPException(
-                status_code=503,
-                detail=f"could not store file: {e}",
-            ) from e
+            try:
+                artifact_root, suitability_cog_path = await run_in_threadpool(_write)
+                logger.info(
+                    "model_update_persist_cog_ok model_id=%s artifact_root=%s",
+                    model_id,
+                    artifact_root,
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+            except Exception as e:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"could not store file: {e}",
+                ) from e
+        finally:
+            upload_temp_path.unlink(missing_ok=True)
 
     species_s = _form_str(form, "species")
     activity_s = _form_str(form, "activity")
@@ -713,6 +760,7 @@ async def update_model(
 
     try:
         await run_in_threadpool(_persist)
+        logger.info("model_update_catalog_save_ok model_id=%s", model_id)
     except Exception as e:
         raise HTTPException(
             status_code=503,

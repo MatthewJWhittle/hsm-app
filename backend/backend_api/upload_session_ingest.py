@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 from google.cloud import storage
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from backend_api.api_errors import validation_error
 from backend_api.schemas_upload import (
@@ -27,6 +28,36 @@ def write_upload_bytes_to_tempfile(content: bytes, *, suffix: str = ".tif") -> P
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp_path = Path(tmp.name)
         tmp.write(content)
+    return tmp_path
+
+
+async def write_upload_file_to_tempfile(
+    upload_file: StarletteUploadFile,
+    *,
+    max_bytes: int,
+    suffix: str = ".tif",
+    chunk_size: int = 1024 * 1024,
+) -> Path:
+    """Stream an uploaded file to tempfile while enforcing a byte limit."""
+    total = 0
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        while True:
+            chunk = await upload_file.read(chunk_size)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > max_bytes:
+                tmp_path.unlink(missing_ok=True)
+                raise HTTPException(
+                    status_code=413,
+                    detail=validation_error(
+                        "UPLOAD_TOO_LARGE",
+                        f"file exceeds max size {max_bytes} bytes",
+                        context={"max_bytes": max_bytes},
+                    ),
+                )
+            tmp.write(chunk)
     return tmp_path
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -65,10 +66,11 @@ from backend_api.upload_session_ingest import (
     best_effort_fail,
     best_effort_mark,
     download_upload_session_to_tempfile,
-    write_upload_bytes_to_tempfile,
+    write_upload_file_to_tempfile,
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _ADMIN_RESPONSES: dict[int | str, dict[str, str]] = {
     status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid bearer token"},
@@ -450,6 +452,7 @@ async def create_project(
         ) from e
 
     project_id = str(uuid.uuid4())
+    logger.info("project_create_start project_id=%s has_multipart=%s has_session=%s", project_id, file is not None, bool(upload_session_id))
     artifact_root: str | None = None
     cog_path: str | None = None
     band_defs: list[EnvironmentalBandDefinition] | None = None
@@ -468,26 +471,18 @@ async def create_project(
             upload_session_id,
             purpose="project create",
         )
+        logger.info("project_create_ingest_session project_id=%s upload_session_id=%s", project_id, upload_session_id)
     elif file is not None:
-        content = await file.read()
-        if not content:
-            raise _proj_422("EMPTY_FILE", "empty file")
-        if len(content) > settings.max_environmental_upload_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=validation_error(
-                    "UPLOAD_TOO_LARGE",
-                    f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
-                    context={"max_bytes": settings.max_environmental_upload_bytes},
-                ),
-            )
-        upload_temp_path = await run_in_threadpool(
-            write_upload_bytes_to_tempfile, content
+        upload_temp_path = await write_upload_file_to_tempfile(
+            file,
+            max_bytes=settings.max_environmental_upload_bytes,
         )
+        logger.info("project_create_ingest_multipart project_id=%s", project_id)
 
     try:
         if upload_temp_path is not None:
             upload_size = os.path.getsize(str(upload_temp_path))
+            logger.info("project_create_upload_size project_id=%s upload_bytes=%s upload_session_id=%s", project_id, upload_size, uploaded_session.id if uploaded_session else None)
             if upload_size <= 0:
                 raise _proj_422("EMPTY_FILE", "empty file")
             if upload_size > settings.max_environmental_upload_bytes:
@@ -508,7 +503,9 @@ async def create_project(
                 context="project-create-validate",
             )
             try:
+                logger.info("project_create_validate_start project_id=%s", project_id)
                 await validate_cog_path_threaded(str(upload_temp_path))
+                logger.info("project_create_validate_ok project_id=%s", project_id)
             except CogValidationError as e:
                 await run_in_threadpool(
                     best_effort_fail,
@@ -531,6 +528,7 @@ async def create_project(
 
             try:
                 artifact_root, cog_path = await run_in_threadpool(_write)
+                logger.info("project_create_persist_cog_ok project_id=%s artifact_root=%s", project_id, artifact_root)
             except ValueError as e:
                 await run_in_threadpool(
                     best_effort_fail,
@@ -566,6 +564,7 @@ async def create_project(
                 context="project-create-derive",
             )
             try:
+                logger.info("project_create_derive_bands_start project_id=%s", project_id)
 
                 def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
                     return band_definitions_for_upload_path(
@@ -578,6 +577,7 @@ async def create_project(
 
                 band_defs, infer_notes = await run_in_threadpool(_defs)
                 inference_notes = infer_notes if infer_notes else None
+                logger.info("project_create_derive_bands_ok project_id=%s band_count=%s", project_id, len(band_defs) if band_defs else 0)
             except ValueError as e:
                 await run_in_threadpool(
                     best_effort_fail,
@@ -601,6 +601,7 @@ async def create_project(
     explain_bg_at: str | None = None
     if band_defs and artifact_root and cog_path:
         try:
+            logger.info("project_create_background_start project_id=%s sample_rows=%s", project_id, settings.env_background_sample_rows)
 
             def _bg() -> None:
                 write_project_explainability_background_parquet(
@@ -615,6 +616,7 @@ async def create_project(
             await run_in_threadpool(_bg)
             explain_bg_path = EXPLAINABILITY_BACKGROUND_FILENAME
             explain_bg_rows = settings.env_background_sample_rows
+            logger.info("project_create_background_ok project_id=%s sample_rows=%s", project_id, explain_bg_rows)
         except Exception as e:
             await run_in_threadpool(
                 best_effort_fail,
@@ -669,6 +671,7 @@ async def create_project(
     )
     try:
         await run_in_threadpool(_persist)
+        logger.info("project_create_catalog_save_ok project_id=%s", project_id)
     except Exception as e:
         await run_in_threadpool(
             best_effort_fail,
@@ -808,6 +811,7 @@ async def replace_project_environmental_cogs(
     existing = catalog.get_project(project_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="project not found")
+    logger.info("project_replace_env_cog_start project_id=%s has_multipart=%s has_session=%s", project_id, file is not None, bool(upload_session_id))
 
     if file is not None and upload_session_id:
         raise _proj_422(
@@ -836,26 +840,18 @@ async def replace_project_environmental_cogs(
             upload_session_id,
             purpose="project update",
         )
+        logger.info("project_replace_env_cog_ingest_session project_id=%s upload_session_id=%s", project_id, upload_session_id)
     elif file is not None:
-        content = await file.read()
-        if not content:
-            raise _proj_422("EMPTY_FILE", "empty file")
-        if len(content) > settings.max_environmental_upload_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=validation_error(
-                    "UPLOAD_TOO_LARGE",
-                    f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
-                    context={"max_bytes": settings.max_environmental_upload_bytes},
-                ),
-            )
-        upload_temp_path = await run_in_threadpool(
-            write_upload_bytes_to_tempfile, content
+        upload_temp_path = await write_upload_file_to_tempfile(
+            file,
+            max_bytes=settings.max_environmental_upload_bytes,
         )
+        logger.info("project_replace_env_cog_ingest_multipart project_id=%s", project_id)
 
     try:
         if upload_temp_path is not None:
             upload_size = os.path.getsize(str(upload_temp_path))
+            logger.info("project_replace_env_cog_upload_size project_id=%s upload_bytes=%s upload_session_id=%s", project_id, upload_size, uploaded_session.id if uploaded_session else None)
             if upload_size <= 0:
                 raise _proj_422("EMPTY_FILE", "empty file")
             if upload_size > settings.max_environmental_upload_bytes:
@@ -876,7 +872,9 @@ async def replace_project_environmental_cogs(
                 context="project-update-validate",
             )
             try:
+                logger.info("project_replace_env_cog_validate_start project_id=%s", project_id)
                 await validate_cog_path_threaded(str(upload_temp_path))
+                logger.info("project_replace_env_cog_validate_ok project_id=%s", project_id)
             except CogValidationError as e:
                 await run_in_threadpool(
                     best_effort_fail,
@@ -899,6 +897,7 @@ async def replace_project_environmental_cogs(
 
             try:
                 artifact_root, cog_path = await run_in_threadpool(_write)
+                logger.info("project_replace_env_cog_persist_cog_ok project_id=%s artifact_root=%s", project_id, artifact_root)
             except ValueError as e:
                 await run_in_threadpool(
                     best_effort_fail,
@@ -934,6 +933,7 @@ async def replace_project_environmental_cogs(
                 context="project-update-derive",
             )
             try:
+                logger.info("project_replace_env_cog_derive_bands_start project_id=%s", project_id)
 
                 def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
                     return band_definitions_for_upload_path(
@@ -946,6 +946,7 @@ async def replace_project_environmental_cogs(
 
                 new_band_defs, infer_notes = await run_in_threadpool(_defs)
                 inference_notes = infer_notes if infer_notes else None
+                logger.info("project_replace_env_cog_derive_bands_ok project_id=%s band_count=%s", project_id, len(new_band_defs) if new_band_defs else 0)
             except ValueError as e:
                 await run_in_threadpool(
                     best_effort_fail,
@@ -969,6 +970,7 @@ async def replace_project_environmental_cogs(
     new_explain_bg_at = existing.explainability_background_generated_at
     if new_band_defs and artifact_root and cog_path:
         try:
+            logger.info("project_replace_env_cog_background_start project_id=%s sample_rows=%s", project_id, settings.env_background_sample_rows)
 
             def _bg() -> None:
                 write_project_explainability_background_parquet(
@@ -984,6 +986,7 @@ async def replace_project_environmental_cogs(
             new_explain_bg_path = EXPLAINABILITY_BACKGROUND_FILENAME
             new_explain_bg_rows = settings.env_background_sample_rows
             new_explain_bg_at = datetime.now(UTC).isoformat()
+            logger.info("project_replace_env_cog_background_ok project_id=%s sample_rows=%s", project_id, new_explain_bg_rows)
         except Exception as e:
             await run_in_threadpool(
                 best_effort_fail,
@@ -1030,6 +1033,7 @@ async def replace_project_environmental_cogs(
     )
     try:
         await run_in_threadpool(_persist)
+        logger.info("project_replace_env_cog_catalog_save_ok project_id=%s", project_id)
     except Exception as e:
         await run_in_threadpool(
             best_effort_fail,
