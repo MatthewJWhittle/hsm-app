@@ -179,6 +179,66 @@ def test_upload_complete_failed_status_returns_409():
         assert r.status_code == 409
 
 
+def test_mint_signed_upload_url_falls_back_to_iam_signing():
+    class _Creds:
+        service_account_email = "hsm-api-staging@hsm-dashboard.iam.gserviceaccount.com"
+
+        def __init__(self):
+            self.token = None
+
+        def refresh(self, _request):
+            self.token = "ya29.token"
+
+    class _Blob:
+        def __init__(self):
+            self.calls: list[dict] = []
+
+        def generate_signed_url(self, **kwargs):
+            self.calls.append(kwargs)
+            if "service_account_email" not in kwargs:
+                raise RuntimeError("you need a private key to sign credentials")
+            return "https://signed-upload.local/fallback"
+
+    class _Bucket:
+        def __init__(self, blob):
+            self._blob = blob
+
+        def blob(self, _path):
+            return self._blob
+
+    class _Client:
+        def __init__(self, blob):
+            self._credentials = _Creds()
+            self._blob = blob
+
+        def bucket(self, _name):
+            return _Bucket(self._blob)
+
+    from backend_api.routers import uploads as uploads_router
+
+    blob = _Blob()
+    with (
+        patch("backend_api.routers.uploads.storage.Client", return_value=_Client(blob)),
+        patch.dict(
+            os.environ,
+            {
+                "GCS_SIGNED_URL_SERVICE_ACCOUNT": "hsm-api-staging@hsm-dashboard.iam.gserviceaccount.com",
+            },
+            clear=False,
+        ),
+    ):
+        url = uploads_router._mint_signed_upload_url(
+            settings=Settings(),
+            bucket_name="hsm-dashboard-model-artifacts",
+            object_path="uploads/u/file.tif",
+            content_type="image/tiff",
+        )
+    assert url.endswith("/fallback")
+    assert len(blob.calls) == 2
+    assert "service_account_email" in blob.calls[1]
+    assert blob.calls[1]["access_token"] == "ya29.token"
+
+
 def test_mark_upload_session_rejects_invalid_transition():
     session = UploadSession(
         id="upload-1",

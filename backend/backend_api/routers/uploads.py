@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import timedelta
 from typing import Annotated
 
+import google.auth.transport.requests
 from fastapi import APIRouter, Depends, HTTPException, status
 from google.cloud import storage
 
@@ -41,6 +42,7 @@ def _now_iso() -> str:
 
 def _mint_signed_upload_url(
     *,
+    settings: Settings,
     bucket_name: str,
     object_path: str,
     content_type: str | None,
@@ -49,12 +51,47 @@ def _mint_signed_upload_url(
     client = storage.Client()
     bucket = client.bucket(bucket_name)
     blob = bucket.blob(object_path)
-    return blob.generate_signed_url(
-        version="v4",
-        expiration=timedelta(hours=1),
-        method="PUT",
-        content_type=content_type or "application/octet-stream",
-    )
+    kwargs = {
+        "version": "v4",
+        "expiration": timedelta(hours=1),
+        "method": "PUT",
+        "content_type": content_type or "application/octet-stream",
+    }
+    try:
+        return blob.generate_signed_url(**kwargs)
+    except Exception as direct_err:
+        credentials = getattr(client, "_credentials", None)
+        signer_email = settings.gcs_signed_url_service_account or getattr(
+            credentials, "service_account_email", None
+        )
+        if not signer_email or signer_email == "default":
+            raise RuntimeError(
+                "runtime credentials cannot sign directly; set "
+                "GCS_SIGNED_URL_SERVICE_ACCOUNT to a signer service account email"
+            ) from direct_err
+        if credentials is None:
+            raise RuntimeError(
+                "storage client has no credentials available for IAM signed URL fallback"
+            ) from direct_err
+        request = google.auth.transport.requests.Request()
+        credentials.refresh(request)
+        access_token = getattr(credentials, "token", None)
+        if not access_token:
+            raise RuntimeError(
+                "could not refresh access token for IAM signed URL fallback"
+            ) from direct_err
+        try:
+            return blob.generate_signed_url(
+                **kwargs,
+                service_account_email=signer_email,
+                access_token=access_token,
+            )
+        except Exception as iam_err:
+            raise RuntimeError(
+                "signed URL generation failed for both direct and IAM fallback paths; "
+                "ensure signer IAM permission (iam.serviceAccounts.signBlob/TokenCreator) "
+                "and a valid signer service account"
+            ) from iam_err
 
 
 @router.post(
@@ -107,6 +144,7 @@ async def post_upload_init(
     )
     try:
         upload_url = _mint_signed_upload_url(
+            settings=settings,
             bucket_name=settings.gcs_bucket,
             object_path=object_path,
             content_type=body.content_type,
