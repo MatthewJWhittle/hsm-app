@@ -109,10 +109,23 @@ Required GitHub Actions repository variables for backend deploy workflows:
 - `GCP_WORKLOAD_IDENTITY_PROVIDER`
 - `GCP_DEPLOY_SERVICE_ACCOUNT`
 
+Required Cloud Run runtime env vars for upload-session signed URLs:
+
+- `STORAGE_BACKEND=gcs`
+- `GCS_BUCKET=<bucket>`
+- `GCS_SIGNED_URL_SERVICE_ACCOUNT=<service-account-email>`
+  - Set to the runtime API service account email (`hsm-api-staging@...` / `hsm-api-prod@...`) unless you intentionally use a dedicated signer SA.
+
 Required repository secrets:
 
 - `VITE_FIREBASE_API_KEY` (frontend build)
 - `FIREBASE_SERVICE_ACCOUNT_HSM_DASHBOARD` (Firebase Hosting deploy)
+
+Signed URL IAM requirement:
+
+- The Cloud Run runtime identity must be able to sign blobs for the configured signer service account.
+- Grant `roles/iam.serviceAccountTokenCreator` on the signer service account to the Cloud Run runtime service account principal.
+- Keep `roles/storage.objectAdmin` (or least-privilege equivalent) on the target bucket for object upload and read.
 
 ## 5) Production release flow (CD)
 
