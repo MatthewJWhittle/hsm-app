@@ -96,6 +96,23 @@ def _proj_503(code: str, message: str) -> HTTPException:
     )
 
 
+def _upload_error_context(
+    *,
+    project_id: str,
+    phase: str,
+    uploaded_session: UploadSession | None,
+    extra: dict | None = None,
+) -> dict:
+    ctx: dict = {
+        "project_id": project_id,
+        "phase": phase,
+        "upload_session_id": uploaded_session.id if uploaded_session is not None else None,
+    }
+    if extra:
+        ctx.update(extra)
+    return ctx
+
+
 def _infer_band_definitions_from_form(raw: str | None) -> bool:
     """When omitted, infer band names from the raster. Use ``false``/``0``/``no`` to require JSON."""
     if raw is None or not str(raw).strip():
@@ -371,6 +388,7 @@ async def post_explainability_background_sample(
     def _bg() -> None:
         write_project_explainability_background_parquet(
             storage,
+            settings,
             project_id,
             artifact_root,
             cog_path,
@@ -606,6 +624,7 @@ async def create_project(
             def _bg() -> None:
                 write_project_explainability_background_parquet(
                     storage,
+                    settings,
                     project_id,
                     artifact_root,
                     cog_path,
@@ -853,14 +872,27 @@ async def replace_project_environmental_cogs(
             upload_size = os.path.getsize(str(upload_temp_path))
             logger.info("project_replace_env_cog_upload_size project_id=%s upload_bytes=%s upload_session_id=%s", project_id, upload_size, uploaded_session.id if uploaded_session else None)
             if upload_size <= 0:
-                raise _proj_422("EMPTY_FILE", "empty file")
+                raise _proj_422(
+                    "EMPTY_FILE",
+                    "empty file",
+                    context=_upload_error_context(
+                        project_id=project_id,
+                        phase="ingest",
+                        uploaded_session=uploaded_session,
+                    ),
+                )
             if upload_size > settings.max_environmental_upload_bytes:
                 raise HTTPException(
                     status_code=413,
                     detail=validation_error(
                         "UPLOAD_TOO_LARGE",
                         f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
-                        context={"max_bytes": settings.max_environmental_upload_bytes},
+                        context=_upload_error_context(
+                            project_id=project_id,
+                            phase="ingest",
+                            uploaded_session=uploaded_session,
+                            extra={"max_bytes": settings.max_environmental_upload_bytes},
+                        ),
                     ),
                 )
             uploaded_session = await run_in_threadpool(
@@ -887,7 +919,16 @@ async def replace_project_environmental_cogs(
                 )
                 raise HTTPException(
                     status_code=422,
-                    detail=validation_error(e.code, e.message, context=e.context or None),
+                    detail=validation_error(
+                        e.code,
+                        e.message,
+                        context=_upload_error_context(
+                            project_id=project_id,
+                            phase="validate",
+                            uploaded_session=uploaded_session,
+                            extra=e.context or None,
+                        ),
+                    ),
                 ) from e
 
             def _write() -> tuple[str, str]:
@@ -910,7 +951,15 @@ async def replace_project_environmental_cogs(
                 )
                 raise HTTPException(
                     status_code=400,
-                    detail=validation_error("STORAGE_LAYOUT_INVALID", str(e)),
+                    detail=validation_error(
+                        "STORAGE_LAYOUT_INVALID",
+                        str(e),
+                        context=_upload_error_context(
+                            project_id=project_id,
+                            phase="persist",
+                            uploaded_session=uploaded_session,
+                        ),
+                    ),
                 ) from e
             except Exception as e:
                 await run_in_threadpool(
@@ -922,7 +971,18 @@ async def replace_project_environmental_cogs(
                     error_message=str(e),
                     context="project-update-storage-write-failed",
                 )
-                raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
+                raise HTTPException(
+                    status_code=503,
+                    detail=validation_error(
+                        "STORAGE_WRITE_FAILED",
+                        f"could not store file: {e}",
+                        context=_upload_error_context(
+                            project_id=project_id,
+                            phase="persist",
+                            uploaded_session=uploaded_session,
+                        ),
+                    ),
+                ) from e
 
             uploaded_session = await run_in_threadpool(
                 best_effort_mark,
@@ -959,7 +1019,15 @@ async def replace_project_environmental_cogs(
                 )
                 raise HTTPException(
                     status_code=422,
-                    detail=validation_error("BAND_DEFINITIONS", str(e)),
+                    detail=validation_error(
+                        "BAND_DEFINITIONS",
+                        str(e),
+                        context=_upload_error_context(
+                            project_id=project_id,
+                            phase="derive",
+                            uploaded_session=uploaded_session,
+                        ),
+                    ),
                 ) from e
     finally:
         if upload_temp_path is not None:
@@ -975,6 +1043,7 @@ async def replace_project_environmental_cogs(
             def _bg() -> None:
                 write_project_explainability_background_parquet(
                     storage,
+                    settings,
                     project_id,
                     artifact_root,
                     cog_path,
@@ -1002,7 +1071,12 @@ async def replace_project_environmental_cogs(
                 detail=validation_error(
                     "EXPLAINABILITY_BACKGROUND_FAILED",
                     "could not build explainability background sample from COG",
-                    context={"cause": str(e)},
+                    context=_upload_error_context(
+                        project_id=project_id,
+                        phase="derive",
+                        uploaded_session=uploaded_session,
+                        extra={"cause": str(e)},
+                    ),
                 ),
             ) from e
 
@@ -1044,7 +1118,18 @@ async def replace_project_environmental_cogs(
             error_message=str(e),
             context="project-update-catalog-save",
         )
-        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
+        raise HTTPException(
+            status_code=503,
+            detail=validation_error(
+                "CATALOG_SAVE_FAILED",
+                f"could not save catalog: {e}",
+                context=_upload_error_context(
+                    project_id=project_id,
+                    phase="persist",
+                    uploaded_session=uploaded_session,
+                ),
+            ),
+        ) from e
 
     await reload_catalog_threaded(request)
     if uploaded_session is not None and uploaded_session.status != "ready":

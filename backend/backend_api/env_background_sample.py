@@ -3,20 +3,28 @@
 from __future__ import annotations
 
 import tempfile
+from datetime import timedelta
 from pathlib import Path
 
+import google.auth
+import google.auth.transport.requests
 import numpy as np
 import pandas as pd
 import pyarrow  # noqa: F401 — pandas needs pyarrow for DataFrame.to_parquet(engine="pyarrow")
 import rasterio
+from google.auth.exceptions import DefaultCredentialsError, RefreshError
+from google.cloud import storage
+from google.cloud.exceptions import GoogleCloudError
 from rasterio.windows import Window
 
 from backend_api.schemas_project import EnvironmentalBandDefinition
+from backend_api.settings import Settings
 from backend_api.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
 
 
 def write_project_explainability_background_parquet(
     storage: ObjectStorage,
+    settings: Settings,
     project_id: str,
     artifact_root: str,
     cog_path: str,
@@ -28,7 +36,7 @@ def write_project_explainability_background_parquet(
 
     Returns the relative catalog path (fixed filename).
     """
-    uri = resolve_env_cog_uri_for_sampling(artifact_root, cog_path)
+    uri = resolve_env_cog_uri_for_sampling(settings, artifact_root, cog_path)
     tmp_path = sample_background_parquet_to_tempfile(uri, band_defs, n_samples)
     try:
         storage.write_project_artifact_from_path(
@@ -39,16 +47,91 @@ def write_project_explainability_background_parquet(
     return EXPLAINABILITY_BACKGROUND_FILENAME
 
 
-def resolve_env_cog_uri_for_sampling(artifact_root: str, cog_rel: str) -> str:
+def _looks_like_signing_capability_error(exc: Exception) -> bool:
+    if isinstance(exc, (DefaultCredentialsError, RefreshError)):
+        return True
+    if isinstance(exc, GoogleCloudError):
+        return True
+    msg = str(exc).lower()
+    return (
+        "private key" in msg
+        or "sign credentials" in msg
+        or "could not automatically determine credentials" in msg
+    )
+
+
+def _mint_signed_read_url_for_gcs_uri(settings: Settings, gcs_uri: str) -> str:
+    """Create a short-lived GET signed URL for a ``gs://`` object URI."""
+    if not gcs_uri.startswith("gs://"):
+        raise ValueError("gcs_uri must start with gs://")
+    remainder = gcs_uri[5:]
+    parts = remainder.split("/", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise ValueError("gcs_uri must include bucket and object path")
+    bucket_name, object_path = parts
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(object_path)
+    kwargs = {
+        "version": "v4",
+        "expiration": timedelta(minutes=15),
+        "method": "GET",
+    }
+    try:
+        return blob.generate_signed_url(**kwargs)
+    except Exception as direct_err:
+        if not _looks_like_signing_capability_error(direct_err):
+            raise
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        signer_email = settings.gcs_signed_url_service_account or getattr(
+            credentials, "service_account_email", None
+        )
+        if not signer_email or signer_email == "default":
+            raise RuntimeError(
+                "runtime credentials cannot sign directly; set "
+                "GCS_SIGNED_URL_SERVICE_ACCOUNT to a signer service account email"
+            ) from direct_err
+        if credentials is None:
+            raise RuntimeError(
+                "storage client has no credentials available for IAM signed URL fallback"
+            ) from direct_err
+        access_token = getattr(credentials, "token", None)
+        is_expired = bool(getattr(credentials, "expired", False))
+        if not access_token or is_expired:
+            request = google.auth.transport.requests.Request()
+            credentials.refresh(request)
+            access_token = getattr(credentials, "token", None)
+        if not access_token:
+            raise RuntimeError(
+                "could not refresh access token for IAM signed URL fallback"
+            ) from direct_err
+        return blob.generate_signed_url(
+            **kwargs,
+            service_account_email=signer_email,
+            access_token=access_token,
+        )
+
+
+def resolve_env_cog_uri_for_sampling(
+    settings: Settings, artifact_root: str, cog_rel: str
+) -> str:
     """
-    Path or URI for rasterio to open the environmental COG (local path or ``gs://...``).
+    Path or URI for rasterio to open the environmental COG.
+
+    For GCS-backed roots, return ``/vsicurl/<signed-https-url>`` so rasterio/GDAL can
+    perform cloud-friendly ranged reads without requiring GDAL ``gs://`` auth setup.
     """
     rel = cog_rel.strip()
     if rel.startswith("/"):
         return rel
     root = artifact_root.rstrip("/")
     if root.startswith("gs://"):
-        return f"{root}/{rel}"
+        gcs_uri = f"{root}/{rel}"
+        signed_url = _mint_signed_read_url_for_gcs_uri(settings, gcs_uri)
+        return f"/vsicurl/{signed_url}"
     return str(Path(root) / rel)
 
 
