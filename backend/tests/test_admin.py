@@ -302,8 +302,8 @@ def test_post_models_201_with_upload_session_id(catalog_docs):
     with (
         patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
         patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
-        patch("backend_api.routers.models.get_upload_session", return_value=upload_session),
-        patch("backend_api.routers.models.gcs_storage.Client", return_value=_StorageClient()),
+        patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
+        patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
         patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
     ):
         with _admin_client(
@@ -361,9 +361,9 @@ def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
     with (
         patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
         patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
-        patch("backend_api.routers.models.get_upload_session", return_value=upload_session),
-        patch("backend_api.routers.models.gcs_storage.Client", return_value=_StorageClient()),
-        patch("backend_api.routers.models.fail_upload_session") as mock_fail_upload_session,
+        patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
+        patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
+        patch("backend_api.routers.models.best_effort_fail") as mock_best_effort_fail,
         patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
     ):
         with _admin_client(
@@ -382,7 +382,7 @@ def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
                 },
             )
     assert r.status_code == 503
-    mock_fail_upload_session.assert_called()
+    assert mock_best_effort_fail.called
 
 
 def test_put_models_updates_metadata(catalog_docs):
@@ -459,8 +459,8 @@ def test_post_projects_upload_session_explainability_failure_not_ready():
             return _Bucket()
 
     with (
-        patch("backend_api.routers.projects.get_upload_session", return_value=upload_session),
-        patch("backend_api.routers.projects.storage.Client", return_value=_StorageClient()),
+        patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
+        patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
         patch("backend_api.routers.projects.validate_cog_bytes_threaded", new_callable=AsyncMock),
         patch(
             "backend_api.routers.projects.band_definitions_for_upload_bytes",
@@ -476,8 +476,8 @@ def test_post_projects_upload_session_explainability_failure_not_ready():
             "backend_api.routers.projects.write_project_explainability_background_parquet",
             side_effect=RuntimeError("bg failed"),
         ),
-        patch("backend_api.routers.projects.mark_upload_session") as mock_mark,
-        patch("backend_api.routers.projects.fail_upload_session") as mock_fail,
+        patch("backend_api.routers.projects.best_effort_mark") as mock_mark,
+        patch("backend_api.routers.projects.best_effort_fail") as mock_fail,
         patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
     ):
         # Keep runtime mark behavior lightweight while allowing call assertions.

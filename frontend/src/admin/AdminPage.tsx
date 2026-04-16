@@ -236,6 +236,38 @@ export function AdminPage() {
     editModel,
   ])
 
+  const uploadViaSession = useCallback(
+    async (args: {
+      token: string
+      file: File
+      projectId?: string
+      setStatus: (value: string) => void
+      uploadingMessage: string
+      finalizingMessage: string
+    }): Promise<string> => {
+      const init = await initUploadSession({
+        token: args.token,
+        filename: args.file.name,
+        contentType: args.file.type || 'image/tiff',
+        sizeBytes: args.file.size,
+        projectId: args.projectId,
+      })
+      if (!init.upload_url) {
+        throw new Error('Upload session did not provide an upload URL.')
+      }
+      args.setStatus(args.uploadingMessage)
+      await uploadFileToSignedUrl({ uploadUrl: init.upload_url, file: args.file })
+      args.setStatus(args.finalizingMessage)
+      await completeUploadSession({
+        token: args.token,
+        uploadId: init.id,
+        sizeBytes: args.file.size,
+      })
+      return init.id
+    },
+    [],
+  )
+
   const persistProjectEdit = useCallback(async () => {
     if (!editingProject || savingProjectEdit) return
     if (!editProjName.trim()) return
@@ -253,25 +285,14 @@ export function AdminPage() {
       let uploadSessionId: string | undefined = undefined
       if (editProjFile) {
         setEditProjUploadStatus('Preparing environmental upload…')
-        const init = await initUploadSession({
+        uploadSessionId = await uploadViaSession({
           token,
-          filename: editProjFile.name,
-          contentType: editProjFile.type || 'image/tiff',
-          sizeBytes: editProjFile.size,
+          file: editProjFile,
           projectId: editingProject.id,
+          setStatus: (v) => setEditProjUploadStatus(v),
+          uploadingMessage: 'Uploading environmental file…',
+          finalizingMessage: 'Finalizing environmental upload…',
         })
-        if (!init.upload_url) {
-          throw new Error('Upload session did not provide an upload URL.')
-        }
-        setEditProjUploadStatus('Uploading environmental file…')
-        await uploadFileToSignedUrl({ uploadUrl: init.upload_url, file: editProjFile })
-        setEditProjUploadStatus('Finalizing environmental upload…')
-        await completeUploadSession({
-          token,
-          uploadId: init.id,
-          sizeBytes: editProjFile.size,
-        })
-        uploadSessionId = init.id
       }
       setEditProjUploadStatus('Saving project…')
       const updated = await updateProject({
@@ -334,6 +355,7 @@ export function AdminPage() {
     editProjFile,
     buildProjectEditSnapshot,
     getIdToken,
+    uploadViaSession,
   ])
 
   const persistLayerEdit = useCallback(async () => {
@@ -717,24 +739,13 @@ export function AdminPage() {
       let uploadSessionId: string | undefined = undefined
       if (projFile) {
         setProjUploadStatus('Preparing upload…')
-        const init = await initUploadSession({
+        uploadSessionId = await uploadViaSession({
           token,
-          filename: projFile.name,
-          contentType: projFile.type || 'image/tiff',
-          sizeBytes: projFile.size,
+          file: projFile,
+          setStatus: (v) => setProjUploadStatus(v),
+          uploadingMessage: 'Uploading environmental file…',
+          finalizingMessage: 'Finalizing upload…',
         })
-        if (!init.upload_url) {
-          throw new Error('Upload session did not provide an upload URL.')
-        }
-        setProjUploadStatus('Uploading environmental file…')
-        await uploadFileToSignedUrl({ uploadUrl: init.upload_url, file: projFile })
-        setProjUploadStatus('Finalizing upload…')
-        await completeUploadSession({
-          token,
-          uploadId: init.id,
-          sizeBytes: projFile.size,
-        })
-        uploadSessionId = init.id
       }
       setProjUploadStatus('Creating project…')
       await createProject({
@@ -809,23 +820,13 @@ export function AdminPage() {
     setCreating(true)
     try {
       setLayerUploadStatus('Preparing upload…')
-      const init = await initUploadSession({
+      const uploadSessionId = await uploadViaSession({
         token,
-        filename: file.name,
-        contentType: file.type || 'image/tiff',
-        sizeBytes: file.size,
+        file,
         projectId: modelProjectId,
-      })
-      if (!init.upload_url) {
-        throw new Error('Upload session did not provide an upload URL.')
-      }
-      setLayerUploadStatus('Uploading suitability file…')
-      await uploadFileToSignedUrl({ uploadUrl: init.upload_url, file })
-      setLayerUploadStatus('Finalizing upload…')
-      await completeUploadSession({
-        token,
-        uploadId: init.id,
-        sizeBytes: file.size,
+        setStatus: (v) => setLayerUploadStatus(v),
+        uploadingMessage: 'Uploading suitability file…',
+        finalizingMessage: 'Finalizing upload…',
       })
       setLayerUploadStatus('Creating layer…')
       await createModel({
@@ -834,7 +835,7 @@ export function AdminPage() {
         species,
         activity,
         file,
-        uploadSessionId: init.id,
+        uploadSessionId,
         metadata,
         serializedModelFile: explainEnabled ? explainModelFile : undefined,
       })
