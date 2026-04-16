@@ -1,5 +1,5 @@
 # Deploy dev Hosting (hsm-dashboard-dev → api-staging) on merge to main after CI.
-# Prod Hosting (hsm-dashboard → api-prod) deploys on GitHub Release — see firebase-hosting-deploy-prod.yml.
+# Prod Hosting (hsm-dashboard → api-prod) deploys on GitHub Release — see deploy-prod.yml (after api-prod).
 
 name: Deploy Firebase Hosting (dev) on merge
 on:
