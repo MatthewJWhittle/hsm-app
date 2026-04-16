@@ -20,7 +20,6 @@ export function useDebouncedProjectAutosave(args: {
   editProjVisibility: 'public' | 'private'
   editProjAllowedUids: string
   editProjBandDefs: EnvironmentalBandDefinition[]
-  editProjFile: File | null
   baselineRef: MutableRefObject<string>
   buildSnapshot: () => string
   persist: () => void | Promise<void>
@@ -34,7 +33,6 @@ export function useDebouncedProjectAutosave(args: {
     editProjVisibility,
     editProjAllowedUids,
     editProjBandDefs,
-    editProjFile,
     baselineRef,
     buildSnapshot,
     persist,
@@ -62,7 +60,6 @@ export function useDebouncedProjectAutosave(args: {
       editProjVisibility,
       editProjAllowedUids,
       editProjBandDefs,
-      editProjFile,
       buildSnapshot,
       persist,
     ],

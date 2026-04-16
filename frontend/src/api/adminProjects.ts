@@ -130,8 +130,6 @@ export async function updateProject(params: {
   status?: 'active' | 'archived'
   visibility?: 'public' | 'private'
   allowedUids?: string | null
-  file?: File | null
-  uploadSessionId?: string
 }): Promise<CatalogProject> {
   const form = new FormData()
   if (params.name !== undefined) form.append('name', params.name)
@@ -139,11 +137,9 @@ export async function updateProject(params: {
   if (params.status !== undefined) form.append('status', params.status)
   if (params.visibility !== undefined) form.append('visibility', params.visibility)
   if (params.allowedUids !== undefined) form.append('allowed_uids', params.allowedUids ?? '')
-  if (params.file) form.append('file', params.file)
-  if (params.uploadSessionId) form.append('upload_session_id', params.uploadSessionId)
 
   const r = await fetch(`${apiBase()}/projects/${encodeURIComponent(params.projectId)}`, {
-    method: 'PUT',
+    method: 'PATCH',
     headers: { Authorization: `Bearer ${params.token}` },
     body: form,
   })
@@ -151,6 +147,25 @@ export async function updateProject(params: {
   const raw: unknown = await r.json()
   const p = parseProject(raw)
   if (p === null) throw new Error('Invalid update project response')
+  return p
+}
+
+export async function replaceProjectEnvironmentalCog(params: {
+  token: string
+  projectId: string
+  uploadSessionId: string
+}): Promise<CatalogProject> {
+  const form = new FormData()
+  form.append('upload_session_id', params.uploadSessionId)
+  const r = await fetch(`${apiBase()}/projects/${encodeURIComponent(params.projectId)}/environmental-cogs`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${params.token}` },
+    body: form,
+  })
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  const p = parseProject(raw)
+  if (p === null) throw new Error('Invalid environmental COG replacement response')
   return p
 }
 

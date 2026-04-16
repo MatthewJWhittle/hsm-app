@@ -1,6 +1,7 @@
 """PATCH /projects/{id}/environmental-band-definitions (admin)."""
 
 import importlib
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -29,6 +30,10 @@ SAMPLE_PROJECT = {
 @pytest.fixture
 def admin_client_proj():
     mock_storage = MagicMock()
+    mock_storage.write_project_driver_cog_from_path.return_value = (
+        "/data/projects/proj-1",
+        "environmental_cog.tif",
+    )
     mock_client = mock_firestore_client_for_documents(
         [],
         project_documents=[SAMPLE_PROJECT],
@@ -195,3 +200,78 @@ def test_post_explainability_background_sample_default_rows(admin_client_proj):
         body = r.json()
         assert body.get("explainability_background_sample_rows") == 256
         assert body.get("explainability_background_generated_at")
+
+
+def test_patch_project_metadata_only_does_not_run_upload_or_derivation(admin_client_proj):
+    c = admin_client_proj
+    with (
+        patch("backend_api.routers.projects.download_upload_session_to_tempfile") as mock_download,
+        patch("backend_api.routers.projects.validate_cog_path_threaded") as mock_validate,
+        patch(
+            "backend_api.routers.projects.write_project_explainability_background_parquet"
+        ) as mock_bg,
+    ):
+        r = c.patch(
+            "/api/projects/proj-1",
+            headers={"Authorization": "Bearer fake.token"},
+            data={"name": "Renamed project"},
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["name"] == "Renamed project"
+        mock_download.assert_not_called()
+        mock_validate.assert_not_called()
+        mock_bg.assert_not_called()
+
+
+def test_patch_project_rejects_upload_fields_with_422(admin_client_proj):
+    c = admin_client_proj
+    r = c.patch(
+        "/api/projects/proj-1",
+        headers={"Authorization": "Bearer fake.token"},
+        data={"name": "Renamed project", "upload_session_id": "upload-1"},
+    )
+    assert r.status_code == 422
+    assert "environmental-cogs" in str(r.json().get("detail", "")).lower()
+
+
+def test_post_replace_environmental_cog_uses_upload_session(admin_client_proj):
+    c = admin_client_proj
+    with (
+        patch(
+            "backend_api.routers.projects.download_upload_session_to_tempfile"
+        ) as mock_download,
+        patch("backend_api.routers.projects.validate_cog_path_threaded") as mock_validate,
+        patch(
+            "backend_api.routers.projects.write_project_explainability_background_parquet"
+        ) as mock_bg,
+        patch(
+            "backend_api.routers.projects.band_definitions_for_upload_path"
+        ) as mock_band_defs,
+        patch("backend_api.routers.projects.best_effort_mark") as mock_mark,
+    ):
+        fake_upload = MagicMock(spec=Path)
+        fake_upload.__str__.return_value = "/tmp/fake-upload.tif"
+        fake_upload.unlink = MagicMock()
+        mock_download.return_value = (fake_upload, None)
+        mock_band_defs.return_value = (
+            [
+                {"index": 0, "name": "a", "label": None},
+                {"index": 1, "name": "b", "label": None},
+            ],
+            [],
+        )
+        mock_mark.return_value = None
+        with patch("backend_api.routers.projects.os.path.getsize", return_value=123):
+            r = c.post(
+                "/api/projects/proj-1/environmental-cogs",
+                headers={"Authorization": "Bearer fake.token"},
+                data={"upload_session_id": "upload-1"},
+            )
+        assert r.status_code == 200, r.text
+        mock_download.assert_called_once()
+        mock_validate.assert_called_once()
+        mock_bg.assert_called_once()
+        fake_upload.unlink.assert_called_once_with(missing_ok=True)
+        body = r.json()
+        assert body["id"] == "proj-1"
