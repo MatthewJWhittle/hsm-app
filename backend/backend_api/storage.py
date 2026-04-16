@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 from pathlib import Path
 from typing import Protocol
 
@@ -34,6 +35,12 @@ class ObjectStorage(Protocol):
     def write_project_driver_cog(self, project_id: str, content: bytes) -> tuple[str, str]:
         """Persist shared environmental COG for a catalog project; return ``(artifact_root, path)``."""
 
+    def write_suitability_cog_from_path(self, model_id: str, source_path: str) -> tuple[str, str]:
+        """Persist suitability COG from a local on-disk path; return catalog path fields."""
+
+    def write_project_driver_cog_from_path(self, project_id: str, source_path: str) -> tuple[str, str]:
+        """Persist project environmental COG from a local on-disk path; return catalog path fields."""
+
     def write_project_artifact(self, project_id: str, relative_name: str, content: bytes) -> None:
         """Write a non-COG file under ``projects/{project_id}/`` (e.g. explainability background Parquet)."""
 
@@ -57,12 +64,30 @@ class LocalObjectStorage:
         # Relative filename matches docs/data-models.md (folder-per-model + fixed name).
         return artifact_root, SUITABILITY_FILENAME
 
+    def write_suitability_cog_from_path(self, model_id: str, source_path: str) -> tuple[str, str]:
+        safe_id = _safe_segment(model_id)
+        dest_dir = self._root / "models" / safe_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = dest_dir / SUITABILITY_FILENAME
+        shutil.copyfile(source_path, dest_path)
+        artifact_root = str(dest_dir)
+        return artifact_root, SUITABILITY_FILENAME
+
     def write_project_driver_cog(self, project_id: str, content: bytes) -> tuple[str, str]:
         safe_id = _safe_segment(project_id)
         dest_dir = self._root / "projects" / safe_id
         dest_dir.mkdir(parents=True, exist_ok=True)
         dest_path = dest_dir / ENVIRONMENTAL_DRIVER_FILENAME
         dest_path.write_bytes(content)
+        artifact_root = str(dest_dir)
+        return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
+
+    def write_project_driver_cog_from_path(self, project_id: str, source_path: str) -> tuple[str, str]:
+        safe_id = _safe_segment(project_id)
+        dest_dir = self._root / "projects" / safe_id
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest_path = dest_dir / ENVIRONMENTAL_DRIVER_FILENAME
+        shutil.copyfile(source_path, dest_path)
         artifact_root = str(dest_dir)
         return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
 
@@ -99,11 +124,27 @@ class GcsObjectStorage:
         artifact_root = f"gs://{self._bucket.name}/{self._prefix}models/{safe_id}"
         return artifact_root, SUITABILITY_FILENAME
 
+    def write_suitability_cog_from_path(self, model_id: str, source_path: str) -> tuple[str, str]:
+        safe_id = _safe_segment(model_id)
+        blob_name = f"{self._prefix}models/{safe_id}/{SUITABILITY_FILENAME}"
+        blob = self._bucket.blob(blob_name)
+        blob.upload_from_filename(source_path, content_type="image/tiff")
+        artifact_root = f"gs://{self._bucket.name}/{self._prefix}models/{safe_id}"
+        return artifact_root, SUITABILITY_FILENAME
+
     def write_project_driver_cog(self, project_id: str, content: bytes) -> tuple[str, str]:
         safe_id = _safe_segment(project_id)
         blob_name = f"{self._prefix}projects/{safe_id}/{ENVIRONMENTAL_DRIVER_FILENAME}"
         blob = self._bucket.blob(blob_name)
         blob.upload_from_string(content, content_type="image/tiff")
+        artifact_root = f"gs://{self._bucket.name}/{self._prefix}projects/{safe_id}"
+        return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
+
+    def write_project_driver_cog_from_path(self, project_id: str, source_path: str) -> tuple[str, str]:
+        safe_id = _safe_segment(project_id)
+        blob_name = f"{self._prefix}projects/{safe_id}/{ENVIRONMENTAL_DRIVER_FILENAME}"
+        blob = self._bucket.blob(blob_name)
+        blob.upload_from_filename(source_path, content_type="image/tiff")
         artifact_root = f"gs://{self._bucket.name}/{self._prefix}projects/{safe_id}"
         return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
 

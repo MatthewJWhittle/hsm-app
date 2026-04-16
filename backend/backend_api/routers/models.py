@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Annotated
@@ -49,6 +50,7 @@ from backend_api.schemas_admin import parse_metadata_multipart_part
 from backend_api.routers.catalog_upload_utils import (
     reload_catalog_threaded,
     validate_cog_bytes_threaded,
+    validate_cog_path_threaded,
 )
 from backend_api.routers.models_openapi import OPENAPI_POST_MODELS, OPENAPI_PUT_MODEL
 from backend_api.settings import Settings
@@ -57,7 +59,7 @@ from backend_api.storage import SERIALIZED_MODEL_FILENAME, ObjectStorage
 from backend_api.upload_session_ingest import (
     best_effort_fail,
     best_effort_mark,
-    download_upload_session_bytes,
+    download_upload_session_to_tempfile,
 )
 from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
 
@@ -354,9 +356,11 @@ async def create_model(
             ),
         )
     upload_session: UploadSession | None = None
+    content: bytes | None = None
+    upload_temp_path = None
     if upload_session_s:
-        content, upload_session = await run_in_threadpool(
-            download_upload_session_bytes,
+        upload_temp_path, upload_session = await run_in_threadpool(
+            download_upload_session_to_tempfile,
             settings,
             upload_session_s,
             purpose="model create",
@@ -372,75 +376,88 @@ async def create_model(
                 context={"field": "file"},
             ),
         )
-    if not content:
-        raise HTTPException(
-            status_code=422,
-            detail=validation_error(
-                "EMPTY_FILE",
-                "file is empty.",
-                context={"field": "file"},
-            ),
-        )
-    if len(content) > settings.max_upload_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
-        )
-
-    upload_session = await run_in_threadpool(
-        best_effort_mark,
-        settings,
-        upload_session,
-        status="validating",
-        stage="validate",
-        context="model-create-validate",
-    )
-    try:
-        await validate_cog_bytes_threaded(content)
-    except CogValidationError as e:
-        await run_in_threadpool(
-            best_effort_fail,
-            settings,
-            upload_session,
-            stage="validate",
-            error_code=e.code,
-            error_message=e.message,
-            context="model-create-cog-validate-failed",
-        )
-        raise _cog_validation_422(e) from e
-
     model_id = str(uuid.uuid4())
-
-    def _write() -> tuple[str, str]:
-        return storage.write_suitability_cog(model_id, content)
-
     try:
-        artifact_root, suitability_cog_path = await run_in_threadpool(_write)
-    except ValueError as e:
-        await run_in_threadpool(
-            best_effort_fail,
+        upload_size = (
+            len(content)
+            if content is not None
+            else os.path.getsize(str(upload_temp_path))
+        )
+        if upload_size <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(
+                    "EMPTY_FILE",
+                    "file is empty.",
+                    context={"field": "file"},
+                ),
+            )
+        if upload_size > settings.max_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
+            )
+
+        upload_session = await run_in_threadpool(
+            best_effort_mark,
             settings,
             upload_session,
-            stage="persist",
-            error_code="STORAGE_LAYOUT_INVALID",
-            error_message=str(e),
-            context="model-create-storage-layout-invalid",
+            status="validating",
+            stage="validate",
+            context="model-create-validate",
         )
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        await run_in_threadpool(
-            best_effort_fail,
-            settings,
-            upload_session,
-            stage="persist",
-            error_code="STORAGE_WRITE_FAILED",
-            error_message=str(e),
-            context="model-create-storage-write-failed",
-        )
-        raise HTTPException(
-            status_code=503,
-            detail=f"could not store file: {e}",
-        ) from e
+        try:
+            if upload_temp_path is not None:
+                await validate_cog_path_threaded(str(upload_temp_path))
+            else:
+                await validate_cog_bytes_threaded(content)
+        except CogValidationError as e:
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                upload_session,
+                stage="validate",
+                error_code=e.code,
+                error_message=e.message,
+                context="model-create-cog-validate-failed",
+            )
+            raise _cog_validation_422(e) from e
+
+        def _write() -> tuple[str, str]:
+            if upload_temp_path is not None:
+                return storage.write_suitability_cog_from_path(model_id, str(upload_temp_path))
+            return storage.write_suitability_cog(model_id, content)
+
+        try:
+            artifact_root, suitability_cog_path = await run_in_threadpool(_write)
+        except ValueError as e:
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                upload_session,
+                stage="persist",
+                error_code="STORAGE_LAYOUT_INVALID",
+                error_message=str(e),
+                context="model-create-storage-layout-invalid",
+            )
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                upload_session,
+                stage="persist",
+                error_code="STORAGE_WRITE_FAILED",
+                error_message=str(e),
+                context="model-create-storage-write-failed",
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=f"could not store file: {e}",
+            ) from e
+    finally:
+        if upload_temp_path is not None:
+            upload_temp_path.unlink(missing_ok=True)
 
     try:
         meta_in = await parse_metadata_multipart_part(form.get("metadata"))

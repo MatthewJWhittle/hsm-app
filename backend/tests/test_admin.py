@@ -264,7 +264,7 @@ def test_post_models_201_creates_model(catalog_docs):
 
 def test_post_models_201_with_upload_session_id(catalog_docs):
     mock_storage = MagicMock()
-    mock_storage.write_suitability_cog.return_value = (
+    mock_storage.write_suitability_cog_from_path.return_value = (
         "/data/models/new-id",
         "suitability_cog.tif",
     )
@@ -288,8 +288,9 @@ def test_post_models_201_with_upload_session_id(catalog_docs):
         def exists(self):
             return True
 
-        def download_as_bytes(self):
-            return b"dummy"
+        def download_to_filename(self, filename: str):
+            with open(filename, "wb") as f:
+                f.write(b"dummy")
 
     class _Bucket:
         def blob(self, _path):
@@ -302,6 +303,7 @@ def test_post_models_201_with_upload_session_id(catalog_docs):
     with (
         patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
         patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
+        patch("backend_api.routers.models.validate_cog_path_threaded", new_callable=AsyncMock),
         patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
         patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
         patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
@@ -326,7 +328,7 @@ def test_post_models_201_with_upload_session_id(catalog_docs):
 
 def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
     mock_storage = MagicMock()
-    mock_storage.write_suitability_cog.side_effect = RuntimeError("disk full")
+    mock_storage.write_suitability_cog_from_path.side_effect = RuntimeError("disk full")
     upload_session = UploadSession(
         id="upload-1",
         project_id="proj-1",
@@ -347,8 +349,9 @@ def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
         def exists(self):
             return True
 
-        def download_as_bytes(self):
-            return b"dummy"
+        def download_to_filename(self, filename: str):
+            with open(filename, "wb") as f:
+                f.write(b"dummy")
 
     class _Bucket:
         def blob(self, _path):
@@ -361,6 +364,7 @@ def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
     with (
         patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
         patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
+        patch("backend_api.routers.models.validate_cog_path_threaded", new_callable=AsyncMock),
         patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
         patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
         patch("backend_api.upload_session_ingest.fail_upload_session") as mock_fail_upload_session,
@@ -423,7 +427,7 @@ def test_put_models_unknown_404(catalog_docs):
 
 def test_post_projects_upload_session_explainability_failure_not_ready():
     mock_storage = MagicMock()
-    mock_storage.write_project_driver_cog.return_value = (
+    mock_storage.write_project_driver_cog_from_path.return_value = (
         "/data/projects/new-id",
         "environmental_cog.tif",
     )
@@ -447,8 +451,9 @@ def test_post_projects_upload_session_explainability_failure_not_ready():
         def exists(self):
             return True
 
-        def download_as_bytes(self):
-            return b"dummy"
+        def download_to_filename(self, filename: str):
+            with open(filename, "wb") as f:
+                f.write(b"dummy")
 
     class _Bucket:
         def blob(self, _path):
@@ -461,9 +466,9 @@ def test_post_projects_upload_session_explainability_failure_not_ready():
     with (
         patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
         patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
-        patch("backend_api.routers.projects.validate_cog_bytes_threaded", new_callable=AsyncMock),
+        patch("backend_api.routers.projects.validate_cog_path_threaded", new_callable=AsyncMock),
         patch(
-            "backend_api.routers.projects.band_definitions_for_upload_bytes",
+            "backend_api.routers.projects.band_definitions_for_upload_path",
             return_value=(
                 [
                     {"index": 0, "name": "a", "label": None},

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import tempfile
+from pathlib import Path
 
 from fastapi import HTTPException
 from google.cloud import storage
@@ -20,10 +22,10 @@ from backend_api.upload_sessions import get_upload_session
 logger = logging.getLogger(__name__)
 
 
-def download_upload_session_bytes(
+def download_upload_session_to_tempfile(
     settings: Settings, upload_session_id: str, *, purpose: str
-) -> tuple[bytes, UploadSession]:
-    """Resolve a ready upload session and download its bytes."""
+) -> tuple[Path, UploadSession]:
+    """Resolve a ready upload session and stream it to a temporary file."""
     session = get_upload_session(settings, upload_session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="upload session not found")
@@ -54,7 +56,10 @@ def download_upload_session_bytes(
                 "upload object not found in storage",
             ),
         )
-    return blob.download_as_bytes(), session
+    with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    blob.download_to_filename(str(tmp_path))
+    return tmp_path, session
 
 
 def best_effort_mark(
