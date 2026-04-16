@@ -30,8 +30,8 @@ class Settings(BaseSettings):
     Local writes use ``LOCAL_STORAGE_ROOT``. GCS uses ``GCS_BUCKET`` and optional
     ``GCS_OBJECT_PREFIX``.
 
-    **OpenAPI / docs:** set ``OPENAPI_ENABLED=false`` in production to disable ``/docs``,
-    ``/redoc``, and ``/openapi.json``.
+    **OpenAPI / docs:** set ``OPENAPI_ENABLED=false`` in production to disable ``/api/docs``,
+    ``/api/redoc``, and ``/api/openapi.json``.
 
     **Uploads:** ``MAX_UPLOAD_BYTES`` caps admin suitability COG uploads (default ~100 MB).
     ``MAX_ENVIRONMENTAL_UPLOAD_BYTES`` caps project environmental (driver) COG uploads

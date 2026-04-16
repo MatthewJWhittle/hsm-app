@@ -47,7 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "title": "HSM Visualiser API",
         "description": (
             "API for Habitat Suitability Model Visualisation.\n\n"
-            "**Docs:** `GET /openapi.json`, Swagger UI at `/docs`, ReDoc at `/redoc` "
+            "**Docs:** `GET /api/openapi.json`, Swagger UI at `/api/docs`, ReDoc at `/api/redoc` "
             "(unless `OPENAPI_ENABLED=false`).\n\n"
             "**Admin writes** (`POST`/`PUT` on `/api/models`, `/api/projects`, …): "
             "`Authorization: Bearer` with a Firebase **ID** token that includes the **`admin: true`** "
@@ -61,10 +61,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "import custom modules fail at **`GET …/point`** with **`EXPLAINABILITY_PICKLE_IMPORT`**. "
             "See repository **`docs/serialized-model-requirements.md`**.\n\n"
             "Long-form guide for modellers and scripts: repository **`docs/api-integration.md`**.\n\n"
-            "Set `OPENAPI_ENABLED=false` in production to disable `/docs` and OpenAPI JSON."
+            "Set `OPENAPI_ENABLED=false` in production to disable `/api/docs` and OpenAPI JSON."
         ),
         "version": "0.1.0",
         "lifespan": lifespan,
+        "openapi_url": "/api/openapi.json",
+        "docs_url": "/api/docs",
+        "redoc_url": "/api/redoc",
     }
     if not settings.openapi_enabled:
         app_kwargs["openapi_url"] = None
