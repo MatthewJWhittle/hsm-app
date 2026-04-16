@@ -60,6 +60,7 @@ from backend_api.upload_session_ingest import (
     best_effort_fail,
     best_effort_mark,
     download_upload_session_to_tempfile,
+    write_upload_bytes_to_tempfile,
 )
 from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
 
@@ -356,7 +357,6 @@ async def create_model(
             ),
         )
     upload_session: UploadSession | None = None
-    content: bytes | None = None
     upload_temp_path = None
     if upload_session_s:
         upload_temp_path, upload_session = await run_in_threadpool(
@@ -367,6 +367,23 @@ async def create_model(
         )
     elif isinstance(file_part, StarletteUploadFile):
         content = await file_part.read()
+        if not content:
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(
+                    "EMPTY_FILE",
+                    "file is empty.",
+                    context={"field": "file"},
+                ),
+            )
+        if len(content) > settings.max_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
+            )
+        upload_temp_path = await run_in_threadpool(
+            write_upload_bytes_to_tempfile, content
+        )
     else:
         raise HTTPException(
             status_code=422,
@@ -378,11 +395,7 @@ async def create_model(
         )
     model_id = str(uuid.uuid4())
     try:
-        upload_size = (
-            len(content)
-            if content is not None
-            else os.path.getsize(str(upload_temp_path))
-        )
+        upload_size = os.path.getsize(str(upload_temp_path))
         if upload_size <= 0:
             raise HTTPException(
                 status_code=422,
@@ -407,10 +420,7 @@ async def create_model(
             context="model-create-validate",
         )
         try:
-            if upload_temp_path is not None:
-                await validate_cog_path_threaded(str(upload_temp_path))
-            else:
-                await validate_cog_bytes_threaded(content)
+            await validate_cog_path_threaded(str(upload_temp_path))
         except CogValidationError as e:
             await run_in_threadpool(
                 best_effort_fail,
@@ -424,9 +434,7 @@ async def create_model(
             raise _cog_validation_422(e) from e
 
         def _write() -> tuple[str, str]:
-            if upload_temp_path is not None:
-                return storage.write_suitability_cog_from_path(model_id, str(upload_temp_path))
-            return storage.write_suitability_cog(model_id, content)
+            return storage.write_suitability_cog_from_path(model_id, str(upload_temp_path))
 
         try:
             artifact_root, suitability_cog_path = await run_in_threadpool(_write)

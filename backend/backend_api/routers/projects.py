@@ -31,7 +31,6 @@ from backend_api.deps.catalog import get_object_storage, require_catalog_ready
 from backend_api.env_background_sample import write_project_explainability_background_parquet
 from backend_api.env_cog_bands import (
     apply_band_label_updates,
-    band_definitions_for_upload_bytes,
     band_definitions_for_upload_path,
     count_bands_in_path,
     default_band_definitions_from_path,
@@ -45,7 +44,6 @@ from backend_api.deps.visibility_models import (
 )
 from backend_api.routers.catalog_upload_utils import (
     reload_catalog_threaded,
-    validate_cog_bytes_threaded,
     validate_cog_path_threaded,
 )
 from backend_api.routers.project_visibility_parse import (
@@ -67,6 +65,7 @@ from backend_api.upload_session_ingest import (
     best_effort_fail,
     best_effort_mark,
     download_upload_session_to_tempfile,
+    write_upload_bytes_to_tempfile,
 )
 
 router = APIRouter()
@@ -461,7 +460,6 @@ async def create_project(
             "provide either multipart file or upload_session_id, not both",
         )
     uploaded_session = None
-    content: bytes | None = None
     upload_temp_path: Path | None = None
     if upload_session_id:
         upload_temp_path, uploaded_session = await run_in_threadpool(
@@ -472,16 +470,24 @@ async def create_project(
         )
     elif file is not None:
         content = await file.read()
-    else:
-        content = None
+        if not content:
+            raise _proj_422("EMPTY_FILE", "empty file")
+        if len(content) > settings.max_environmental_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=validation_error(
+                    "UPLOAD_TOO_LARGE",
+                    f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
+                    context={"max_bytes": settings.max_environmental_upload_bytes},
+                ),
+            )
+        upload_temp_path = await run_in_threadpool(
+            write_upload_bytes_to_tempfile, content
+        )
 
     try:
-        if content is not None or upload_temp_path is not None:
-            upload_size = (
-                len(content)
-                if content is not None
-                else os.path.getsize(str(upload_temp_path))
-            )
+        if upload_temp_path is not None:
+            upload_size = os.path.getsize(str(upload_temp_path))
             if upload_size <= 0:
                 raise _proj_422("EMPTY_FILE", "empty file")
             if upload_size > settings.max_environmental_upload_bytes:
@@ -502,10 +508,7 @@ async def create_project(
                 context="project-create-validate",
             )
             try:
-                if upload_temp_path is not None:
-                    await validate_cog_path_threaded(str(upload_temp_path))
-                else:
-                    await validate_cog_bytes_threaded(content)
+                await validate_cog_path_threaded(str(upload_temp_path))
             except CogValidationError as e:
                 await run_in_threadpool(
                     best_effort_fail,
@@ -522,11 +525,9 @@ async def create_project(
                 ) from e
 
             def _write() -> tuple[str, str]:
-                if upload_temp_path is not None:
-                    return storage.write_project_driver_cog_from_path(
-                        project_id, str(upload_temp_path)
-                    )
-                return storage.write_project_driver_cog(project_id, content)
+                return storage.write_project_driver_cog_from_path(
+                    project_id, str(upload_temp_path)
+                )
 
             try:
                 artifact_root, cog_path = await run_in_threadpool(_write)
@@ -567,16 +568,8 @@ async def create_project(
             try:
 
                 def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
-                    if upload_temp_path is not None:
-                        return band_definitions_for_upload_path(
-                            str(upload_temp_path),
-                            environmental_band_definitions,
-                            infer_band_definitions=_infer_band_definitions_from_form(
-                                infer_band_definitions
-                            ),
-                        )
-                    return band_definitions_for_upload_bytes(
-                        content,
+                    return band_definitions_for_upload_path(
+                        str(upload_temp_path),
                         environmental_band_definitions,
                         infer_band_definitions=_infer_band_definitions_from_form(
                             infer_band_definitions
@@ -761,7 +754,6 @@ async def update_project(
     inference_notes: list[str] | None = None
 
     uploaded_session: UploadSession | None = None
-    content: bytes | None = None
     upload_temp_path: Path | None = None
     if file is not None and upload_session_id:
         raise _proj_422(
@@ -777,16 +769,24 @@ async def update_project(
         )
     elif file is not None:
         content = await file.read()
-    else:
-        content = None
+        if not content:
+            raise _proj_422("EMPTY_FILE", "empty file")
+        if len(content) > settings.max_environmental_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=validation_error(
+                    "UPLOAD_TOO_LARGE",
+                    f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
+                    context={"max_bytes": settings.max_environmental_upload_bytes},
+                ),
+            )
+        upload_temp_path = await run_in_threadpool(
+            write_upload_bytes_to_tempfile, content
+        )
 
     try:
-        if content is not None or upload_temp_path is not None:
-            upload_size = (
-                len(content)
-                if content is not None
-                else os.path.getsize(str(upload_temp_path))
-            )
+        if upload_temp_path is not None:
+            upload_size = os.path.getsize(str(upload_temp_path))
             if upload_size <= 0:
                 raise _proj_422("EMPTY_FILE", "empty file")
             if upload_size > settings.max_environmental_upload_bytes:
@@ -807,10 +807,7 @@ async def update_project(
                 context="project-update-validate",
             )
             try:
-                if upload_temp_path is not None:
-                    await validate_cog_path_threaded(str(upload_temp_path))
-                else:
-                    await validate_cog_bytes_threaded(content)
+                await validate_cog_path_threaded(str(upload_temp_path))
             except CogValidationError as e:
                 await run_in_threadpool(
                     best_effort_fail,
@@ -827,11 +824,9 @@ async def update_project(
                 ) from e
 
             def _write() -> tuple[str, str]:
-                if upload_temp_path is not None:
-                    return storage.write_project_driver_cog_from_path(
-                        project_id, str(upload_temp_path)
-                    )
-                return storage.write_project_driver_cog(project_id, content)
+                return storage.write_project_driver_cog_from_path(
+                    project_id, str(upload_temp_path)
+                )
 
             try:
                 artifact_root, cog_path = await run_in_threadpool(_write)
@@ -872,16 +867,8 @@ async def update_project(
             try:
 
                 def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
-                    if upload_temp_path is not None:
-                        return band_definitions_for_upload_path(
-                            str(upload_temp_path),
-                            environmental_band_definitions,
-                            infer_band_definitions=_infer_band_definitions_from_form(
-                                infer_band_definitions
-                            ),
-                        )
-                    return band_definitions_for_upload_bytes(
-                        content,
+                    return band_definitions_for_upload_path(
+                        str(upload_temp_path),
                         environmental_band_definitions,
                         infer_band_definitions=_infer_band_definitions_from_form(
                             infer_band_definitions

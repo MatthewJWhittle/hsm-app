@@ -22,6 +22,14 @@ from backend_api.upload_sessions import get_upload_session
 logger = logging.getLogger(__name__)
 
 
+def write_upload_bytes_to_tempfile(content: bytes, *, suffix: str = ".tif") -> Path:
+    """Persist in-memory upload bytes to a temp file and return path."""
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        tmp.write(content)
+    return tmp_path
+
+
 def download_upload_session_to_tempfile(
     settings: Settings, upload_session_id: str, *, purpose: str
 ) -> tuple[Path, UploadSession]:

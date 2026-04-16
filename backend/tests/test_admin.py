@@ -70,6 +70,14 @@ def _admin_client(
             "backend_api.routers.catalog_upload_utils.validate_suitability_cog_bytes",
             return_value=None,
         ),
+        patch(
+            "backend_api.routers.models.validate_cog_path_threaded",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "backend_api.routers.projects.validate_cog_path_threaded",
+            new_callable=AsyncMock,
+        ),
         patch("backend_api.routers.models.upsert_model"),
         patch(
             "backend_api.storage.build_object_storage",
@@ -86,6 +94,10 @@ def _admin_client(
 def test_post_models_requires_admin_claim():
     mock_storage = MagicMock()
     mock_storage.write_suitability_cog.return_value = ("/data/models/x", "suitability_cog.tif")
+    mock_storage.write_suitability_cog_from_path.return_value = (
+        "/data/models/x",
+        "suitability_cog.tif",
+    )
     docs = [
         {
             "id": "x",
@@ -130,6 +142,10 @@ def test_post_models_requires_admin_claim():
 def test_post_models_with_explainability_uploads(catalog_docs):
     mock_storage = MagicMock()
     mock_storage.write_suitability_cog.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
+    mock_storage.write_suitability_cog_from_path.return_value = (
         "/data/models/new-id",
         "suitability_cog.tif",
     )
@@ -178,6 +194,10 @@ def test_post_models_unknown_feature_band_names_400(catalog_docs):
         "/data/models/new-id",
         "suitability_cog.tif",
     )
+    mock_storage.write_suitability_cog_from_path.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
     with _admin_client(
         catalog_docs,
         mock_storage,
@@ -209,6 +229,10 @@ def test_post_models_duplicate_409(catalog_docs):
         "/data/models/new-id",
         "suitability_cog.tif",
     )
+    mock_storage.write_suitability_cog_from_path.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
     with _admin_client(
         catalog_docs,
         mock_storage,
@@ -236,6 +260,10 @@ def test_post_models_201_creates_model(catalog_docs):
         "/data/models/new-id",
         "suitability_cog.tif",
     )
+    mock_storage.write_suitability_cog_from_path.return_value = (
+        "/data/models/new-id",
+        "suitability_cog.tif",
+    )
     with _admin_client(
         catalog_docs,
         mock_storage,
@@ -259,7 +287,7 @@ def test_post_models_201_creates_model(catalog_docs):
     assert data["metadata"]["card"]["title"] == "m1"
     assert data["project_id"] == "proj-1"
     assert "id" in data
-    mock_storage.write_suitability_cog.assert_called_once()
+    mock_storage.write_suitability_cog_from_path.assert_called_once()
 
 
 def test_post_models_201_with_upload_session_id(catalog_docs):
@@ -392,6 +420,10 @@ def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
 def test_put_models_updates_metadata(catalog_docs):
     mock_storage = MagicMock()
     mock_storage.write_suitability_cog.return_value = (
+        "/data/models/existing-id",
+        "suitability_cog.tif",
+    )
+    mock_storage.write_suitability_cog_from_path.return_value = (
         "/data/models/existing-id",
         "suitability_cog.tif",
     )
