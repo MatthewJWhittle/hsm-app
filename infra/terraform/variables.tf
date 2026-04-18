@@ -230,3 +230,15 @@ variable "cors_origin_regex_prod" {
   default     = ""
 }
 
+variable "cloud_tasks_queue_name" {
+  description = "Cloud Tasks queue id for background jobs (e.g. environmental COG replace worker)."
+  type        = string
+  default     = "hsm-jobs"
+}
+
+variable "cloud_tasks_queue_location" {
+  description = "Region for the Cloud Tasks queue (use the same region as Cloud Run when possible)."
+  type        = string
+  default     = "us-central1"
+}
+

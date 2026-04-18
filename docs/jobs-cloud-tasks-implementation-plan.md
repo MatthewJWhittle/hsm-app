@@ -67,10 +67,12 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 ---
 
-## Phase 5 — Infrastructure (Terraform / gcloud)
+## Phase 5 — Infrastructure (Terraform / gcloud) (**complete** in repo)
 
-- Cloud Tasks queue(s); Tasks SA + `run.invoker`; API SA + task creator role.
-- Cloud Run timeout/env for worker path (`JOB_WORKER_URL`, `CLOUD_TASKS_*`, secrets).
+- [x] Enable **`cloudtasks.googleapis.com`** alongside existing project services.
+- [x] **`google_cloud_tasks_queue`** — id `var.cloud_tasks_queue_name` (default `hsm-jobs`), location `var.cloud_tasks_queue_location` (default `us-central1`).
+- [x] **IAM** — runtime API SAs (`api_staging`, `api_prod`) → `roles/cloudtasks.enqueuer`; same SAs → `roles/run.invoker` on their Cloud Run service (OIDC self-call for the worker URL).
+- [ ] **Deploy-time env** (outside Terraform / CI): set `JOB_QUEUE_BACKEND=cloud_tasks`, `CLOUD_TASKS_QUEUE_PATH`, `CLOUD_TASKS_LOCATION`, `JOB_WORKER_URL` (full `POST` URL), `CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL`, `INTERNAL_JOB_SECRET` or rely on OIDC only, and raise **`api_timeout_seconds`** if the worker must run longer than the default (see Cloud Run limits).
 
 ---
 

@@ -37,3 +37,13 @@ output "gcs_bucket_name" {
   description = "Model artifacts bucket name."
   value       = local.gcs_bucket_name
 }
+
+output "cloud_tasks_jobs_queue_name" {
+  description = "Cloud Tasks queue id for background jobs."
+  value       = google_cloud_tasks_queue.jobs.name
+}
+
+output "cloud_tasks_jobs_queue_id" {
+  description = "Full resource name of the Cloud Tasks jobs queue."
+  value       = google_cloud_tasks_queue.jobs.id
+}

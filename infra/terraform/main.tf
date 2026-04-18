@@ -2,6 +2,7 @@ locals {
   required_services = toset([
     "artifactregistry.googleapis.com",
     "billingbudgets.googleapis.com",
+    "cloudtasks.googleapis.com",
     "firestore.googleapis.com",
     "iamcredentials.googleapis.com",
     "run.googleapis.com",
@@ -181,6 +182,45 @@ resource "google_service_account_iam_member" "api_prod_token_creator_self" {
   service_account_id = google_service_account.api_prod.name
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = "serviceAccount:${google_service_account.api_prod.email}"
+}
+
+# Background jobs (Cloud Tasks → Cloud Run worker). Runtime SAs enqueue tasks and
+# call the API as OIDC identity; self run.invoker allows that OIDC token to invoke
+# the same Cloud Run service that enqueued the task.
+resource "google_cloud_tasks_queue" "jobs" {
+  project  = var.project_id
+  name     = var.cloud_tasks_queue_name
+  location = var.cloud_tasks_queue_location
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_project_iam_member" "api_staging_cloudtasks_enqueuer" {
+  project = var.project_id
+  role    = "roles/cloudtasks.enqueuer"
+  member  = "serviceAccount:${google_service_account.api_staging.email}"
+}
+
+resource "google_project_iam_member" "api_prod_cloudtasks_enqueuer" {
+  project = var.project_id
+  role    = "roles/cloudtasks.enqueuer"
+  member  = "serviceAccount:${google_service_account.api_prod.email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "api_staging_run_invoker_self" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.api_staging.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.api_staging.email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "api_prod_run_invoker_self" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.api_prod.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.api_prod.email}"
 }
 
 resource "google_storage_bucket_iam_member" "titiler_storage_viewer" {
