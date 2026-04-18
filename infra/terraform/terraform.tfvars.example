@@ -40,3 +40,10 @@ cors_origin_regex_staging = "^https://hsm-dashboard--pr[0-9]+-[a-z0-9-]+\\.web\\
 cors_origins_prod    = "https://hsm-dashboard.web.app,https://hsm-dashboard.firebaseapp.com"
 cors_origin_regex_prod = ""
 
+# Background jobs (optional): after first `terraform apply`, copy `api_staging_uri` / `api_prod_uri` into these
+# (HTTPS origin, no trailing slash), then set *_job_queue_backend_* to "cloud_tasks" or "direct" and apply again.
+# api_staging_service_public_uri = "https://api-staging-xxxxx-uc.a.run.app"
+# api_prod_service_public_uri    = "https://api-prod-xxxxx-uc.a.run.app"
+# api_job_queue_backend_staging  = "cloud_tasks"
+# api_job_queue_backend_prod     = "disabled"
+

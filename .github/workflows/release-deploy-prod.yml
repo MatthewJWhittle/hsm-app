@@ -1,4 +1,5 @@
-# Production release: one workflow - Cloud Run api-prod, then prod Firebase Hosting (same tag).
+# Production release: Cloud Run api-prod image, then prod Firebase Hosting (same tag).
+# Cloud Run env for the API is Terraform-managed (`infra/terraform/`); this workflow only updates the image.
 
 name: Release deploy (prod API + Hosting)
 

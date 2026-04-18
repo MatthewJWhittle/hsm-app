@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from backend_api.firebase_admin_app import init_firebase_admin
+from backend_api.request_timeout_middleware import RequestTimeoutMiddleware
 from backend_api.routers import auth, internal_jobs, jobs_admin, models, projects, root, uploads
 from backend_api.catalog_service import build_catalog_service
 from backend_api.settings import Settings
@@ -76,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(**app_kwargs)
 
+    app.add_middleware(RequestTimeoutMiddleware, settings=settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_cors_allow_origins(settings),

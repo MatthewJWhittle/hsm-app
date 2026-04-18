@@ -29,9 +29,9 @@ Create `hsm-dashboard-dev` once (`firebase hosting:sites:create` or Firebase con
 ## 2) Core rules
 
 - **Build once, promote forward:** build one image per commit and deploy by immutable tag or digest.
-- **Clear ownership split:** Terraform manages long-lived infra shape; GitHub Actions manages app rollout.
+- **Clear ownership split:** **Terraform** (`infra/terraform/`) owns long-lived infra: APIs, queues, IAM, budgets, and **stable Cloud Run configuration** (CORS, GCS, Firebase, TiTiler URL, **background job queue env**, OIDC-related vars). **GitHub Actions** deploy workflows **only update the container image** on `api-staging` / `api-prod` (`deploy-cloudrun` with `image`); they do not replace the full service spec, so Terraform-defined env persists across image rollouts.
 - **Separate service config:** keep staging and prod as separate services to keep config boundaries clear.
-- **Revision-safe deploys:** Cloud Run env vars are revision-bound, so each deploy sets the complete intended env set.
+- **Revision-safe deploys:** Changing **env or scaling** is a **Terraform apply** (or an explicit out-of-band change tracked in Terraform). Routine **prod/staging image** deploys do not need a full env re-spec.
 - **Low-ops rollouts:** use Cloud Run built-in revision tags, traffic migration, and rollback.
 - **Cost control by default:** `min-instances=0`, low `max-instances`, request-based billing, budgets + alerts.
 
@@ -47,6 +47,7 @@ Create `hsm-dashboard-dev` once (`firebase hosting:sites:create` or Firebase con
   - `max-instances=1` or `2` initially
   - request-based billing
   - billing budget alerts
+7. **Background jobs (optional):** After Terraform has created `api-staging` / `api-prod`, copy each service’s HTTPS origin from **`terraform output api_staging_uri`** / **`api_prod_uri`** into **`api_staging_service_public_uri`** / **`api_prod_service_public_uri`** in `terraform.tfvars`, set **`api_job_queue_backend_*`** to `cloud_tasks` when ready, and **apply again** (Terraform cannot set `JOB_WORKER_URL` from the same resource’s URL in one shot — see **`infra/terraform/README.md`**). Do not put queue URLs or job backend mode in GitHub Actions for normal deploys.
 
 ## 4) PR / development validation flow (CI)
 
@@ -96,6 +97,8 @@ Use GitHub Actions for staging rollouts and prod releases:
 - Workflow B (`deploy-dev-hosting.yml`): on `main` CI success, build frontend and deploy **dev** Hosting (`hsm-dashboard-dev`)
 - Workflow C (`release-deploy-prod.yml`): on GitHub release publication, one job on the tagged commit — deploy **`api-prod`**, then **prod** Hosting (`hsm-dashboard`) in sequence
 
+These API deploy steps **only change the image**. Job queue settings, `JOB_WORKER_URL`, OIDC audience, CORS, and similar stay in Terraform unless you change them there.
+
 Authentication uses GitHub OIDC + Workload Identity Federation (`google-github-actions/auth`).
 
 Required GitHub Actions repository variables for backend deploy workflows:
@@ -133,8 +136,10 @@ Signed URL IAM requirement:
 1. Merge to `main` to produce and validate a staging deployment.
 2. Run smoke/integration checks on staging.
 3. Create/publish a GitHub release tag for the validated commit.
-4. GitHub Actions runs **`release-deploy-prod.yml`** once: deploy **`api-prod`**, then **prod Hosting** (`hsm-dashboard`) in the same job (same tag).
+4. GitHub Actions runs **`release-deploy-prod.yml`** once: deploy **`api-prod`** **image**, then **prod Hosting** (`hsm-dashboard`) in the same job (same tag).
 5. If needed, roll back by redeploying a prior known-good digest.
+
+**Jobs / queue configuration:** enable or change `JOB_QUEUE_BACKEND`, `JOB_WORKER_URL`, etc. via **Terraform**, not this workflow — see **`infra/terraform/README.md`** and Phase 8 in [`jobs-cloud-tasks-implementation-plan.md`](jobs-cloud-tasks-implementation-plan.md).
 
 Promotion path:
 
@@ -143,9 +148,9 @@ Promotion path:
 ## 6) Configuration and secret management
 
 - Keep staging and prod secrets separate.
-- Store sensitive values in Secret Manager; inject at deploy.
-- Set full env var sets per revision deploy (do not rely on partial mutation).
-- Keep runtime endpoints explicit, including the shared TiTiler URL.
+- Store sensitive values in Secret Manager; reference them from **Terraform** for Cloud Run where applicable (e.g. Firebase web API key secret), or follow your existing pattern for inject-at-deploy secrets.
+- **Stable API configuration** (env vars on `api-staging` / `api-prod`, including jobs): define in **`infra/terraform`** / `terraform.tfvars`. **Do not** duplicate job queue URLs or `JOB_QUEUE_BACKEND` in GitHub Actions variables for routine image rollouts.
+- Keep runtime endpoints explicit in Terraform, including the shared TiTiler URL and (when jobs are enabled) the two-step public origin variables for `JOB_WORKER_URL`.
 
 ## 7) Scope boundaries
 

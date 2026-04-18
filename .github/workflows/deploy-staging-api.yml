@@ -1,3 +1,4 @@
+# Rolls out the API container image only. Cloud Run environment (jobs queue, OIDC, CORS, Firebase, GCS) is owned by Terraform in `infra/terraform/`.
 name: Deploy staging API
 
 on:

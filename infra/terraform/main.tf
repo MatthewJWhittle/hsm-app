@@ -18,6 +18,12 @@ locals {
   }
 
   gcs_bucket_name = var.create_gcs_bucket ? google_storage_bucket.model_artifacts[0].name : var.gcs_bucket_name
+
+  # Public HTTPS origins (no trailing slash). Set from `terraform output api_staging_uri` / `api_prod_uri`
+  # after first apply — Terraform cannot reference a Cloud Run service's own .uri inside the same resource
+  # without a dependency cycle (see infra/terraform/README.md).
+  api_staging_public_trim = trimspace(var.api_staging_service_public_uri)
+  api_prod_public_trim    = trimspace(var.api_prod_service_public_uri)
 }
 
 data "google_project" "current" {
@@ -322,6 +328,38 @@ resource "google_cloud_run_v2_service" "api_staging" {
         name  = "FIREBASE_PROJECT_ID"
         value = var.firebase_project_id
       }
+
+      # Background jobs: infra-owned (queue + IAM + env). CI deploy only swaps the container image.
+      env {
+        name  = "JOB_QUEUE_BACKEND"
+        value = var.api_job_queue_backend_staging
+      }
+      env {
+        name  = "CLOUD_TASKS_LOCATION"
+        value = var.cloud_tasks_queue_location
+      }
+      env {
+        name  = "CLOUD_TASKS_QUEUE_ID"
+        value = var.cloud_tasks_queue_name
+      }
+      env {
+        name  = "CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL"
+        value = google_service_account.api_staging.email
+      }
+      dynamic "env" {
+        for_each = length(local.api_staging_public_trim) > 0 ? [1] : []
+        content {
+          name  = "JOB_WORKER_URL"
+          value = "${local.api_staging_public_trim}/api/internal/jobs/run"
+        }
+      }
+      dynamic "env" {
+        for_each = length(local.api_staging_public_trim) > 0 ? [1] : []
+        content {
+          name  = "CLOUD_TASKS_OIDC_AUDIENCE"
+          value = local.api_staging_public_trim
+        }
+      }
     }
   }
 
@@ -422,6 +460,37 @@ resource "google_cloud_run_v2_service" "api_prod" {
         name  = "FIREBASE_PROJECT_ID"
         value = var.firebase_project_id
       }
+
+      env {
+        name  = "JOB_QUEUE_BACKEND"
+        value = var.api_job_queue_backend_prod
+      }
+      env {
+        name  = "CLOUD_TASKS_LOCATION"
+        value = var.cloud_tasks_queue_location
+      }
+      env {
+        name  = "CLOUD_TASKS_QUEUE_ID"
+        value = var.cloud_tasks_queue_name
+      }
+      env {
+        name  = "CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL"
+        value = google_service_account.api_prod.email
+      }
+      dynamic "env" {
+        for_each = length(local.api_prod_public_trim) > 0 ? [1] : []
+        content {
+          name  = "JOB_WORKER_URL"
+          value = "${local.api_prod_public_trim}/api/internal/jobs/run"
+        }
+      }
+      dynamic "env" {
+        for_each = length(local.api_prod_public_trim) > 0 ? [1] : []
+        content {
+          name  = "CLOUD_TASKS_OIDC_AUDIENCE"
+          value = local.api_prod_public_trim
+        }
+      }
     }
   }
 
@@ -452,7 +521,7 @@ resource "google_cloud_run_v2_service" "titiler" {
 
   template {
     service_account = google_service_account.titiler.email
-    timeout         = "${var.api_timeout_seconds}s"
+    timeout         = "${var.titiler_timeout_seconds}s"
 
     scaling {
       min_instance_count = var.titiler_min_instance_count
@@ -524,4 +593,18 @@ resource "google_cloud_run_v2_service_iam_member" "titiler_invoker" {
   name     = google_cloud_run_v2_service.titiler.name
   role     = "roles/run.invoker"
   member   = "allUsers"
+}
+
+check "staging_jobs_need_public_api_uri" {
+  assert {
+    condition     = !contains(["cloud_tasks", "direct"], var.api_job_queue_backend_staging) || length(local.api_staging_public_trim) > 0
+    error_message = "api_job_queue_backend_staging is ${var.api_job_queue_backend_staging}: set api_staging_service_public_uri to the staging API HTTPS origin (no trailing slash), e.g. from terraform output api_staging_uri after the first apply."
+  }
+}
+
+check "prod_jobs_need_public_api_uri" {
+  assert {
+    condition     = !contains(["cloud_tasks", "direct"], var.api_job_queue_backend_prod) || length(local.api_prod_public_trim) > 0
+    error_message = "api_job_queue_backend_prod is ${var.api_job_queue_backend_prod}: set api_prod_service_public_uri to the production API HTTPS origin (no trailing slash), e.g. from terraform output api_prod_uri."
+  }
 }

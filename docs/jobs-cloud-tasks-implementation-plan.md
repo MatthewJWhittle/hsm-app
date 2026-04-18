@@ -72,7 +72,7 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 - [x] Enable **`cloudtasks.googleapis.com`** alongside existing project services.
 - [x] **`google_cloud_tasks_queue`** — id `var.cloud_tasks_queue_name` (default `hsm-jobs`), location `var.cloud_tasks_queue_location` (default `us-central1`).
 - [x] **IAM** — runtime API SAs (`api_staging`, `api_prod`) → `roles/cloudtasks.enqueuer`; same SAs → `roles/run.invoker` on their Cloud Run service (OIDC self-call for the worker URL).
-- [ ] **Deploy-time env** (outside Terraform / CI): set `JOB_QUEUE_BACKEND=cloud_tasks`, **`CLOUD_TASKS_QUEUE_ID`** (match Terraform queue name, default `hsm-jobs`), `CLOUD_TASKS_LOCATION`, **`JOB_WORKER_URL`** (full `POST` URL to `/api/internal/jobs/run`), **`CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL`**. Prefer **OIDC-only** worker auth: **omit `INTERNAL_JOB_SECRET`** in production — if set, the worker accepts the secret and **does not** verify OIDC for that request. Raise **Cloud Run request timeout** if the worker must run longer than the default for large COGs.
+- [x] **Cloud Run job env in Terraform** (`infra/terraform/`): `JOB_QUEUE_BACKEND`, `CLOUD_TASKS_*`, `CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL`, and (after the two-step URI flow) `JOB_WORKER_URL` + `CLOUD_TASKS_OIDC_AUDIENCE`. **CI deploy workflows only update the image** — do not set these in GitHub Actions for routine rollouts. Prefer **OIDC-only** worker auth: **omit `INTERNAL_JOB_SECRET`** in production — if set, the worker accepts the secret and **does not** verify OIDC for that request. Raise **`api_timeout_seconds`** in `terraform.tfvars` when enabling **`cloud_tasks`** / **`direct`** if worker jobs can exceed the default (same service serves the worker route).
 
 ---
 
@@ -93,10 +93,10 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 ## Phase 8 — Rollout (checklist)
 
 1. [x] Ship job storage, worker, Terraform queue/IAM scaffolding, and admin UI polling; **`JOB_QUEUE_BACKEND`** defaults keep **synchronous** behavior until explicitly configured.
-2. [ ] **Apply Terraform** (or equivalent) so `cloudtasks.googleapis.com`, the **jobs queue**, and **IAM** (`cloudtasks.enqueuer`, self **`run.invoker`**) match the target project.
-3. [ ] **Configure Cloud Run** (staging): `JOB_QUEUE_BACKEND=cloud_tasks`, `CLOUD_TASKS_QUEUE_ID` (e.g. `hsm-jobs`), `CLOUD_TASKS_LOCATION`, full **`JOB_WORKER_URL`**, **`CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL`**, **`CLOUD_TASKS_OIDC_AUDIENCE`** if it differs from the worker URL, **no `INTERNAL_JOB_SECRET`** unless you intentionally use secret auth, and a **request timeout** suited to large COGs.
+2. [ ] **Apply Terraform** so `cloudtasks.googleapis.com`, the **jobs queue**, and **IAM** (`cloudtasks.enqueuer`, self **`run.invoker`**) match the target project. Base API env (including job-related keys with `JOB_QUEUE_BACKEND=disabled` if you are not ready for async yet) should live in **`terraform.tfvars`** / variables — not in CI.
+3. [ ] **Wire public API origins for jobs** (Terraform cannot inject a service’s own URL in one apply): run **`terraform apply`**, read outputs **`api_staging_uri`** / **`api_prod_uri`**, set **`api_staging_service_public_uri`** / **`api_prod_service_public_uri`** in `terraform.tfvars` (HTTPS origin, no trailing slash), set **`api_job_queue_backend_*`** to `cloud_tasks` (or `direct` for dev-only), **`terraform apply`** again. That adds **`JOB_WORKER_URL`** and **`CLOUD_TASKS_OIDC_AUDIENCE`**; keep **`INTERNAL_JOB_SECRET`** unset in production unless you intentionally use secret auth. See **`infra/terraform/README.md`**.
 4. [ ] **Soak** staging with a large environmental COG (upload-session path returns **202**; confirm job + catalog update end-to-end).
-5. [ ] **Production** after staging sign-off; multipart replace remains synchronous by design.
+5. [ ] **Production** after staging sign-off; multipart replace remains synchronous by design. **Prod API image** rollouts stay **`release-deploy-prod.yml`** (image only); job env changes remain Terraform applies.
 
 ---
 
@@ -110,5 +110,7 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 ## References
 
+- [`docs/deployment-runbook.md`](deployment-runbook.md) — CI vs Terraform ownership and bootstrap checklist
+- [`infra/terraform/README.md`](../infra/terraform/README.md) — job env variables and two-step `JOB_WORKER_URL` flow
 - [`docs/issue-59-investigation-guide.md`](issue-59-investigation-guide.md)
 - Backend: `backend_api/routers/projects.py` (route), `backend_api/env_cog_replace_pipeline.py` (pipeline + worker)

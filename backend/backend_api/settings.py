@@ -184,6 +184,34 @@ class Settings(BaseSettings):
         le=300.0,
     )
 
+    http_default_request_timeout_seconds: float = Field(
+        default=120.0,
+        description=(
+            "ASGI-level max duration for most requests (see RequestTimeoutMiddleware). "
+            "Does not apply to POST /api/internal/jobs/run (uses internal_job_http_timeout_seconds). "
+            "Independent of Cloud Run's service timeout, which must be >= both limits when jobs are enabled."
+        ),
+        validation_alias=AliasChoices(
+            "HTTP_DEFAULT_REQUEST_TIMEOUT_SECONDS",
+            "http_default_request_timeout_seconds",
+        ),
+        ge=5.0,
+        le=600.0,
+    )
+    internal_job_http_timeout_seconds: float = Field(
+        default=900.0,
+        description=(
+            "ASGI-level max duration for POST /api/internal/jobs/run only (background worker). "
+            "Set Cloud Run api_timeout_seconds (Terraform) >= this value."
+        ),
+        validation_alias=AliasChoices(
+            "INTERNAL_JOB_HTTP_TIMEOUT_SECONDS",
+            "internal_job_http_timeout_seconds",
+        ),
+        ge=30.0,
+        le=3600.0,
+    )
+
     job_queue_backend: str = Field(
         default="disabled",
         description=(

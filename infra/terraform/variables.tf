@@ -122,7 +122,17 @@ variable "api_ingress" {
 }
 
 variable "api_timeout_seconds" {
-  description = "Cloud Run request timeout in seconds."
+  description = <<-EOT
+    Maximum request duration (seconds) for api-staging and api-prod. This is a per-request ceiling: normal routes still return as fast as ever; a high value only raises how long a single stuck or long-running request may run before Cloud Run aborts it.
+    When JOB_QUEUE_BACKEND is cloud_tasks or direct, POST /api/internal/jobs/run runs in-process until the job finishes — set high enough for your longest job (often 900+). With jobs disabled, 60 is usually fine.
+    TiTiler uses titiler_timeout_seconds.
+  EOT
+  type        = number
+  default     = 60
+}
+
+variable "titiler_timeout_seconds" {
+  description = "Cloud Run request timeout for titiler-shared only (tile GETs; keep low)."
   type        = number
   default     = 60
 }
@@ -240,5 +250,43 @@ variable "cloud_tasks_queue_location" {
   description = "Region for the Cloud Tasks queue (use the same region as Cloud Run when possible)."
   type        = string
   default     = "us-central1"
+}
+
+variable "api_staging_service_public_uri" {
+  description = <<-EOT
+    HTTPS origin of the staging API (no trailing slash), e.g. the value of output `api_staging_uri` after the first `terraform apply`.
+    Required when `api_job_queue_backend_staging` is `cloud_tasks` or `direct` so `JOB_WORKER_URL` and OIDC audience can be set without a Terraform circular dependency on the service's own URL.
+    Leave empty when job queue is `disabled` or until you copy the URL from output and apply again.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "api_prod_service_public_uri" {
+  description = "Same as `api_staging_service_public_uri` for production (use output `api_prod_uri`)."
+  type        = string
+  default     = ""
+}
+
+variable "api_job_queue_backend_staging" {
+  description = "Maps to Cloud Run env `JOB_QUEUE_BACKEND` for staging (`disabled`, `cloud_tasks`, or `direct`)."
+  type        = string
+  default     = "disabled"
+
+  validation {
+    condition     = contains(["disabled", "cloud_tasks", "direct"], var.api_job_queue_backend_staging)
+    error_message = "api_job_queue_backend_staging must be disabled, cloud_tasks, or direct."
+  }
+}
+
+variable "api_job_queue_backend_prod" {
+  description = "Maps to Cloud Run env `JOB_QUEUE_BACKEND` for production."
+  type        = string
+  default     = "disabled"
+
+  validation {
+    condition     = contains(["disabled", "cloud_tasks", "direct"], var.api_job_queue_backend_prod)
+    error_message = "api_job_queue_backend_prod must be disabled, cloud_tasks, or direct."
+  }
 }
 
