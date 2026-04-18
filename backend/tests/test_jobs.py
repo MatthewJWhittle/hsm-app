@@ -45,6 +45,58 @@ def test_validate_job_input_environmental_rejects_empty():
         )
 
 
+def test_validate_job_input_project_create_ok():
+    out = validate_job_input(
+        JobKind.PROJECT_CREATE_WITH_ENV_UPLOAD,
+        {
+            "project_id": "p1",
+            "name": "N",
+            "visibility": "public",
+            "upload_session_id": "u1",
+            "allowed_uids_json": "[]",
+        },
+    )
+    assert out["project_id"] == "p1"
+    assert out["upload_session_id"] == "u1"
+
+
+def test_validate_job_input_model_create_ok():
+    out = validate_job_input(
+        JobKind.MODEL_CREATE_WITH_UPLOAD,
+        {
+            "model_id": "m1",
+            "project_id": "p1",
+            "species": "s",
+            "activity": "a",
+            "upload_session_id": "u1",
+        },
+    )
+    assert out["model_id"] == "m1"
+
+
+def test_validate_job_input_model_replace_ok():
+    out = validate_job_input(
+        JobKind.MODEL_REPLACE_SUITABILITY_COG,
+        {
+            "model_id": "m1",
+            "upload_session_id": "u1",
+            "species": "s",
+            "activity": "a",
+            "project_id": "p1",
+        },
+    )
+    assert out["model_id"] == "m1"
+
+
+def test_validate_job_input_explainability_bg_ok():
+    out = validate_job_input(
+        JobKind.EXPLAINABILITY_BACKGROUND_REGENERATE,
+        {"project_id": "p1", "sample_rows": 100},
+    )
+    assert out["project_id"] == "p1"
+    assert out["sample_rows"] == 100
+
+
 def test_validate_job_input_unknown_kind():
     class _Unsupported:
         pass

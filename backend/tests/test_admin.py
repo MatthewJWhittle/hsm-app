@@ -71,14 +71,14 @@ def _admin_client(
             return_value=None,
         ),
         patch(
-            "backend_api.routers.models.validate_cog_path_threaded",
+            "backend_api.model_suitability_pipeline.validate_cog_path_threaded",
             new_callable=AsyncMock,
         ),
         patch(
-            "backend_api.routers.projects.validate_cog_path_threaded",
+            "backend_api.project_create_pipeline.validate_cog_path_threaded",
             new_callable=AsyncMock,
         ),
-        patch("backend_api.routers.models.upsert_model"),
+        patch("backend_api.model_suitability_pipeline.upsert_model"),
         patch(
             "backend_api.storage.build_object_storage",
             return_value=mock_storage,
@@ -150,8 +150,8 @@ def test_post_models_with_explainability_uploads(catalog_docs):
         "suitability_cog.tif",
     )
     with (
-        patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
-        patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
+        patch("backend_api.model_suitability_pipeline.validate_explainability_artifacts_for_model"),
+        patch("backend_api.model_suitability_pipeline.validate_driver_band_indices_for_model"),
     ):
         with _admin_client(
             catalog_docs,
@@ -332,9 +332,12 @@ def test_post_models_201_with_upload_session_id(catalog_docs):
             return _Bucket()
 
     with (
-        patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
-        patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
-        patch("backend_api.routers.models.validate_cog_path_threaded", new_callable=AsyncMock),
+        patch("backend_api.model_suitability_pipeline.validate_explainability_artifacts_for_model"),
+        patch("backend_api.model_suitability_pipeline.validate_driver_band_indices_for_model"),
+        patch(
+            "backend_api.model_suitability_pipeline.validate_cog_path_threaded",
+            new_callable=AsyncMock,
+        ),
         patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
         patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
         patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
@@ -393,9 +396,12 @@ def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
             return _Bucket()
 
     with (
-        patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
-        patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
-        patch("backend_api.routers.models.validate_cog_path_threaded", new_callable=AsyncMock),
+        patch("backend_api.model_suitability_pipeline.validate_explainability_artifacts_for_model"),
+        patch("backend_api.model_suitability_pipeline.validate_driver_band_indices_for_model"),
+        patch(
+            "backend_api.model_suitability_pipeline.validate_cog_path_threaded",
+            new_callable=AsyncMock,
+        ),
         patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
         patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
         patch("backend_api.upload_session_ingest.fail_upload_session") as mock_fail_upload_session,
@@ -501,9 +507,12 @@ def test_post_projects_upload_session_explainability_failure_not_ready():
     with (
         patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
         patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
-        patch("backend_api.routers.projects.validate_cog_path_threaded", new_callable=AsyncMock),
         patch(
-            "backend_api.routers.projects.band_definitions_for_upload_path",
+            "backend_api.project_create_pipeline.validate_cog_path_threaded",
+            new_callable=AsyncMock,
+        ),
+        patch(
+            "backend_api.project_create_pipeline.band_definitions_for_upload_path",
             return_value=(
                 [
                     {"index": 0, "name": "a", "label": None},
@@ -513,7 +522,7 @@ def test_post_projects_upload_session_explainability_failure_not_ready():
             ),
         ),
         patch(
-            "backend_api.routers.projects.write_project_explainability_background_parquet",
+            "backend_api.project_create_pipeline.write_project_explainability_background_parquet",
             side_effect=RuntimeError("bg failed"),
         ),
         patch("backend_api.upload_session_ingest.mark_upload_session") as mock_mark_upload_session,

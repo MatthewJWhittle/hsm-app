@@ -30,10 +30,6 @@ from backend_api.catalog_write import upsert_project
 from backend_api.api_errors import validation_error
 from backend_api.cog_validation import CogValidationError
 from backend_api.deps.catalog import get_object_storage, require_catalog_ready
-from backend_api.env_background_sample import (
-    sanitize_exception_for_client,
-    write_project_explainability_background_parquet,
-)
 from backend_api.env_cog_bands import (
     apply_band_label_updates,
     band_definitions_for_upload_path,
@@ -44,7 +40,11 @@ from backend_api.env_cog_bands import (
     validate_band_definitions_match_raster,
 )
 from backend_api.env_cog_replace_pipeline import replace_project_environmental_cogs_pipeline
-from backend_api.job_queue import build_job_queue
+from backend_api.project_create_pipeline import create_project_with_environmental_cog_pipeline
+from backend_api.explainability_background_pipeline import (
+    regenerate_explainability_background_pipeline,
+)
+from backend_api.job_queue import build_job_queue, job_queue_enabled
 from backend_api.jobs import create_job
 from backend_api.deps.settings_dep import get_settings
 from backend_api.deps.visibility_models import (
@@ -69,7 +69,7 @@ from backend_api.schemas_project import (
     RegenerateExplainabilityBackgroundBody,
 )
 from backend_api.settings import Settings
-from backend_api.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
+from backend_api.storage import ObjectStorage
 from backend_api.schemas_upload import UploadSession
 from backend_api.upload_session_ingest import (
     best_effort_fail,
@@ -87,6 +87,13 @@ _ADMIN_RESPONSES: dict[int | str, dict[str, str]] = {
     status.HTTP_413_REQUEST_ENTITY_TOO_LARGE: {"description": "Upload exceeds max size"},
     status.HTTP_422_UNPROCESSABLE_ENTITY: {"description": "Invalid COG/CRS or form data"},
     status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "Storage or Firestore failure"},
+}
+
+_ADMIN_POST_PROJECTS_RESPONSES: dict[int | str, dict[str, str]] = {
+    **_ADMIN_RESPONSES,
+    status.HTTP_202_ACCEPTED: {
+        "description": "Background job enqueued (upload session + job queue enabled)",
+    },
 }
 
 
@@ -321,11 +328,19 @@ def _environmental_cog_readable_for_sampling(abs_path: str) -> bool:
     return Path(abs_path).is_file()
 
 
+_ADMIN_EXPLAINABILITY_BG_RESPONSES: dict[int | str, dict[str, str]] = {
+    **_ADMIN_RESPONSES,
+    status.HTTP_202_ACCEPTED: {
+        "description": "Background job enqueued when job queue is enabled",
+    },
+}
+
+
 @router.post(
     "/projects/{project_id}/explainability-background-sample",
     response_model=CatalogProject,
     tags=["admin"],
-    responses=_ADMIN_RESPONSES,
+    responses=_ADMIN_EXPLAINABILITY_BG_RESPONSES,
     summary="Regenerate SHAP explainability background Parquet from the environmental COG",
 )
 async def post_explainability_background_sample(
@@ -378,55 +393,36 @@ async def post_explainability_background_sample(
             "environmental COG not found on server",
         )
 
-    n_samples = (
-        body.sample_rows
-        if body.sample_rows is not None
-        else settings.env_background_sample_rows
-    )
-
-    def _bg() -> None:
-        write_project_explainability_background_parquet(
-            storage,
+    if job_queue_enabled(settings):
+        job = create_job(
             settings,
-            project_id,
-            artifact_root,
-            cog_path,
-            band_defs,
-            n_samples,
+            kind=JobKind.EXPLAINABILITY_BACKGROUND_REGENERATE,
+            input={
+                "project_id": project_id,
+                "sample_rows": body.sample_rows,
+            },
+            created_by_uid=str(_claims.get("uid") or "") or None,
+        )
+        build_job_queue(settings).enqueue_run_job(job.id)
+        body_out = JobAcceptedResponse(
+            job_id=job.id,
+            status=job.status.value,
+            project_id=project_id,
+        )
+        return JSONResponse(
+            status_code=202,
+            content=body_out.model_dump(mode="json"),
+            headers={"Location": f"/api/jobs/{job.id}"},
         )
 
-    try:
-        await run_in_threadpool(_bg)
-    except Exception as e:
-        raise HTTPException(
-            status_code=422,
-            detail=validation_error(
-                "EXPLAINABILITY_BACKGROUND_FAILED",
-                "could not build explainability background sample from COG",
-                context={"cause": sanitize_exception_for_client(e)},
-            ),
-        ) from e
-
-    now = datetime.now(UTC).isoformat()
-    project = existing.model_copy(
-        update={
-            "explainability_background_path": EXPLAINABILITY_BACKGROUND_FILENAME,
-            "explainability_background_sample_rows": n_samples,
-            "explainability_background_generated_at": now,
-            "updated_at": now,
-        }
+    return await regenerate_explainability_background_pipeline(
+        request,
+        settings,
+        storage,
+        catalog,
+        project_id,
+        body.sample_rows,
     )
-
-    def _persist() -> None:
-        upsert_project(settings, project)
-
-    try:
-        await run_in_threadpool(_persist)
-    except Exception as e:
-        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
-
-    await reload_catalog_threaded(request)
-    return project
 
 
 @router.post(
@@ -434,7 +430,7 @@ async def post_explainability_background_sample(
     response_model=CatalogProject,
     status_code=201,
     tags=["admin"],
-    responses=_ADMIN_RESPONSES,
+    responses=_ADMIN_POST_PROJECTS_RESPONSES,
     summary="Create catalog project (optional shared environmental COG upload)",
 )
 async def create_project(
@@ -469,250 +465,84 @@ async def create_project(
         ) from e
 
     project_id = str(uuid.uuid4())
-    logger.info("project_create_start project_id=%s has_multipart=%s has_session=%s", project_id, file is not None, bool(upload_session_id))
-    artifact_root: str | None = None
-    cog_path: str | None = None
-    band_defs: list[EnvironmentalBandDefinition] | None = None
-    inference_notes: list[str] | None = None
+    logger.info(
+        "project_create_start project_id=%s has_multipart=%s has_session=%s",
+        project_id,
+        file is not None,
+        bool(upload_session_id),
+    )
     if file is not None and upload_session_id:
         raise _proj_422(
             "UPLOAD_CONFLICT",
             "provide either multipart file or upload_session_id, not both",
         )
-    uploaded_session = None
-    upload_temp_path: Path | None = None
-    if upload_session_id:
-        upload_temp_path, uploaded_session = await run_in_threadpool(
-            download_upload_session_to_tempfile,
-            settings,
-            upload_session_id,
-            purpose="project create",
+
+    if file is None and upload_session_id is None:
+        now = datetime.now(UTC).isoformat()
+        project = CatalogProject(
+            id=project_id,
+            name=name.strip(),
+            description=description.strip() if description else None,
+            status="active",
+            visibility=visibility_v,
+            allowed_uids=uids,
+            created_at=now,
+            updated_at=now,
         )
-        logger.info("project_create_ingest_session project_id=%s upload_session_id=%s", project_id, upload_session_id)
-    elif file is not None:
-        upload_temp_path = await write_upload_file_to_tempfile(
-            file,
-            max_bytes=settings.max_environmental_upload_bytes,
-        )
-        logger.info("project_create_ingest_multipart project_id=%s", project_id)
 
-    try:
-        if upload_temp_path is not None:
-            upload_size = os.path.getsize(str(upload_temp_path))
-            logger.info("project_create_upload_size project_id=%s upload_bytes=%s upload_session_id=%s", project_id, upload_size, uploaded_session.id if uploaded_session else None)
-            if upload_size <= 0:
-                raise _proj_422("EMPTY_FILE", "empty file")
-            if upload_size > settings.max_environmental_upload_bytes:
-                raise HTTPException(
-                    status_code=413,
-                    detail=validation_error(
-                        "UPLOAD_TOO_LARGE",
-                        f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
-                        context={"max_bytes": settings.max_environmental_upload_bytes},
-                    ),
-                )
-            uploaded_session = await run_in_threadpool(
-                best_effort_mark,
-                settings,
-                uploaded_session,
-                status="validating",
-                stage="validate",
-                context="project-create-validate",
-            )
-            try:
-                logger.info("project_create_validate_start project_id=%s", project_id)
-                await validate_cog_path_threaded(str(upload_temp_path))
-                logger.info("project_create_validate_ok project_id=%s", project_id)
-            except CogValidationError as e:
-                await run_in_threadpool(
-                    best_effort_fail,
-                    settings,
-                    uploaded_session,
-                    stage="validate",
-                    error_code=e.code,
-                    error_message=e.message,
-                    context="project-create-cog-validate-failed",
-                )
-                raise HTTPException(
-                    status_code=422,
-                    detail=validation_error(e.code, e.message, context=e.context or None),
-                ) from e
+        def _persist_empty() -> None:
+            upsert_project(settings, project)
 
-            def _write() -> tuple[str, str]:
-                return storage.write_project_driver_cog_from_path(
-                    project_id, str(upload_temp_path)
-                )
-
-            try:
-                artifact_root, cog_path = await run_in_threadpool(_write)
-                logger.info("project_create_persist_cog_ok project_id=%s artifact_root=%s", project_id, artifact_root)
-            except ValueError as e:
-                await run_in_threadpool(
-                    best_effort_fail,
-                    settings,
-                    uploaded_session,
-                    stage="persist",
-                    error_code="STORAGE_LAYOUT_INVALID",
-                    error_message=str(e),
-                    context="project-create-storage-layout-invalid",
-                )
-                raise HTTPException(
-                    status_code=400,
-                    detail=validation_error("STORAGE_LAYOUT_INVALID", str(e)),
-                ) from e
-            except Exception as e:
-                await run_in_threadpool(
-                    best_effort_fail,
-                    settings,
-                    uploaded_session,
-                    stage="persist",
-                    error_code="STORAGE_WRITE_FAILED",
-                    error_message=str(e),
-                    context="project-create-storage-write-failed",
-                )
-                raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
-
-            uploaded_session = await run_in_threadpool(
-                best_effort_mark,
-                settings,
-                uploaded_session,
-                status="deriving",
-                stage="derive",
-                context="project-create-derive",
-            )
-            try:
-                logger.info("project_create_derive_bands_start project_id=%s", project_id)
-
-                def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
-                    return band_definitions_for_upload_path(
-                        str(upload_temp_path),
-                        environmental_band_definitions,
-                        infer_band_definitions=infer_band_definitions_from_form(
-                            infer_band_definitions
-                        ),
-                    )
-
-                band_defs, infer_notes = await run_in_threadpool(_defs)
-                inference_notes = infer_notes if infer_notes else None
-                logger.info("project_create_derive_bands_ok project_id=%s band_count=%s", project_id, len(band_defs) if band_defs else 0)
-            except ValueError as e:
-                await run_in_threadpool(
-                    best_effort_fail,
-                    settings,
-                    uploaded_session,
-                    stage="derive",
-                    error_code="BAND_DEFINITIONS",
-                    error_message=str(e),
-                    context="project-create-band-definitions",
-                )
-                raise HTTPException(
-                    status_code=422,
-                    detail=validation_error("BAND_DEFINITIONS", str(e)),
-                ) from e
-    finally:
-        if upload_temp_path is not None:
-            upload_temp_path.unlink(missing_ok=True)
-
-    explain_bg_path: str | None = None
-    explain_bg_rows: int | None = None
-    explain_bg_at: str | None = None
-    if band_defs and artifact_root and cog_path:
         try:
-            logger.info("project_create_background_start project_id=%s sample_rows=%s", project_id, settings.env_background_sample_rows)
-
-            def _bg() -> None:
-                write_project_explainability_background_parquet(
-                    storage,
-                    settings,
-                    project_id,
-                    artifact_root,
-                    cog_path,
-                    band_defs,
-                    settings.env_background_sample_rows,
-                )
-
-            await run_in_threadpool(_bg)
-            explain_bg_path = EXPLAINABILITY_BACKGROUND_FILENAME
-            explain_bg_rows = settings.env_background_sample_rows
-            logger.info("project_create_background_ok project_id=%s sample_rows=%s", project_id, explain_bg_rows)
+            await run_in_threadpool(_persist_empty)
+            logger.info("project_create_catalog_save_ok project_id=%s", project_id)
         except Exception as e:
-            await run_in_threadpool(
-                best_effort_fail,
-                settings,
-                uploaded_session,
-                stage="derive",
-                error_code="EXPLAINABILITY_BACKGROUND_FAILED",
-                error_message=str(e),
-                context="project-create-explainability-background",
-            )
-            raise HTTPException(
-                status_code=422,
-                detail=validation_error(
-                    "EXPLAINABILITY_BACKGROUND_FAILED",
-                    "could not build explainability background sample from COG",
-                    context={"cause": sanitize_exception_for_client(e)},
-                ),
-            ) from e
+            raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
+        await reload_catalog_threaded(request)
+        return project
 
-    now = datetime.now(UTC).isoformat()
-    if explain_bg_path:
-        explain_bg_at = now
+    if job_queue_enabled(settings) and upload_session_id and file is None:
+        job = create_job(
+            settings,
+            kind=JobKind.PROJECT_CREATE_WITH_ENV_UPLOAD,
+            input={
+                "project_id": project_id,
+                "name": name.strip(),
+                "description": description.strip() if description else None,
+                "visibility": visibility_v,
+                "allowed_uids_json": json.dumps(uids),
+                "upload_session_id": upload_session_id,
+                "environmental_band_definitions": environmental_band_definitions,
+                "infer_band_definitions": infer_band_definitions,
+            },
+            created_by_uid=str(_claims.get("uid") or "") or None,
+        )
+        build_job_queue(settings).enqueue_run_job(job.id)
+        body = JobAcceptedResponse(
+            job_id=job.id,
+            status=job.status.value,
+            project_id=project_id,
+        )
+        return JSONResponse(
+            status_code=202,
+            content=body.model_dump(mode="json"),
+            headers={"Location": f"/api/jobs/{job.id}"},
+        )
 
-    project = CatalogProject(
-        id=project_id,
+    return await create_project_with_environmental_cog_pipeline(
+        request,
+        settings,
+        storage,
+        project_id=project_id,
         name=name.strip(),
         description=description.strip() if description else None,
-        status="active",
-        visibility=visibility_v,
-        allowed_uids=uids,
-        driver_artifact_root=artifact_root,
-        driver_cog_path=cog_path,
-        environmental_band_definitions=band_defs,
-        band_inference_notes=inference_notes,
-        explainability_background_path=explain_bg_path,
-        explainability_background_sample_rows=explain_bg_rows,
-        explainability_background_generated_at=explain_bg_at,
-        created_at=now,
-        updated_at=now,
+        visibility_v=visibility_v,
+        uids=uids,
+        upload_session_id=upload_session_id,
+        file=file,
+        environmental_band_definitions=environmental_band_definitions,
+        infer_band_definitions=infer_band_definitions,
     )
-
-    def _persist() -> None:
-        upsert_project(settings, project)
-
-    uploaded_session = await run_in_threadpool(
-        best_effort_mark,
-        settings,
-        uploaded_session,
-        status="deriving",
-        stage="persist",
-        context="project-create-persist",
-    )
-    try:
-        await run_in_threadpool(_persist)
-        logger.info("project_create_catalog_save_ok project_id=%s", project_id)
-    except Exception as e:
-        await run_in_threadpool(
-            best_effort_fail,
-            settings,
-            uploaded_session,
-            stage="persist",
-            error_code="CATALOG_SAVE_FAILED",
-            error_message=str(e),
-            context="project-create-catalog-save",
-        )
-        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
-
-    await reload_catalog_threaded(request)
-    if uploaded_session is not None and uploaded_session.status != "ready":
-        await run_in_threadpool(
-            best_effort_mark,
-            settings,
-            uploaded_session,
-            status="ready",
-            stage="done",
-            context="project-create-done",
-        )
-    return project
 
 
 @router.patch(
@@ -848,9 +678,7 @@ async def replace_project_environmental_cogs(
             "provide multipart file or upload_session_id",
         )
 
-    qb = (settings.job_queue_backend or "disabled").strip().lower()
-    use_job_queue = qb not in ("", "disabled", "off", "none")
-    if use_job_queue and upload_session_id and file is None:
+    if job_queue_enabled(settings) and upload_session_id and file is None:
         job = create_job(
             settings,
             kind=JobKind.ENVIRONMENTAL_COG_REPLACE,

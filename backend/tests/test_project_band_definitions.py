@@ -50,6 +50,7 @@ def admin_client_proj():
             return_value=mock_storage,
         ),
         patch("backend_api.routers.projects.Path") as mock_path_cls,
+        patch("backend_api.explainability_background_pipeline.Path") as mock_exp_path_cls,
         patch("backend_api.routers.projects.count_bands_in_path", return_value=2),
         patch(
             "backend_api.routers.projects.reload_catalog_threaded",
@@ -57,6 +58,7 @@ def admin_client_proj():
         ),
     ):
         mock_path_cls.return_value.is_file.return_value = True
+        mock_exp_path_cls.return_value.is_file.return_value = True
         import backend_api.main as main
 
         importlib.reload(main)
@@ -155,7 +157,7 @@ def test_patch_environmental_band_definition_labels_empty_body_422(admin_client_
 
 def test_post_explainability_background_sample_ok(admin_client_proj):
     with patch(
-        "backend_api.routers.projects.write_project_explainability_background_parquet"
+        "backend_api.explainability_background_pipeline.write_project_explainability_background_parquet"
     ) as mock_w:
         c = admin_client_proj
         r = c.post(
@@ -174,7 +176,7 @@ def test_post_explainability_background_sample_ok(admin_client_proj):
 
 def test_post_explainability_background_sample_unknown_project_404(admin_client_proj):
     with patch(
-        "backend_api.routers.projects.write_project_explainability_background_parquet"
+        "backend_api.explainability_background_pipeline.write_project_explainability_background_parquet"
     ):
         c = admin_client_proj
         r = c.post(
@@ -187,7 +189,7 @@ def test_post_explainability_background_sample_unknown_project_404(admin_client_
 
 def test_post_explainability_background_sample_default_rows(admin_client_proj):
     with patch(
-        "backend_api.routers.projects.write_project_explainability_background_parquet"
+        "backend_api.explainability_background_pipeline.write_project_explainability_background_parquet"
     ) as mock_w:
         c = admin_client_proj
         r = c.post(
@@ -208,7 +210,7 @@ def test_patch_project_metadata_only_does_not_run_upload_or_derivation(admin_cli
         patch("backend_api.routers.projects.download_upload_session_to_tempfile") as mock_download,
         patch("backend_api.routers.projects.validate_cog_path_threaded") as mock_validate,
         patch(
-            "backend_api.routers.projects.write_project_explainability_background_parquet"
+            "backend_api.project_create_pipeline.write_project_explainability_background_parquet"
         ) as mock_bg,
     ):
         r = c.patch(

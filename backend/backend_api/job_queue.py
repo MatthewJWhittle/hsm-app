@@ -117,3 +117,9 @@ def build_job_queue(settings: Settings) -> JobQueue:
     if raw in ("cloud_tasks", "cloudtasks", "tasks"):
         return CloudTasksJobQueue(settings)
     raise ValueError(f"unknown JOB_QUEUE_BACKEND: {settings.job_queue_backend!r}")
+
+
+def job_queue_enabled(settings: Settings) -> bool:
+    """True when background job dispatch is configured (not the default disabled backend)."""
+    raw = (settings.job_queue_backend or "disabled").strip().lower()
+    return raw not in ("", "disabled", "off", "none")

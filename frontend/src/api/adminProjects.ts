@@ -108,6 +108,19 @@ export async function pollAdminJobUntilTerminal(params: {
   throw new Error('Environmental COG replace job timed out while waiting for completion.')
 }
 
+export function parseJobAcceptedResourceIds(raw: unknown): {
+  job_id: string
+  project_id: string | null
+  model_id: string | null
+} | null {
+  if (!isRecord(raw) || typeof raw.job_id !== 'string') return null
+  return {
+    job_id: raw.job_id,
+    project_id: typeof raw.project_id === 'string' ? raw.project_id : null,
+    model_id: typeof raw.model_id === 'string' ? raw.model_id : null,
+  }
+}
+
 export async function createProject(params: {
   token: string
   name: string
@@ -116,6 +129,8 @@ export async function createProject(params: {
   description?: string
   visibility?: 'public' | 'private'
   allowedUids?: string
+  onJobStatus?: (status: AdminJobStatus) => void
+  signal?: AbortSignal
 }): Promise<CatalogProject> {
   const form = new FormData()
   form.append('name', params.name)
@@ -129,7 +144,26 @@ export async function createProject(params: {
     method: 'POST',
     headers: { Authorization: `Bearer ${params.token}` },
     body: form,
+    signal: params.signal,
   })
+  if (r.status === 202) {
+    const rawAccept: unknown = await r.json()
+    const acc = parseJobAcceptedResourceIds(rawAccept)
+    if (acc === null || !acc.project_id) {
+      throw new Error('Invalid job accept response')
+    }
+    const job = await pollAdminJobUntilTerminal({
+      token: params.token,
+      jobId: acc.job_id,
+      onStatus: params.onJobStatus,
+      signal: params.signal,
+    })
+    if (job.status === 'failed') {
+      const msg = job.error?.message?.trim() || 'Project create job failed'
+      throw new Error(msg)
+    }
+    return fetchAdminProject({ token: params.token, projectId: acc.project_id })
+  }
   if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()
   const p = parseProject(raw)
@@ -341,6 +375,8 @@ export async function postRegenerateExplainabilityBackgroundSample(params: {
   projectId: string
   /** Pixel count; omit to use server default (ENV_BACKGROUND_SAMPLE_ROWS). */
   sampleRows?: number
+  onJobStatus?: (status: AdminJobStatus) => void
+  signal?: AbortSignal
 }): Promise<CatalogProject> {
   const body: { sample_rows?: number } = {}
   if (params.sampleRows !== undefined) {
@@ -355,8 +391,27 @@ export async function postRegenerateExplainabilityBackgroundSample(params: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(body),
+      signal: params.signal,
     },
   )
+  if (r.status === 202) {
+    const rawAccept: unknown = await r.json()
+    const acc = parseJobAcceptedResourceIds(rawAccept)
+    if (acc === null || !acc.project_id) {
+      throw new Error('Invalid job accept response')
+    }
+    const job = await pollAdminJobUntilTerminal({
+      token: params.token,
+      jobId: acc.job_id,
+      onStatus: params.onJobStatus,
+      signal: params.signal,
+    })
+    if (job.status === 'failed') {
+      const msg = job.error?.message?.trim() || 'Explainability background job failed'
+      throw new Error(msg)
+    }
+    return fetchAdminProject({ token: params.token, projectId: acc.project_id })
+  }
   if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()
   const p = parseProject(raw)
