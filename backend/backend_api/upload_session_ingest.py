@@ -68,7 +68,7 @@ def download_upload_session_to_tempfile(
     session = get_upload_session(settings, upload_session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="upload session not found")
-    if session.status not in ("uploaded", "validating", "deriving", "ready"):
+    if session.status != "complete":
         raise HTTPException(
             status_code=409,
             detail=validation_error(
@@ -108,7 +108,7 @@ def upload_session_gcs_uri(
     session = get_upload_session(settings, upload_session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="upload session not found")
-    if session.status not in ("uploaded", "validating", "deriving", "ready"):
+    if session.status != "complete":
         raise HTTPException(
             status_code=409,
             detail=validation_error(

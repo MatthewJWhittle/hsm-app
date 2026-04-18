@@ -552,7 +552,7 @@ async def create_project(
                 best_effort_mark,
                 settings,
                 uploaded_session,
-                status="validating",
+                status="complete",
                 stage="validate",
                 context="project-create-validate",
             )
@@ -628,7 +628,7 @@ async def create_project(
                 best_effort_mark,
                 settings,
                 uploaded_session,
-                status="deriving",
+                status="complete",
                 stage="derive",
                 context="project-create-derive",
             )
@@ -745,7 +745,7 @@ async def create_project(
         best_effort_mark,
         settings,
         uploaded_session,
-        status="deriving",
+        status="complete",
         stage="persist",
         context="project-create-persist",
     )
@@ -765,12 +765,12 @@ async def create_project(
         raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
-    if uploaded_session is not None and uploaded_session.status != "ready":
+    if uploaded_session is not None and uploaded_session.stage != "done":
         await run_in_threadpool(
             best_effort_mark,
             settings,
             uploaded_session,
-            status="ready",
+            status="complete",
             stage="done",
             context="project-create-done",
         )
@@ -993,11 +993,6 @@ async def replace_project_environmental_cogs(
                 status_code=409,
                 detail="upload session is not complete; call POST /uploads/{id}/complete first",
             )
-        if uploaded_session.status == "ready":
-            raise HTTPException(
-                status_code=409,
-                detail="upload session has already been processed",
-            )
         if uploaded_session.status == "failed":
             raise HTTPException(
                 status_code=409,
@@ -1015,7 +1010,7 @@ async def replace_project_environmental_cogs(
             best_effort_mark,
             settings,
             uploaded_session,
-            status="validating",
+            status="complete",
             stage="validate",
             context="project-update-validate",
         )
@@ -1129,7 +1124,7 @@ async def replace_project_environmental_cogs(
             best_effort_mark,
             settings,
             uploaded_session,
-            status="deriving",
+            status="complete",
             stage="derive",
             context="project-update-derive",
         )
@@ -1206,7 +1201,7 @@ async def replace_project_environmental_cogs(
             best_effort_mark,
             settings,
             uploaded_session,
-            status="deriving",
+            status="complete",
             stage="persist",
             context="project-update-persist",
         )
@@ -1248,12 +1243,12 @@ async def replace_project_environmental_cogs(
             project_id,
             int((perf_counter() - reload_started) * 1000),
         )
-        if uploaded_session is not None and uploaded_session.status != "ready":
+        if uploaded_session is not None and uploaded_session.stage != "done":
             await run_in_threadpool(
                 best_effort_mark,
                 settings,
                 uploaded_session,
-                status="ready",
+                status="complete",
                 stage="done",
                 context="project-update-done",
             )

@@ -121,7 +121,7 @@ def _mint_signed_upload_url(
 
 
 @router.post(
-    "/uploads/init",
+    "/uploads",
     response_model=UploadSessionResponse,
     status_code=201,
     tags=["admin"],
@@ -136,8 +136,7 @@ async def post_upload_init(
     """
     Create and persist a new upload session.
 
-    PR1 stores lifecycle state only. Signed/resumable URL minting is added in later work,
-    so ``upload_url`` is currently null.
+    API returns a short-lived signed URL so clients upload directly to object storage.
     """
     if settings.storage_backend.strip().lower() != "gcs":
         raise HTTPException(
@@ -239,9 +238,7 @@ async def post_upload_complete(
     _claims: Annotated[dict, Depends(require_admin_claims)],
 ):
     """
-    Mark session as uploaded once client upload finishes.
-
-    PR1 only performs status transition persistence. Validation/derivation jobs are added later.
+    Mark session complete once client upload finishes.
     """
     try:
         existing = get_upload_session(settings, upload_id)

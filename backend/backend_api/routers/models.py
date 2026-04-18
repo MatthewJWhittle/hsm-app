@@ -467,7 +467,7 @@ async def create_model(
             best_effort_mark,
             settings,
             upload_session,
-            status="validating",
+            status="complete",
             stage="validate",
             context="model-create-validate",
         )
@@ -597,7 +597,7 @@ async def create_model(
         best_effort_mark,
         settings,
         upload_session,
-        status="deriving",
+        status="complete",
         stage="derive",
         context="model-create-derive",
     )
@@ -625,7 +625,7 @@ async def create_model(
         best_effort_mark,
         settings,
         upload_session,
-        status="deriving",
+        status="complete",
         stage="persist",
         context="model-create-persist",
     )
@@ -651,7 +651,7 @@ async def create_model(
         best_effort_mark,
         settings,
         upload_session,
-        status="ready",
+        status="complete",
         stage="done",
         context="model-create-done",
     )

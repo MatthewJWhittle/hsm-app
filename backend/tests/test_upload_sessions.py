@@ -119,7 +119,7 @@ def _admin_client_with_signed_url_fallback(*, storage_client, auth_default_retur
 def test_upload_init_get_and_complete_lifecycle():
     with _admin_client() as c:
         init = c.post(
-            "/api/uploads/init",
+            "/api/uploads",
             headers={"Authorization": "Bearer fake.token"},
             json={
                 "project_id": "proj-1",
@@ -153,8 +153,8 @@ def test_upload_init_get_and_complete_lifecycle():
         )
         assert complete.status_code == 200
         body = complete.json()
-        assert body["status"] == "uploaded"
-        assert body["stage"] == "validate"
+        assert body["status"] == "complete"
+        assert body["stage"] == "done"
         assert body["uploaded_size_bytes"] == 12345
         assert body["checksum_sha256"] == "a" * 64
 
@@ -172,7 +172,7 @@ def test_upload_complete_unknown_returns_404():
 def test_upload_complete_failed_status_returns_409():
     with _admin_client() as c:
         init = c.post(
-            "/api/uploads/init",
+            "/api/uploads",
             headers={"Authorization": "Bearer fake.token"},
             json={
                 "filename": "env_stack.tif",
@@ -260,7 +260,7 @@ def test_upload_init_falls_back_to_iam_signed_url_when_direct_signing_fails():
         ),
     ):
         init = c.post(
-            "/api/uploads/init",
+            "/api/uploads",
             headers={"Authorization": "Bearer fake.token"},
             json={
                 "filename": "env_stack.tif",
@@ -450,7 +450,7 @@ def test_mark_upload_session_rejects_invalid_transition():
             mark_upload_session(
                 Settings(),
                 session,
-                status="ready",
+                    status="complete",
                 stage="done",
             )
 

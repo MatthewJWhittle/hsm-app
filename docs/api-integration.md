@@ -85,12 +85,12 @@ Apply the same idea to **any** environmental stack or suitability raster you pro
 For larger files, avoid sending the environmental raster through `POST /api/projects` multipart directly.
 Use upload sessions:
 
-1. `POST /api/uploads/init` (admin) with filename/content type/size
+1. `POST /api/uploads` (admin) with filename/content type/size
 2. `PUT` file bytes to the returned signed `upload_url`
 3. `POST /api/uploads/{upload_id}/complete`
 4. `POST /api/projects` with form field `upload_session_id={upload_id}` (and no multipart `file`)
 
-You can poll `GET /api/uploads/{upload_id}` for lifecycle status and stage (`upload`, `validate`, `derive`, `persist`, `done`).
+You can poll `GET /api/uploads/{upload_id}` for lifecycle status (`pending`, `complete`, `failed`).
 
 Upload sessions are GCS-backed in this deployment: the API runtime must be configured with `GCS_BUCKET`, and the completed session object must exist in that bucket.
 
@@ -196,7 +196,7 @@ curl -sS "${BASE_URL}/api/models" -H "Authorization: Bearer ${TOKEN}" \
 
 `POST /api/models` also accepts `upload_session_id` as an alternative to multipart `file`:
 
-1. `POST /api/uploads/init`
+1. `POST /api/uploads`
 2. upload to signed `upload_url`
 3. `POST /api/uploads/{upload_id}/complete`
 4. `POST /api/models` with form field `upload_session_id={upload_id}` (omit multipart `file`)

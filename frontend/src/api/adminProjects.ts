@@ -41,7 +41,7 @@ export async function createProject(params: {
 
 export type UploadSession = {
   id: string
-  status: 'pending' | 'uploaded' | 'validating' | 'deriving' | 'ready' | 'failed'
+  status: 'pending' | 'complete' | 'failed'
   stage: 'init' | 'upload' | 'validate' | 'derive' | 'persist' | 'done'
   upload_url: string | null
   object_path: string
@@ -76,7 +76,7 @@ export async function initUploadSession(params: {
   sizeBytes?: number
   projectId?: string
 }): Promise<UploadSession> {
-  const r = await fetch(`${apiBase()}/uploads/init`, {
+  const r = await fetch(`${apiBase()}/uploads`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${params.token}`,
