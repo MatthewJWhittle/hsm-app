@@ -13,7 +13,6 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Body,
     Depends,
     File,
@@ -68,23 +67,15 @@ from backend_api.schemas_project import (
 from backend_api.settings import Settings
 from backend_api.storage import (
     EXPLAINABILITY_BACKGROUND_FILENAME,
-    GcsObjectStorage,
     ObjectStorage,
 )
-from backend_api.schemas_upload import (
-    UploadSession,
-    UploadSessionResponse,
-    UploadSessionStage,
-    to_upload_session_response,
-)
+from backend_api.schemas_upload import UploadSession
 from backend_api.upload_session_ingest import (
     best_effort_fail,
     best_effort_mark,
-    download_upload_session_to_tempfile,
     upload_session_gcs_uri,
     write_upload_file_to_tempfile,
 )
-from backend_api.upload_sessions import get_upload_session
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -138,32 +129,6 @@ def _infer_band_definitions_from_form(raw: str | None) -> bool:
     if v in ("0", "false", "no"):
         return False
     return True
-
-
-def _upload_stage_for_phase(phase: str | None) -> UploadSessionStage:
-    if phase == "derive":
-        return "derive"
-    if phase == "persist":
-        return "persist"
-    return "validate"
-
-
-def _upload_error_from_http_exception(
-    exc: HTTPException,
-) -> tuple[UploadSessionStage, str, str]:
-    stage: UploadSessionStage = "persist"
-    code = "PROJECT_UPDATE_FAILED"
-    message = str(exc.detail) if exc.detail is not None else "project update failed"
-    detail = exc.detail
-    if isinstance(detail, dict):
-        code = str(detail.get("code") or code)
-        message = str(detail.get("message") or message)
-        ctx = detail.get("context")
-        if isinstance(ctx, dict):
-            stage = _upload_stage_for_phase(
-                ctx.get("phase") if isinstance(ctx.get("phase"), str) else None
-            )
-    return stage, code, message
 
 
 def _parse_allowed_uids(raw: str | None) -> list[str]:
@@ -905,14 +870,12 @@ async def update_project(
 
 @router.post(
     "/projects/{project_id}/environmental-cogs",
-    response_model=UploadSessionResponse,
-    status_code=status.HTTP_202_ACCEPTED,
+    response_model=CatalogProject,
     tags=["admin"],
     responses=_ADMIN_RESPONSES,
-    summary="Queue project environmental COG replace from upload session",
+    summary="Replace project environmental COG from upload session",
 )
 async def replace_project_environmental_cogs(
-    background_tasks: BackgroundTasks,
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
     _claims: Annotated[dict, Depends(require_admin_claims)],
@@ -924,10 +887,15 @@ async def replace_project_environmental_cogs(
     environmental_band_definitions: Annotated[str | None, Form()] = None,
     infer_band_definitions: Annotated[str | None, Form()] = None,
 ):
-    """Queue create/replace processing for a project's active environmental COG (admin only)."""
+    """Create/replace a project's active environmental COG (admin only)."""
     existing = catalog.get_project(project_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="project not found")
+    if upload_session_id and settings.storage_backend.strip().lower() != "gcs":
+        raise _proj_503(
+            "STORAGE_BACKEND_UNSUPPORTED",
+            "upload_session_id project replace currently requires STORAGE_BACKEND=gcs",
+        )
 
     if file is not None and upload_session_id:
         raise _proj_422(
@@ -937,94 +905,19 @@ async def replace_project_environmental_cogs(
     if file is not None:
         raise _proj_422(
             "UPLOAD_MODE_UNSUPPORTED",
-            "direct multipart replace is not supported for async processing; use upload_session_id",
+            "direct multipart replace is not supported; use upload_session_id",
         )
     if upload_session_id is None:
         raise _proj_422(
             "MISSING_UPLOAD",
             "provide upload_session_id",
         )
-    queued_session = await run_in_threadpool(get_upload_session, settings, upload_session_id)
-    if queued_session is None:
-        raise HTTPException(status_code=404, detail="upload session not found")
-    if (
-        queued_session.project_id is not None
-        and queued_session.project_id != project_id
-    ):
-        raise _proj_422(
-            "UPLOAD_PROJECT_MISMATCH",
-            "upload session project does not match route project",
-        )
-    if queued_session.status == "pending":
-        raise HTTPException(
-            status_code=409,
-            detail="upload session is not complete; call POST /uploads/{id}/complete first",
-        )
-    if queued_session.status == "validating" or queued_session.status == "deriving":
-        raise HTTPException(
-            status_code=409,
-            detail="upload session is already being processed",
-        )
-    if queued_session.status == "ready":
-        raise HTTPException(
-            status_code=409,
-            detail="upload session has already been processed",
-        )
-    if queued_session.status == "failed":
-        raise HTTPException(
-            status_code=409,
-            detail="upload session is in failed state; create a new upload session",
-        )
-    queued_session = await run_in_threadpool(
-        best_effort_mark,
-        settings,
-        queued_session,
-        status="validating",
-        stage="validate",
-        context="project-update-queued",
-    )
-    if queued_session is None:
-        raise _proj_503(
-            "UPLOAD_SESSION_MARK_FAILED",
-            "could not queue upload session processing",
-        )
-    logger.info(
-        "project_replace_env_cog_task_queued project_id=%s upload_session_id=%s",
-        project_id,
-        upload_session_id,
-    )
-    background_tasks.add_task(
-        _run_project_environmental_cog_replace_task,
-        request=request,
-        settings=settings,
-        storage=storage,
-        project_id=project_id,
-        upload_session_id=upload_session_id,
-        environmental_band_definitions=environmental_band_definitions,
-        infer_band_definitions=infer_band_definitions,
-    )
-    return to_upload_session_response(queued_session, upload_url=None)
 
-
-async def _run_project_environmental_cog_replace_task(
-    *,
-    request: Request,
-    settings: Settings,
-    storage: ObjectStorage,
-    project_id: str,
-    upload_session_id: str,
-    environmental_band_definitions: str | None,
-    infer_band_definitions: str | None,
-) -> None:
     overall_started = perf_counter()
-    logger.info(
-        "project_replace_env_cog_task_start project_id=%s upload_session_id=%s",
-        project_id,
-        upload_session_id,
-    )
     upload_uri: str | None = None
     uploaded_session: UploadSession | None = None
     rasterio_uri: str | None = None
+
     try:
         ingest_started = perf_counter()
         upload_uri, uploaded_session, upload_size = await run_in_threadpool(
@@ -1087,8 +980,30 @@ async def _run_project_environmental_cog_replace_task(
         if uploaded_session is None:
             raise _proj_503(
                 "UPLOAD_SESSION_MISSING",
-                "upload session could not be resolved for background processing",
+                "upload session could not be resolved for processing",
             )
+
+        if uploaded_session.project_id is not None and uploaded_session.project_id != project_id:
+            raise _proj_422(
+                "UPLOAD_PROJECT_MISMATCH",
+                "upload session project does not match route project",
+            )
+        if uploaded_session.status == "pending":
+            raise HTTPException(
+                status_code=409,
+                detail="upload session is not complete; call POST /uploads/{id}/complete first",
+            )
+        if uploaded_session.status == "ready":
+            raise HTTPException(
+                status_code=409,
+                detail="upload session has already been processed",
+            )
+        if uploaded_session.status == "failed":
+            raise HTTPException(
+                status_code=409,
+                detail="upload session is in failed state; create a new upload session",
+            )
+
         rasterio_uri = await run_in_threadpool(
             resolve_env_cog_uri_for_sampling,
             settings,
@@ -1124,6 +1039,15 @@ async def _run_project_environmental_cog_replace_task(
                 project_id,
                 int((perf_counter() - validate_started) * 1000),
             )
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="validate",
+                error_code=e.code,
+                error_message=e.message,
+                context="project-update-cog-validate-failed",
+            )
             raise HTTPException(
                 status_code=422,
                 detail=validation_error(
@@ -1157,6 +1081,15 @@ async def _run_project_environmental_cog_replace_task(
                 int((perf_counter() - persist_started) * 1000),
             )
         except ValueError as e:
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="persist",
+                error_code="STORAGE_LAYOUT_INVALID",
+                error_message=str(e),
+                context="project-update-storage-layout-invalid",
+            )
             raise HTTPException(
                 status_code=400,
                 detail=validation_error(
@@ -1170,6 +1103,15 @@ async def _run_project_environmental_cog_replace_task(
                 ),
             ) from e
         except Exception as e:
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="persist",
+                error_code="STORAGE_WRITE_FAILED",
+                error_message=str(e),
+                context="project-update-storage-write-failed",
+            )
             raise HTTPException(
                 status_code=503,
                 detail=validation_error(
@@ -1221,6 +1163,15 @@ async def _run_project_environmental_cog_replace_task(
                 project_id,
                 int((perf_counter() - derive_started) * 1000),
             )
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="derive",
+                error_code="BAND_DEFINITIONS",
+                error_message=str(e),
+                context="project-update-band-definitions",
+            )
             raise HTTPException(
                 status_code=422,
                 detail=validation_error(
@@ -1233,22 +1184,6 @@ async def _run_project_environmental_cog_replace_task(
                     ),
                 ),
             ) from e
-
-        catalog = request.app.state.catalog_service
-        existing = catalog.get_project(project_id)
-        if existing is None:
-            raise HTTPException(
-                status_code=404,
-                detail=validation_error(
-                    "PROJECT_NOT_FOUND",
-                    "project not found",
-                    context=_upload_error_context(
-                        project_id=project_id,
-                        phase="persist",
-                        uploaded_session=uploaded_session,
-                    ),
-                ),
-            )
 
         now = datetime.now(UTC).isoformat()
         project = existing.model_copy(
@@ -1276,12 +1211,35 @@ async def _run_project_environmental_cog_replace_task(
             context="project-update-persist",
         )
         catalog_save_started = perf_counter()
-        await run_in_threadpool(_persist)
-        logger.info(
-            "project_replace_env_cog_catalog_save_ok project_id=%s duration_ms=%s",
-            project_id,
-            int((perf_counter() - catalog_save_started) * 1000),
-        )
+        try:
+            await run_in_threadpool(_persist)
+            logger.info(
+                "project_replace_env_cog_catalog_save_ok project_id=%s duration_ms=%s",
+                project_id,
+                int((perf_counter() - catalog_save_started) * 1000),
+            )
+        except Exception as e:
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="persist",
+                error_code="CATALOG_SAVE_FAILED",
+                error_message=str(e),
+                context="project-update-catalog-save",
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=validation_error(
+                    "CATALOG_SAVE_FAILED",
+                    f"could not save catalog: {e}",
+                    context=_upload_error_context(
+                        project_id=project_id,
+                        phase="persist",
+                        uploaded_session=uploaded_session,
+                    ),
+                ),
+            ) from e
 
         reload_started = perf_counter()
         await reload_catalog_threaded(request)
@@ -1304,36 +1262,7 @@ async def _run_project_environmental_cog_replace_task(
             project_id,
             int((perf_counter() - overall_started) * 1000),
         )
-    except HTTPException as exc:
-        stage, error_code, error_message = _upload_error_from_http_exception(exc)
-        await run_in_threadpool(
-            best_effort_fail,
-            settings,
-            uploaded_session,
-            stage=stage,
-            error_code=error_code,
-            error_message=error_message,
-            context="project-update-background-http-error",
-        )
-        logger.warning(
-            "project_replace_env_cog_task_failed project_id=%s upload_session_id=%s code=%s message=%s",
-            project_id,
-            upload_session_id,
-            error_code,
-            error_message,
-        )
-    except Exception as exc:
-        await run_in_threadpool(
-            best_effort_fail,
-            settings,
-            uploaded_session,
-            stage="persist",
-            error_code="PROJECT_UPDATE_FAILED",
-            error_message=str(exc),
-            context="project-update-background-exception",
-        )
-        logger.exception(
-            "project_replace_env_cog_task_exception project_id=%s upload_session_id=%s",
-            project_id,
-            upload_session_id,
-        )
+        return project
+    except HTTPException:
+        raise
+

@@ -11,7 +11,6 @@ import {
   createProject,
   initUploadSession,
   patchProjectEnvironmentalBandDefinitions,
-  pollUploadSessionUntilTerminal,
   replaceProjectEnvironmentalCog,
   postRegenerateExplainabilityBackgroundSample,
   uploadFileToSignedUrl,
@@ -300,7 +299,7 @@ export function AdminPage() {
       }
       setEditProjUploadStatus(
         uploadSessionId !== undefined
-          ? 'Queueing environmental raster processing…'
+          ? 'Replacing environmental raster…'
           : 'Saving project…',
       )
       const updatedProject =
@@ -324,26 +323,12 @@ export function AdminPage() {
         })
       }
       if (uploadSessionId !== undefined) {
-        setEditProjUploadStatus('Processing environmental raster in background…')
-        const queuedTask = await replaceProjectEnvironmentalCog({
+        const replaced = await replaceProjectEnvironmentalCog({
           token,
           projectId: editingProject.id,
           uploadSessionId,
         })
-        const processed = await pollUploadSessionUntilTerminal({
-          token,
-          uploadId: queuedTask.id,
-        })
-        if (processed.status === 'failed') {
-          throw new Error(processed.error_message ?? 'Environmental raster processing failed.')
-        }
-        setEditProjUploadStatus('Refreshing project after environmental processing…')
-        const refreshedProjects = await fetchProjectCatalog({ token })
-        const refreshed = refreshedProjects.find((p) => p.id === editingProject.id)
-        if (!refreshed) {
-          throw new Error('Project not found after environmental raster processing.')
-        }
-        merged = refreshed
+        merged = replaced
         setEditProjSuccess(
           'Environmental COG replaced. Band definitions are ready. Generate explainability background to refresh variable influence.',
         )

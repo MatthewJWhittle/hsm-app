@@ -1,6 +1,7 @@
 """PATCH /projects/{id}/environmental-band-definitions (admin)."""
 
 import importlib
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -45,6 +46,14 @@ def admin_client_proj():
     )
     claims: dict = {"uid": "admin-1", "email": "a@example.com", "admin": True}
     with (
+        patch.dict(
+            os.environ,
+            {
+                "STORAGE_BACKEND": "gcs",
+                "GCS_BUCKET": "hsm-dashboard-model-artifacts",
+            },
+            clear=False,
+        ),
         patch("backend_api.catalog_service.firestore.Client", return_value=mock_client),
         patch(
             "backend_api.auth_deps.auth.verify_id_token",
@@ -211,7 +220,7 @@ def test_post_explainability_background_sample_default_rows(admin_client_proj):
 def test_patch_project_metadata_only_does_not_run_upload_or_derivation(admin_client_proj):
     c = admin_client_proj
     with (
-        patch("backend_api.routers.projects.download_upload_session_to_tempfile") as mock_download,
+        patch("backend_api.routers.projects.upload_session_gcs_uri") as mock_upload_uri,
         patch("backend_api.routers.projects.validate_cog_path_threaded") as mock_validate,
         patch(
             "backend_api.routers.projects.write_project_explainability_background_parquet"
@@ -225,7 +234,7 @@ def test_patch_project_metadata_only_does_not_run_upload_or_derivation(admin_cli
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["name"] == "Renamed project"
-        mock_download.assert_not_called()
+        mock_upload_uri.assert_not_called()
         mock_validate.assert_not_called()
         mock_bg.assert_not_called()
 
@@ -262,7 +271,14 @@ def test_post_replace_environmental_cog_uses_upload_session_clears_background_an
         updated_at="2026-01-01T00:00:00+00:00",
     )
     with (
-        patch("backend_api.routers.projects.get_upload_session", return_value=upload_session),
+        patch.dict(
+            os.environ,
+            {
+                "STORAGE_BACKEND": "gcs",
+                "GCS_BUCKET": "hsm-dashboard-model-artifacts",
+            },
+            clear=False,
+        ),
         patch(
             "backend_api.routers.projects.upload_session_gcs_uri",
             return_value=(
@@ -290,13 +306,12 @@ def test_post_replace_environmental_cog_uses_upload_session_clears_background_an
             "backend_api.routers.projects.reload_catalog_threaded",
             new_callable=AsyncMock,
         ),
-        patch("backend_api.routers.projects.download_upload_session_to_tempfile") as mock_download,
         patch("backend_api.routers.projects.validate_cog_path_threaded") as mock_validate_path,
     ):
         mock_band_defs_uri.return_value = (
             [
-                {"index": 0, "name": "a", "label": None},
-                {"index": 1, "name": "b", "label": None},
+                {"index": 0, "name": "a", "label": None, "description": None},
+                {"index": 1, "name": "b", "label": None, "description": None},
             ],
             [],
         )
@@ -305,16 +320,19 @@ def test_post_replace_environmental_cog_uses_upload_session_clears_background_an
             headers={"Authorization": "Bearer fake.token"},
             data={"upload_session_id": "upload-1"},
         )
-        assert r.status_code == 202, r.text
+        assert r.status_code == 200, r.text
         mock_upload_uri.assert_called_once()
         mock_resolve_uri.assert_called_once()
         mock_validate_uri.assert_called_once()
         mock_band_defs_uri.assert_called_once()
         c.mock_storage.promote_upload_session_driver_cog.assert_called_once()  # type: ignore[attr-defined]
-        mock_download.assert_not_called()
         mock_validate_path.assert_not_called()
         mock_bg.assert_not_called()
         body = r.json()
-        assert body["id"] == "upload-1"
-        assert body["status"] == "uploaded"
-        assert body["stage"] == "validate"
+        assert body["id"] == "proj-1"
+        assert body["driver_cog_path"] == "environmental_cog.tif"
+        assert body["environmental_band_definitions"] == [
+            {"index": 0, "name": "a", "label": None, "description": None},
+            {"index": 1, "name": "b", "label": None, "description": None},
+        ]
+        assert body["explainability_background_path"] is None
