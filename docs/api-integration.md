@@ -64,7 +64,7 @@ export PROJECT_ID="$(
 )"
 ```
 
-Use **`PROJECT_ID`** as **`project_id`** on **`POST /api/models`** and when updating the project.
+Use **`PROJECT_ID`** as **`project_id`** on **`POST /api/models`** and project update routes.
 
 Private projects may require `Authorization: Bearer` for **`GET /api/projects`** to list them.
 
@@ -76,7 +76,7 @@ Private projects may require `Authorization: Bearer` for **`GET /api/projects`**
 
 **Practical note:** Some GDAL builds have produced empty rasters when using **`gdalwarp -of COG`** in a single step. A **two-step** warp → COG (as in that script) is safer than combining steps if you see invalid or empty output.
 
-Apply the same idea to **any** environmental stack or suitability raster you produce outside this repo before **`POST`/`PUT`**.
+Apply the same idea to **any** environmental stack or suitability raster you produce outside this repo before upload/create/replace calls.
 
 ## Environmental COG on the project
 
@@ -92,31 +92,65 @@ Use upload sessions:
 
 You can poll `GET /api/uploads/{upload_id}` for lifecycle status and stage (`upload`, `validate`, `derive`, `persist`, `done`).
 
+Upload sessions are GCS-backed in this deployment: the API runtime must be configured with `GCS_BUCKET`, and the completed session object must exist in that bucket.
+
 **Runtime signing config (Cloud Run):**
 
 - Upload session init mints a V4 signed URL in the API runtime.
 - In token-only runtime credential environments, ensure the runtime service account can mint signed URLs via IAM signing (Token Creator role with `iam.serviceAccounts.signBlob`).
   - This repo’s Terraform sets `GCS_SIGNED_URL_SERVICE_ACCOUNT` to the runtime API service account email by default.
 
-### Upload or replace (`PUT /projects/{project_id}`)
+### Create project with environmental COG (`POST /api/projects`)
 
 ```http
-PUT {BASE_URL}/api/projects/{PROJECT_ID}
+POST {BASE_URL}/api/projects
 Authorization: Bearer {TOKEN}
 Content-Type: multipart/form-data
 ```
 
+Project create accepts either:
+
+- multipart **`file`** (direct upload), or
+- **`upload_session_id`** (session-backed upload).
+
+Do not send both in the same request.
+
 | Part | Purpose |
 |------|--------|
-| **`file`** | Multi-band environmental **COG** in **EPSG:3857**. |
-| **`infer_band_definitions`** | String `true` (default) to **infer** machine `name`s from GDAL band descriptions. Use `false` if you supply **`environmental_band_definitions`** as explicit JSON. |
+| **`name`** | Required project name. |
+| **`file`** | Optional multi-band environmental **COG** in **EPSG:3857**. |
+| **`upload_session_id`** | Optional alternative to multipart `file` for large uploads. |
+| **`infer_band_definitions`** | String `true` (default) to infer machine `name`s from GDAL band descriptions. Use `false` if you supply **`environmental_band_definitions`** as explicit JSON. |
+
+### Replace environmental COG on existing project (`POST /api/projects/{project_id}/environmental-cogs`)
+
+```http
+POST {BASE_URL}/api/projects/{PROJECT_ID}/environmental-cogs
+Authorization: Bearer {TOKEN}
+Content-Type: multipart/form-data
+```
+
+This route is upload-session based:
+
+- provide **`upload_session_id`**
+- do not send multipart `file`
+
+Behavior guardrails:
+
+- `UPLOAD_MODE_UNSUPPORTED` when `file` is sent directly.
+- `MISSING_UPLOAD` when `upload_session_id` is missing.
+- `STORAGE_BACKEND_UNSUPPORTED` when `upload_session_id` is used without `STORAGE_BACKEND=gcs`.
+
+Example (upload-session replace):
 
 ```bash
-curl -sS -X PUT "${BASE_URL}/api/projects/${PROJECT_ID}" \
+curl -sS -X POST "${BASE_URL}/api/projects/${PROJECT_ID}/environmental-cogs" \
   -H "Authorization: Bearer ${TOKEN}" \
-  -F "file=@/path/to/environmental_stack_cog.tif" \
+  -F "upload_session_id=${UPLOAD_ID}" \
   -F "infer_band_definitions=true"
 ```
+
+Project metadata updates (`PATCH /api/projects/{project_id}`) do not accept `file` or `upload_session_id`; use `/environmental-cogs` for raster replacement.
 
 After a successful upload, the service may build **`explainability_background.parquet`**. If the COG has **no valid pixels** in sampled areas, the request can fail with an error about explainability sampling. Ensure a real extent and valid data, or adjust **`ENV_BACKGROUND_SAMPLE_ROWS`** / regenerate via **`POST /projects/{project_id}/explainability-background-sample`** once the COG is sane.
 
@@ -238,7 +272,7 @@ Validation responses use structured **`detail`**: `{ "code", "message", "context
 
 1. Obtain **`TOKEN`** (`POST /api/auth/token`, with **`admin_only: true`** when you need an admin-capable token).
 2. Resolve **`PROJECT_ID`** (`GET /api/projects`).
-3. Ensure the **environmental** COG is **3857 + COG**; **`PUT /api/projects/{id}`** with **`infer_band_definitions=true`** (or explicit **`environmental_band_definitions`**).
+3. Ensure the **environmental** COG is **3857 + COG**; upload via **`POST /api/projects`** (create) or use upload sessions then call **`POST /api/projects/{id}/environmental-cogs`** (replace), with **`infer_band_definitions=true`** (or explicit **`environmental_band_definitions`**).
 4. Optionally **`PATCH …/environmental-band-definitions/labels`** using the example JSON and script under **`scripts/data/`**.
 5. Produce **suitability** raster → **warp to 3857** → **COG**.
 6. Build **`metadata`** with **`feature_band_names`** in training column order.
