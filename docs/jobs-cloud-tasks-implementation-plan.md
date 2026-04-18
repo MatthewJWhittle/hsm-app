@@ -33,7 +33,7 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 ---
 
-## Phase 1 — Firestore + schemas (**current**)
+## Phase 1 — Firestore + schemas (**complete**)
 
 - [x] `schemas_job.py` — Pydantic models, per-kind input validation.
 - [x] `jobs.py` — `jobs` + `job_idempotency` collections; `create_job`, `get_job`, status updates, `try_claim_job` (transactional).
@@ -41,10 +41,12 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 ---
 
-## Phase 2 — `JobQueue` interface
+## Phase 2 — `JobQueue` interface (**complete**)
 
-- `enqueue_run_job(job_id)` with `CloudTasksJobQueue` and `DirectJobQueue`.
-- Settings: `JOB_QUEUE_BACKEND`, `CLOUD_TASKS_*`, `WORKER_JOB_URL`, OIDC audience, dev secret.
+- [x] `job_queue.py` — `JobQueue` protocol, `DisabledJobQueue`, `DirectJobQueue`, `CloudTasksJobQueue`, `build_job_queue(settings)`.
+- [x] Settings — `JOB_QUEUE_BACKEND`, `CLOUD_TASKS_*`, `JOB_WORKER_URL`, OIDC fields, `INTERNAL_JOB_SECRET`, `JOB_DIRECT_HTTP_TIMEOUT_SECONDS` (each accepts env **or** Python field name via `AliasChoices`).
+- [x] Dependency: `google-cloud-tasks`.
+- [x] `tests/test_job_queue.py`.
 
 ---
 

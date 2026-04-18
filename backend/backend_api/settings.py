@@ -184,3 +184,51 @@ class Settings(BaseSettings):
         le=300.0,
     )
 
+    job_queue_backend: str = Field(
+        default="disabled",
+        description=(
+            "Dispatch background jobs: 'disabled' (log only), 'cloud_tasks', or 'direct' (HTTP POST to JOB_WORKER_URL)."
+        ),
+        validation_alias=AliasChoices("JOB_QUEUE_BACKEND", "job_queue_backend"),
+    )
+    cloud_tasks_location: str = Field(
+        default="us-central1",
+        validation_alias=AliasChoices("CLOUD_TASKS_LOCATION", "cloud_tasks_location"),
+    )
+    cloud_tasks_queue_id: str = Field(
+        default="hsm-jobs-default",
+        validation_alias=AliasChoices("CLOUD_TASKS_QUEUE_ID", "cloud_tasks_queue_id"),
+    )
+    job_worker_url: str | None = Field(
+        default=None,
+        description="Worker URL for Cloud Tasks or direct dispatch (POST, JSON {\"job_id\": ...}).",
+        validation_alias=AliasChoices("JOB_WORKER_URL", "job_worker_url"),
+    )
+    cloud_tasks_oidc_service_account_email: str | None = Field(
+        default=None,
+        description="Service account email for OIDC token on Cloud Tasks HTTP targets.",
+        validation_alias=AliasChoices(
+            "CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL",
+            "cloud_tasks_oidc_service_account_email",
+        ),
+    )
+    cloud_tasks_oidc_audience: str | None = Field(
+        default=None,
+        description="OIDC audience (often the Cloud Run service root URL). Defaults to JOB_WORKER_URL.",
+        validation_alias=AliasChoices("CLOUD_TASKS_OIDC_AUDIENCE", "cloud_tasks_oidc_audience"),
+    )
+    internal_job_secret: str | None = Field(
+        default=None,
+        description="Optional X-Internal-Job-Secret value for direct worker calls in development.",
+        validation_alias=AliasChoices("INTERNAL_JOB_SECRET", "internal_job_secret"),
+    )
+    job_direct_http_timeout_seconds: float = Field(
+        default=15.0,
+        validation_alias=AliasChoices(
+            "JOB_DIRECT_HTTP_TIMEOUT_SECONDS",
+            "job_direct_http_timeout_seconds",
+        ),
+        ge=1.0,
+        le=120.0,
+    )
+
