@@ -5,11 +5,8 @@ from __future__ import annotations
 from backend_api.schemas_upload import UploadSession
 
 _ALLOWED_STATUS_TRANSITIONS: dict[str, set[str]] = {
-    "pending": {"uploaded", "failed"},
-    "uploaded": {"validating", "failed"},
-    "validating": {"deriving", "failed"},
-    "deriving": {"ready", "failed"},
-    "ready": set(),
+    "pending": {"complete", "failed"},
+    "complete": {"failed"},
     "failed": set(),
 }
 
@@ -26,15 +23,15 @@ def complete_upload_transition(
     Transition a session for ``POST /uploads/{id}/complete``.
 
     Rules:
-    - pending -> uploaded (stage upload -> validate)
-    - uploaded/validating/deriving/ready are idempotent
+    - pending -> complete (stage upload -> done)
+    - complete is idempotent
     - failed rejects transition
     """
     if session.status == "failed":
         raise ValueError(f"cannot complete upload in status {session.status!r}")
 
-    next_status = "uploaded" if session.status == "pending" else session.status
-    next_stage = "validate" if session.status == "pending" else session.stage
+    next_status = "complete" if session.status == "pending" else session.status
+    next_stage = "done" if session.status == "pending" else session.stage
 
     return session.model_copy(
         update={

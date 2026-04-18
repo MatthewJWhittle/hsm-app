@@ -1,12 +1,14 @@
 """PATCH /projects/{id}/environmental-band-definitions (admin)."""
 
 import importlib
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
+from backend_api.schemas_upload import UploadSession
 from tests.helpers import mock_firestore_client_for_documents
 
 SAMPLE_PROJECT = {
@@ -34,12 +36,24 @@ def admin_client_proj():
         "/data/projects/proj-1",
         "environmental_cog.tif",
     )
+    mock_storage.promote_upload_session_driver_cog.return_value = (
+        "/data/projects/proj-1",
+        "environmental_cog.tif",
+    )
     mock_client = mock_firestore_client_for_documents(
         [],
         project_documents=[SAMPLE_PROJECT],
     )
     claims: dict = {"uid": "admin-1", "email": "a@example.com", "admin": True}
     with (
+        patch.dict(
+            os.environ,
+            {
+                "STORAGE_BACKEND": "gcs",
+                "GCS_BUCKET": "hsm-dashboard-model-artifacts",
+            },
+            clear=False,
+        ),
         patch("backend_api.catalog_service.firestore.Client", return_value=mock_client),
         patch(
             "backend_api.auth_deps.auth.verify_id_token",
@@ -61,6 +75,7 @@ def admin_client_proj():
 
         importlib.reload(main)
         with TestClient(main.app) as c:
+            c.mock_storage = mock_storage  # type: ignore[attr-defined]
             yield c
 
 
@@ -205,7 +220,7 @@ def test_post_explainability_background_sample_default_rows(admin_client_proj):
 def test_patch_project_metadata_only_does_not_run_upload_or_derivation(admin_client_proj):
     c = admin_client_proj
     with (
-        patch("backend_api.routers.projects.download_upload_session_to_tempfile") as mock_download,
+        patch("backend_api.routers.projects.upload_session_gcs_uri") as mock_upload_uri,
         patch("backend_api.routers.projects.validate_cog_path_threaded") as mock_validate,
         patch(
             "backend_api.routers.projects.write_project_explainability_background_parquet"
@@ -219,7 +234,7 @@ def test_patch_project_metadata_only_does_not_run_upload_or_derivation(admin_cli
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["name"] == "Renamed project"
-        mock_download.assert_not_called()
+        mock_upload_uri.assert_not_called()
         mock_validate.assert_not_called()
         mock_bg.assert_not_called()
 
@@ -239,48 +254,85 @@ def test_post_replace_environmental_cog_uses_upload_session_clears_background_an
     admin_client_proj,
 ):
     c = admin_client_proj
+    upload_session = UploadSession(
+        id="upload-1",
+        project_id="proj-1",
+        filename="env_stack.tif",
+        content_type="image/tiff",
+        requested_size_bytes=123,
+        uploaded_size_bytes=123,
+        checksum_sha256=None,
+        status="complete",
+        stage="done",
+        gcs_bucket="hsm-dashboard-model-artifacts",
+        object_path="uploads/upload-1/env_stack.tif",
+        created_by_uid="admin-1",
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
     with (
+        patch.dict(
+            os.environ,
+            {
+                "STORAGE_BACKEND": "gcs",
+                "GCS_BUCKET": "hsm-dashboard-model-artifacts",
+            },
+            clear=False,
+        ),
         patch(
-            "backend_api.routers.projects.download_upload_session_to_tempfile"
-        ) as mock_download,
-        patch("backend_api.routers.projects.validate_cog_path_threaded") as mock_validate,
+            "backend_api.routers.projects.upload_session_gcs_uri",
+            return_value=(
+                "gs://hsm-dashboard-model-artifacts/uploads/upload-1/env_stack.tif",
+                upload_session,
+                123,
+            ),
+        ) as mock_upload_uri,
+        patch(
+            "backend_api.routers.projects.resolve_env_cog_uri_for_sampling",
+            return_value="/vsicurl/signed-url",
+        ) as mock_resolve_uri,
+        patch(
+            "backend_api.routers.projects.validate_cog_uri_threaded",
+            new_callable=AsyncMock,
+        ) as mock_validate_uri,
         patch(
             "backend_api.routers.projects.write_project_explainability_background_parquet"
         ) as mock_bg,
         patch(
-            "backend_api.routers.projects.band_definitions_for_upload_path"
-        ) as mock_band_defs,
-        patch("backend_api.routers.projects.best_effort_mark") as mock_mark,
+            "backend_api.routers.projects.band_definitions_for_upload_uri"
+        ) as mock_band_defs_uri,
+        patch("backend_api.routers.projects.best_effort_mark", return_value=upload_session),
+        patch(
+            "backend_api.routers.projects.reload_catalog_threaded",
+            new_callable=AsyncMock,
+        ),
+        patch("backend_api.routers.projects.validate_cog_path_threaded") as mock_validate_path,
     ):
-        fake_upload = MagicMock(spec=Path)
-        fake_upload.__str__.return_value = "/tmp/fake-upload.tif"
-        fake_upload.unlink = MagicMock()
-        mock_download.return_value = (fake_upload, None)
-        mock_band_defs.return_value = (
+        mock_band_defs_uri.return_value = (
             [
-                {"index": 0, "name": "a", "label": None},
-                {"index": 1, "name": "b", "label": None},
+                {"index": 0, "name": "a", "label": None, "description": None},
+                {"index": 1, "name": "b", "label": None, "description": None},
             ],
             [],
         )
-        mock_mark.return_value = None
-        with patch("backend_api.routers.projects.os.path.getsize", return_value=123):
-            r = c.post(
-                "/api/projects/proj-1/environmental-cogs",
-                headers={"Authorization": "Bearer fake.token"},
-                data={"upload_session_id": "upload-1"},
-            )
+        r = c.post(
+            "/api/projects/proj-1/environmental-cogs",
+            headers={"Authorization": "Bearer fake.token"},
+            data={"upload_session_id": "upload-1"},
+        )
         assert r.status_code == 200, r.text
-        mock_download.assert_called_once()
-        mock_validate.assert_called_once()
+        mock_upload_uri.assert_called_once()
+        mock_resolve_uri.assert_called_once()
+        mock_validate_uri.assert_called_once()
+        mock_band_defs_uri.assert_called_once()
+        c.mock_storage.promote_upload_session_driver_cog.assert_called_once()  # type: ignore[attr-defined]
+        mock_validate_path.assert_not_called()
         mock_bg.assert_not_called()
-        fake_upload.unlink.assert_called_once_with(missing_ok=True)
         body = r.json()
         assert body["id"] == "proj-1"
+        assert body["driver_cog_path"] == "environmental_cog.tif"
         assert body["environmental_band_definitions"] == [
-            {"index": 0, "name": "a", "label": None},
-            {"index": 1, "name": "b", "label": None},
+            {"index": 0, "name": "a", "label": None, "description": None},
+            {"index": 1, "name": "b", "label": None, "description": None},
         ]
         assert body["explainability_background_path"] is None
-        assert body["explainability_background_sample_rows"] is None
-        assert body["explainability_background_generated_at"] is None

@@ -31,12 +31,14 @@ from backend_api.api_errors import validation_error
 from backend_api.cog_validation import CogValidationError
 from backend_api.deps.catalog import get_object_storage, require_catalog_ready
 from backend_api.env_background_sample import (
+    resolve_env_cog_uri_for_sampling,
     sanitize_exception_for_client,
     write_project_explainability_background_parquet,
 )
 from backend_api.env_cog_bands import (
     apply_band_label_updates,
     band_definitions_for_upload_path,
+    band_definitions_for_upload_uri,
     count_bands_in_path,
     validate_band_definitions_match_raster,
 )
@@ -48,6 +50,7 @@ from backend_api.deps.visibility_models import (
 from backend_api.routers.catalog_upload_utils import (
     reload_catalog_threaded,
     validate_cog_path_threaded,
+    validate_cog_uri_threaded,
 )
 from backend_api.routers.project_visibility_parse import (
     parse_status_optional,
@@ -62,12 +65,15 @@ from backend_api.schemas_project import (
     RegenerateExplainabilityBackgroundBody,
 )
 from backend_api.settings import Settings
-from backend_api.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
+from backend_api.storage import (
+    EXPLAINABILITY_BACKGROUND_FILENAME,
+    ObjectStorage,
+)
 from backend_api.schemas_upload import UploadSession
 from backend_api.upload_session_ingest import (
     best_effort_fail,
     best_effort_mark,
-    download_upload_session_to_tempfile,
+    upload_session_gcs_uri,
     write_upload_file_to_tempfile,
 )
 
@@ -462,6 +468,11 @@ async def create_project(
     """
     if not name.strip():
         raise _proj_422("MISSING_FIELD", "name is required")
+    if upload_session_id and settings.storage_backend.strip().lower() != "gcs":
+        raise _proj_503(
+            "STORAGE_BACKEND_UNSUPPORTED",
+            "upload_session_id project create currently requires STORAGE_BACKEND=gcs",
+        )
     visibility_v = parse_visibility(visibility)
     try:
         uids = _parse_allowed_uids(allowed_uids)
@@ -484,14 +495,28 @@ async def create_project(
         )
     uploaded_session = None
     upload_temp_path: Path | None = None
+    upload_uri: str | None = None
+    upload_size: int | None = None
+    rasterio_uri: str | None = None
     if upload_session_id:
-        upload_temp_path, uploaded_session = await run_in_threadpool(
-            download_upload_session_to_tempfile,
+        upload_uri, uploaded_session, upload_size = await run_in_threadpool(
+            upload_session_gcs_uri,
             settings,
             upload_session_id,
             purpose="project create",
         )
-        logger.info("project_create_ingest_session project_id=%s upload_session_id=%s", project_id, upload_session_id)
+        if uploaded_session is not None:
+            rasterio_uri = await run_in_threadpool(
+                resolve_env_cog_uri_for_sampling,
+                settings,
+                f"gs://{uploaded_session.gcs_bucket}",
+                uploaded_session.object_path,
+            )
+        logger.info(
+            "project_create_ingest_session project_id=%s upload_session_id=%s",
+            project_id,
+            upload_session_id,
+        )
     elif file is not None:
         upload_temp_path = await write_upload_file_to_tempfile(
             file,
@@ -500,9 +525,18 @@ async def create_project(
         logger.info("project_create_ingest_multipart project_id=%s", project_id)
 
     try:
-        if upload_temp_path is not None:
-            upload_size = os.path.getsize(str(upload_temp_path))
+        if upload_temp_path is not None or upload_uri is not None:
+            if upload_temp_path is not None:
+                upload_size = os.path.getsize(str(upload_temp_path))
             logger.info("project_create_upload_size project_id=%s upload_bytes=%s upload_session_id=%s", project_id, upload_size, uploaded_session.id if uploaded_session else None)
+            if upload_size is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=validation_error(
+                        "UPLOAD_SIZE_UNKNOWN",
+                        "could not determine uploaded object size",
+                    ),
+                )
             if upload_size <= 0:
                 raise _proj_422("EMPTY_FILE", "empty file")
             if upload_size > settings.max_environmental_upload_bytes:
@@ -518,13 +552,18 @@ async def create_project(
                 best_effort_mark,
                 settings,
                 uploaded_session,
-                status="validating",
+                status="complete",
                 stage="validate",
                 context="project-create-validate",
             )
             try:
                 logger.info("project_create_validate_start project_id=%s", project_id)
-                await validate_cog_path_threaded(str(upload_temp_path))
+                if upload_uri is not None:
+                    await validate_cog_uri_threaded(
+                        rasterio_uri if rasterio_uri is not None else upload_uri
+                    )
+                elif upload_temp_path is not None:
+                    await validate_cog_path_threaded(str(upload_temp_path))
                 logger.info("project_create_validate_ok project_id=%s", project_id)
             except CogValidationError as e:
                 await run_in_threadpool(
@@ -542,6 +581,16 @@ async def create_project(
                 ) from e
 
             def _write() -> tuple[str, str]:
+                if upload_uri is not None:
+                    if uploaded_session is None:
+                        raise ValueError("upload session missing for session-based project create")
+                    return storage.promote_upload_session_driver_cog(
+                        project_id=project_id,
+                        source_bucket=uploaded_session.gcs_bucket,
+                        source_object_path=uploaded_session.object_path,
+                    )
+                if upload_temp_path is None:
+                    raise ValueError("missing upload source path")
                 return storage.write_project_driver_cog_from_path(
                     project_id, str(upload_temp_path)
                 )
@@ -579,7 +628,7 @@ async def create_project(
                 best_effort_mark,
                 settings,
                 uploaded_session,
-                status="deriving",
+                status="complete",
                 stage="derive",
                 context="project-create-derive",
             )
@@ -587,13 +636,23 @@ async def create_project(
                 logger.info("project_create_derive_bands_start project_id=%s", project_id)
 
                 def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
-                    return band_definitions_for_upload_path(
-                        str(upload_temp_path),
-                        environmental_band_definitions,
-                        infer_band_definitions=_infer_band_definitions_from_form(
-                            infer_band_definitions
-                        ),
-                    )
+                    if upload_uri is not None:
+                        return band_definitions_for_upload_uri(
+                            rasterio_uri if rasterio_uri is not None else upload_uri,
+                            environmental_band_definitions,
+                            infer_band_definitions=_infer_band_definitions_from_form(
+                                infer_band_definitions
+                            ),
+                        )
+                    if upload_temp_path is not None:
+                        return band_definitions_for_upload_path(
+                            str(upload_temp_path),
+                            environmental_band_definitions,
+                            infer_band_definitions=_infer_band_definitions_from_form(
+                                infer_band_definitions
+                            ),
+                        )
+                    raise ValueError("missing upload source for band definition inference")
 
                 band_defs, infer_notes = await run_in_threadpool(_defs)
                 inference_notes = infer_notes if infer_notes else None
@@ -686,7 +745,7 @@ async def create_project(
         best_effort_mark,
         settings,
         uploaded_session,
-        status="deriving",
+        status="complete",
         stage="persist",
         context="project-create-persist",
     )
@@ -706,12 +765,12 @@ async def create_project(
         raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
-    if uploaded_session is not None and uploaded_session.status != "ready":
+    if uploaded_session is not None and uploaded_session.stage != "done":
         await run_in_threadpool(
             best_effort_mark,
             settings,
             uploaded_session,
-            status="ready",
+            status="complete",
             stage="done",
             context="project-create-done",
         )
@@ -814,7 +873,7 @@ async def update_project(
     response_model=CatalogProject,
     tags=["admin"],
     responses=_ADMIN_RESPONSES,
-    summary="Replace project environmental COG via multipart file or upload session",
+    summary="Replace project environmental COG from upload session",
 )
 async def replace_project_environmental_cogs(
     request: Request,
@@ -832,334 +891,373 @@ async def replace_project_environmental_cogs(
     existing = catalog.get_project(project_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="project not found")
-    overall_started = perf_counter()
-    logger.info(
-        "project_replace_env_cog_start project_id=%s has_multipart=%s has_session=%s",
-        project_id,
-        file is not None,
-        bool(upload_session_id),
-    )
+    if upload_session_id and settings.storage_backend.strip().lower() != "gcs":
+        raise _proj_503(
+            "STORAGE_BACKEND_UNSUPPORTED",
+            "upload_session_id project replace currently requires STORAGE_BACKEND=gcs",
+        )
 
     if file is not None and upload_session_id:
         raise _proj_422(
             "UPLOAD_CONFLICT",
             "provide either multipart file or upload_session_id, not both",
         )
-    if file is None and upload_session_id is None:
+    if file is not None:
+        raise _proj_422(
+            "UPLOAD_MODE_UNSUPPORTED",
+            "direct multipart replace is not supported; use upload_session_id",
+        )
+    if upload_session_id is None:
         raise _proj_422(
             "MISSING_UPLOAD",
-            "provide multipart file or upload_session_id",
+            "provide upload_session_id",
         )
 
-    artifact_root = existing.driver_artifact_root
-    cog_path = existing.driver_cog_path
-    new_band_defs: list[EnvironmentalBandDefinition] | None = (
-        existing.environmental_band_definitions
-    )
-    inference_notes: list[str] | None = None
-
+    overall_started = perf_counter()
+    upload_uri: str | None = None
     uploaded_session: UploadSession | None = None
-    upload_temp_path: Path | None = None
-    if upload_session_id:
+    rasterio_uri: str | None = None
+
+    try:
         ingest_started = perf_counter()
-        upload_temp_path, uploaded_session = await run_in_threadpool(
-            download_upload_session_to_tempfile,
+        upload_uri, uploaded_session, upload_size = await run_in_threadpool(
+            upload_session_gcs_uri,
             settings,
             upload_session_id,
             purpose="project update",
         )
         logger.info(
-            "project_replace_env_cog_ingest_done project_id=%s source=session upload_session_id=%s duration_ms=%s",
+            "project_replace_env_cog_ingest_done project_id=%s source=session-uri upload_session_id=%s duration_ms=%s",
             project_id,
             upload_session_id,
             int((perf_counter() - ingest_started) * 1000),
         )
-    elif file is not None:
-        ingest_started = perf_counter()
-        upload_temp_path = await write_upload_file_to_tempfile(
-            file,
-            max_bytes=settings.max_environmental_upload_bytes,
-        )
-        logger.info(
-            "project_replace_env_cog_ingest_done project_id=%s source=multipart duration_ms=%s",
-            project_id,
-            int((perf_counter() - ingest_started) * 1000),
-        )
 
-    try:
-        if upload_temp_path is not None:
-            upload_size = os.path.getsize(str(upload_temp_path))
-            logger.info("project_replace_env_cog_upload_size project_id=%s upload_bytes=%s upload_session_id=%s", project_id, upload_size, uploaded_session.id if uploaded_session else None)
-            if upload_size <= 0:
-                raise _proj_422(
-                    "EMPTY_FILE",
-                    "empty file",
+        logger.info(
+            "project_replace_env_cog_upload_size project_id=%s upload_bytes=%s upload_session_id=%s",
+            project_id,
+            upload_size,
+            uploaded_session.id if uploaded_session else None,
+        )
+        if upload_size is None:
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(
+                    "UPLOAD_SIZE_UNKNOWN",
+                    "could not determine uploaded object size",
                     context=_upload_error_context(
                         project_id=project_id,
                         phase="ingest",
                         uploaded_session=uploaded_session,
                     ),
-                )
-            if upload_size > settings.max_environmental_upload_bytes:
-                raise HTTPException(
-                    status_code=413,
-                    detail=validation_error(
-                        "UPLOAD_TOO_LARGE",
-                        f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
-                        context=_upload_error_context(
-                            project_id=project_id,
-                            phase="ingest",
-                            uploaded_session=uploaded_session,
-                            extra={"max_bytes": settings.max_environmental_upload_bytes},
-                        ),
-                    ),
-                )
-            uploaded_session = await run_in_threadpool(
-                best_effort_mark,
-                settings,
-                uploaded_session,
-                status="validating",
-                stage="validate",
-                context="project-update-validate",
+                ),
             )
-            validate_started = perf_counter()
-            try:
-                logger.info(
-                    "project_replace_env_cog_validate_start project_id=%s",
-                    project_id,
-                )
-                await validate_cog_path_threaded(str(upload_temp_path))
-                logger.info(
-                    "project_replace_env_cog_validate_ok project_id=%s duration_ms=%s",
-                    project_id,
-                    int((perf_counter() - validate_started) * 1000),
-                )
-            except CogValidationError as e:
-                logger.info(
-                    "project_replace_env_cog_validate_failed project_id=%s duration_ms=%s",
-                    project_id,
-                    int((perf_counter() - validate_started) * 1000),
-                )
-                await run_in_threadpool(
-                    best_effort_fail,
-                    settings,
-                    uploaded_session,
-                    stage="validate",
-                    error_code=e.code,
-                    error_message=e.message,
-                    context="project-update-cog-validate-failed",
-                )
-                raise HTTPException(
-                    status_code=422,
-                    detail=validation_error(
-                        e.code,
-                        e.message,
-                        context=_upload_error_context(
-                            project_id=project_id,
-                            phase="validate",
-                            uploaded_session=uploaded_session,
-                            extra=e.context or None,
-                        ),
-                    ),
-                ) from e
-
-            def _write() -> tuple[str, str]:
-                return storage.write_project_driver_cog_from_path(
-                    project_id, str(upload_temp_path)
-                )
-
-            persist_started = perf_counter()
-            try:
-                artifact_root, cog_path = await run_in_threadpool(_write)
-                logger.info(
-                    "project_replace_env_cog_persist_cog_ok project_id=%s artifact_root=%s duration_ms=%s",
-                    project_id,
-                    artifact_root,
-                    int((perf_counter() - persist_started) * 1000),
-                )
-            except ValueError as e:
-                await run_in_threadpool(
-                    best_effort_fail,
-                    settings,
-                    uploaded_session,
-                    stage="persist",
-                    error_code="STORAGE_LAYOUT_INVALID",
-                    error_message=str(e),
-                    context="project-update-storage-layout-invalid",
-                )
-                raise HTTPException(
-                    status_code=400,
-                    detail=validation_error(
-                        "STORAGE_LAYOUT_INVALID",
-                        str(e),
-                        context=_upload_error_context(
-                            project_id=project_id,
-                            phase="persist",
-                            uploaded_session=uploaded_session,
-                        ),
-                    ),
-                ) from e
-            except Exception as e:
-                await run_in_threadpool(
-                    best_effort_fail,
-                    settings,
-                    uploaded_session,
-                    stage="persist",
-                    error_code="STORAGE_WRITE_FAILED",
-                    error_message=str(e),
-                    context="project-update-storage-write-failed",
-                )
-                raise HTTPException(
-                    status_code=503,
-                    detail=validation_error(
-                        "STORAGE_WRITE_FAILED",
-                        f"could not store file: {e}",
-                        context=_upload_error_context(
-                            project_id=project_id,
-                            phase="persist",
-                            uploaded_session=uploaded_session,
-                        ),
-                    ),
-                ) from e
-
-            uploaded_session = await run_in_threadpool(
-                best_effort_mark,
-                settings,
-                uploaded_session,
-                status="deriving",
-                stage="derive",
-                context="project-update-derive",
-            )
-            derive_started = perf_counter()
-            try:
-                logger.info(
-                    "project_replace_env_cog_derive_bands_start project_id=%s",
-                    project_id,
-                )
-
-                def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
-                    return band_definitions_for_upload_path(
-                        str(upload_temp_path),
-                        environmental_band_definitions,
-                        infer_band_definitions=_infer_band_definitions_from_form(
-                            infer_band_definitions
-                        ),
-                    )
-
-                new_band_defs, infer_notes = await run_in_threadpool(_defs)
-                inference_notes = infer_notes if infer_notes else None
-                logger.info(
-                    "project_replace_env_cog_derive_bands_ok project_id=%s band_count=%s duration_ms=%s",
-                    project_id,
-                    len(new_band_defs) if new_band_defs else 0,
-                    int((perf_counter() - derive_started) * 1000),
-                )
-            except ValueError as e:
-                logger.info(
-                    "project_replace_env_cog_derive_bands_failed project_id=%s duration_ms=%s",
-                    project_id,
-                    int((perf_counter() - derive_started) * 1000),
-                )
-                await run_in_threadpool(
-                    best_effort_fail,
-                    settings,
-                    uploaded_session,
-                    stage="derive",
-                    error_code="BAND_DEFINITIONS",
-                    error_message=str(e),
-                    context="project-update-band-definitions",
-                )
-                raise HTTPException(
-                    status_code=422,
-                    detail=validation_error(
-                        "BAND_DEFINITIONS",
-                        str(e),
-                        context=_upload_error_context(
-                            project_id=project_id,
-                            phase="derive",
-                            uploaded_session=uploaded_session,
-                        ),
-                    ),
-                ) from e
-    finally:
-        if upload_temp_path is not None:
-            upload_temp_path.unlink(missing_ok=True)
-
-    now = datetime.now(UTC).isoformat()
-    project = existing.model_copy(
-        update={
-            "driver_artifact_root": artifact_root,
-            "driver_cog_path": cog_path,
-            "environmental_band_definitions": new_band_defs,
-            "band_inference_notes": inference_notes,
-            "explainability_background_path": None,
-            "explainability_background_sample_rows": None,
-            "explainability_background_generated_at": None,
-            "updated_at": now,
-        }
-    )
-
-    def _persist() -> None:
-        upsert_project(settings, project)
-
-    uploaded_session = await run_in_threadpool(
-        best_effort_mark,
-        settings,
-        uploaded_session,
-        status="deriving",
-        stage="persist",
-        context="project-update-persist",
-    )
-    catalog_save_started = perf_counter()
-    try:
-        await run_in_threadpool(_persist)
-        logger.info(
-            "project_replace_env_cog_catalog_save_ok project_id=%s duration_ms=%s",
-            project_id,
-            int((perf_counter() - catalog_save_started) * 1000),
-        )
-    except Exception as e:
-        await run_in_threadpool(
-            best_effort_fail,
-            settings,
-            uploaded_session,
-            stage="persist",
-            error_code="CATALOG_SAVE_FAILED",
-            error_message=str(e),
-            context="project-update-catalog-save",
-        )
-        raise HTTPException(
-            status_code=503,
-            detail=validation_error(
-                "CATALOG_SAVE_FAILED",
-                f"could not save catalog: {e}",
+        if upload_size <= 0:
+            raise _proj_422(
+                "EMPTY_FILE",
+                "empty file",
                 context=_upload_error_context(
                     project_id=project_id,
-                    phase="persist",
+                    phase="ingest",
                     uploaded_session=uploaded_session,
                 ),
-            ),
-        ) from e
+            )
+        if upload_size > settings.max_environmental_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=validation_error(
+                    "UPLOAD_TOO_LARGE",
+                    f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
+                    context=_upload_error_context(
+                        project_id=project_id,
+                        phase="ingest",
+                        uploaded_session=uploaded_session,
+                        extra={"max_bytes": settings.max_environmental_upload_bytes},
+                    ),
+                ),
+            )
 
-    reload_started = perf_counter()
-    await reload_catalog_threaded(request)
-    logger.info(
-        "project_replace_env_cog_catalog_reload_ok project_id=%s duration_ms=%s",
-        project_id,
-        int((perf_counter() - reload_started) * 1000),
-    )
-    if uploaded_session is not None and uploaded_session.status != "ready":
-        await run_in_threadpool(
+        if uploaded_session is None:
+            raise _proj_503(
+                "UPLOAD_SESSION_MISSING",
+                "upload session could not be resolved for processing",
+            )
+
+        if uploaded_session.project_id is not None and uploaded_session.project_id != project_id:
+            raise _proj_422(
+                "UPLOAD_PROJECT_MISMATCH",
+                "upload session project does not match route project",
+            )
+        if uploaded_session.status == "pending":
+            raise HTTPException(
+                status_code=409,
+                detail="upload session is not complete; call POST /uploads/{id}/complete first",
+            )
+        if uploaded_session.status == "failed":
+            raise HTTPException(
+                status_code=409,
+                detail="upload session is in failed state; create a new upload session",
+            )
+
+        rasterio_uri = await run_in_threadpool(
+            resolve_env_cog_uri_for_sampling,
+            settings,
+            f"gs://{uploaded_session.gcs_bucket}",
+            uploaded_session.object_path,
+        )
+
+        uploaded_session = await run_in_threadpool(
             best_effort_mark,
             settings,
             uploaded_session,
-            status="ready",
-            stage="done",
-            context="project-update-done",
+            status="complete",
+            stage="validate",
+            context="project-update-validate",
         )
-    logger.info(
-        "project_replace_env_cog_done project_id=%s total_duration_ms=%s",
-        project_id,
-        int((perf_counter() - overall_started) * 1000),
-    )
-    return project
+        validate_started = perf_counter()
+        try:
+            logger.info(
+                "project_replace_env_cog_validate_start project_id=%s",
+                project_id,
+            )
+            await validate_cog_uri_threaded(
+                rasterio_uri if rasterio_uri is not None else upload_uri
+            )
+            logger.info(
+                "project_replace_env_cog_validate_ok project_id=%s duration_ms=%s",
+                project_id,
+                int((perf_counter() - validate_started) * 1000),
+            )
+        except CogValidationError as e:
+            logger.info(
+                "project_replace_env_cog_validate_failed project_id=%s duration_ms=%s",
+                project_id,
+                int((perf_counter() - validate_started) * 1000),
+            )
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="validate",
+                error_code=e.code,
+                error_message=e.message,
+                context="project-update-cog-validate-failed",
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(
+                    e.code,
+                    e.message,
+                    context=_upload_error_context(
+                        project_id=project_id,
+                        phase="validate",
+                        uploaded_session=uploaded_session,
+                        extra=e.context or None,
+                    ),
+                ),
+            ) from e
+
+        def _write() -> tuple[str, str]:
+            return storage.promote_upload_session_driver_cog(
+                project_id=project_id,
+                source_bucket=uploaded_session.gcs_bucket if uploaded_session else "",
+                source_object_path=(
+                    uploaded_session.object_path if uploaded_session else ""
+                ),
+            )
+
+        persist_started = perf_counter()
+        try:
+            artifact_root, cog_path = await run_in_threadpool(_write)
+            logger.info(
+                "project_replace_env_cog_persist_cog_ok project_id=%s artifact_root=%s duration_ms=%s",
+                project_id,
+                artifact_root,
+                int((perf_counter() - persist_started) * 1000),
+            )
+        except ValueError as e:
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="persist",
+                error_code="STORAGE_LAYOUT_INVALID",
+                error_message=str(e),
+                context="project-update-storage-layout-invalid",
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=validation_error(
+                    "STORAGE_LAYOUT_INVALID",
+                    str(e),
+                    context=_upload_error_context(
+                        project_id=project_id,
+                        phase="persist",
+                        uploaded_session=uploaded_session,
+                    ),
+                ),
+            ) from e
+        except Exception as e:
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="persist",
+                error_code="STORAGE_WRITE_FAILED",
+                error_message=str(e),
+                context="project-update-storage-write-failed",
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=validation_error(
+                    "STORAGE_WRITE_FAILED",
+                    f"could not store file: {e}",
+                    context=_upload_error_context(
+                        project_id=project_id,
+                        phase="persist",
+                        uploaded_session=uploaded_session,
+                    ),
+                ),
+            ) from e
+
+        uploaded_session = await run_in_threadpool(
+            best_effort_mark,
+            settings,
+            uploaded_session,
+            status="complete",
+            stage="derive",
+            context="project-update-derive",
+        )
+        derive_started = perf_counter()
+        try:
+            logger.info(
+                "project_replace_env_cog_derive_bands_start project_id=%s",
+                project_id,
+            )
+
+            def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
+                return band_definitions_for_upload_uri(
+                    rasterio_uri if rasterio_uri is not None else upload_uri,
+                    environmental_band_definitions,
+                    infer_band_definitions=_infer_band_definitions_from_form(
+                        infer_band_definitions
+                    ),
+                )
+
+            new_band_defs, infer_notes = await run_in_threadpool(_defs)
+            inference_notes = infer_notes if infer_notes else None
+            logger.info(
+                "project_replace_env_cog_derive_bands_ok project_id=%s band_count=%s duration_ms=%s",
+                project_id,
+                len(new_band_defs) if new_band_defs else 0,
+                int((perf_counter() - derive_started) * 1000),
+            )
+        except ValueError as e:
+            logger.info(
+                "project_replace_env_cog_derive_bands_failed project_id=%s duration_ms=%s",
+                project_id,
+                int((perf_counter() - derive_started) * 1000),
+            )
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="derive",
+                error_code="BAND_DEFINITIONS",
+                error_message=str(e),
+                context="project-update-band-definitions",
+            )
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(
+                    "BAND_DEFINITIONS",
+                    str(e),
+                    context=_upload_error_context(
+                        project_id=project_id,
+                        phase="derive",
+                        uploaded_session=uploaded_session,
+                    ),
+                ),
+            ) from e
+
+        now = datetime.now(UTC).isoformat()
+        project = existing.model_copy(
+            update={
+                "driver_artifact_root": artifact_root,
+                "driver_cog_path": cog_path,
+                "environmental_band_definitions": new_band_defs,
+                "band_inference_notes": inference_notes,
+                "explainability_background_path": None,
+                "explainability_background_sample_rows": None,
+                "explainability_background_generated_at": None,
+                "updated_at": now,
+            }
+        )
+
+        def _persist() -> None:
+            upsert_project(settings, project)
+
+        uploaded_session = await run_in_threadpool(
+            best_effort_mark,
+            settings,
+            uploaded_session,
+            status="complete",
+            stage="persist",
+            context="project-update-persist",
+        )
+        catalog_save_started = perf_counter()
+        try:
+            await run_in_threadpool(_persist)
+            logger.info(
+                "project_replace_env_cog_catalog_save_ok project_id=%s duration_ms=%s",
+                project_id,
+                int((perf_counter() - catalog_save_started) * 1000),
+            )
+        except Exception as e:
+            await run_in_threadpool(
+                best_effort_fail,
+                settings,
+                uploaded_session,
+                stage="persist",
+                error_code="CATALOG_SAVE_FAILED",
+                error_message=str(e),
+                context="project-update-catalog-save",
+            )
+            raise HTTPException(
+                status_code=503,
+                detail=validation_error(
+                    "CATALOG_SAVE_FAILED",
+                    f"could not save catalog: {e}",
+                    context=_upload_error_context(
+                        project_id=project_id,
+                        phase="persist",
+                        uploaded_session=uploaded_session,
+                    ),
+                ),
+            ) from e
+
+        reload_started = perf_counter()
+        await reload_catalog_threaded(request)
+        logger.info(
+            "project_replace_env_cog_catalog_reload_ok project_id=%s duration_ms=%s",
+            project_id,
+            int((perf_counter() - reload_started) * 1000),
+        )
+        if uploaded_session is not None and uploaded_session.stage != "done":
+            await run_in_threadpool(
+                best_effort_mark,
+                settings,
+                uploaded_session,
+                status="complete",
+                stage="done",
+                context="project-update-done",
+            )
+        logger.info(
+            "project_replace_env_cog_done project_id=%s total_duration_ms=%s",
+            project_id,
+            int((perf_counter() - overall_started) * 1000),
+        )
+        return project
+    except HTTPException:
+        raise
+

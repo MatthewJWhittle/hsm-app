@@ -41,11 +41,14 @@ export async function createProject(params: {
 
 export type UploadSession = {
   id: string
-  status: 'pending' | 'uploaded' | 'validating' | 'deriving' | 'ready' | 'failed'
+  status: 'pending' | 'complete' | 'failed'
   stage: 'init' | 'upload' | 'validate' | 'derive' | 'persist' | 'done'
   upload_url: string | null
   object_path: string
   gcs_bucket: string
+  error_code?: string | null
+  error_message?: string | null
+  error_stage?: 'init' | 'upload' | 'validate' | 'derive' | 'persist' | 'done' | null
 }
 
 function isUploadSession(raw: unknown): raw is UploadSession {
@@ -57,7 +60,12 @@ function isUploadSession(raw: unknown): raw is UploadSession {
     typeof rec.stage === 'string' &&
     (rec.upload_url === null || typeof rec.upload_url === 'string') &&
     typeof rec.object_path === 'string' &&
-    typeof rec.gcs_bucket === 'string'
+    typeof rec.gcs_bucket === 'string' &&
+    (rec.error_code === undefined || rec.error_code === null || typeof rec.error_code === 'string') &&
+    (rec.error_message === undefined ||
+      rec.error_message === null ||
+      typeof rec.error_message === 'string') &&
+    (rec.error_stage === undefined || rec.error_stage === null || typeof rec.error_stage === 'string')
   )
 }
 
@@ -68,7 +76,7 @@ export async function initUploadSession(params: {
   sizeBytes?: number
   projectId?: string
 }): Promise<UploadSession> {
-  const r = await fetch(`${apiBase()}/uploads/init`, {
+  const r = await fetch(`${apiBase()}/uploads`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${params.token}`,

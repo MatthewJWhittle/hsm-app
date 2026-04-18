@@ -45,21 +45,28 @@ from backend_api.point_sampling import (
     inspect_point,
     validate_driver_band_indices_for_model,
 )
+from backend_api.env_background_sample import resolve_env_cog_uri_for_sampling
 from backend_api.project_manifest import validate_model_feature_bands_for_admin
 from backend_api.schemas import Model, ModelAnalysis, ModelMetadata, PointInspection
 from backend_api.schemas_admin import parse_metadata_multipart_part
 from backend_api.routers.catalog_upload_utils import (
     reload_catalog_threaded,
     validate_cog_path_threaded,
+    validate_cog_uri_threaded,
 )
 from backend_api.routers.models_openapi import OPENAPI_POST_MODELS, OPENAPI_PUT_MODEL
 from backend_api.settings import Settings
 from backend_api.schemas_upload import UploadSession
-from backend_api.storage import SERIALIZED_MODEL_FILENAME, ObjectStorage
+from backend_api.schemas_upload import UploadSessionResponse, to_upload_session_response
+from backend_api.storage import (
+    GcsObjectStorage,
+    SERIALIZED_MODEL_FILENAME,
+    ObjectStorage,
+)
 from backend_api.upload_session_ingest import (
     best_effort_fail,
     best_effort_mark,
-    download_upload_session_to_tempfile,
+    upload_session_gcs_uri,
     write_upload_file_to_tempfile,
 )
 from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
@@ -308,7 +315,7 @@ async def post_explainability_warmup(
 
 @router.post(
     "/models",
-    response_model=Model,
+    response_model=Model | UploadSessionResponse,
     status_code=201,
     tags=["admin"],
     responses=_ADMIN_POST_MODELS_RESPONSES,
@@ -369,8 +376,19 @@ async def create_model(
                 "provide either multipart file or upload_session_id, not both",
             ),
         )
+    if upload_session_s and settings.storage_backend.strip().lower() != "gcs":
+        raise HTTPException(
+            status_code=503,
+            detail=validation_error(
+                "STORAGE_BACKEND_UNSUPPORTED",
+                "upload_session_id model create currently requires STORAGE_BACKEND=gcs",
+            ),
+        )
     upload_session: UploadSession | None = None
     upload_temp_path = None
+    upload_uri: str | None = None
+    upload_size: int | None = None
+    rasterio_uri: str | None = None
     model_id = str(uuid.uuid4())
     logger.info(
         "model_create_start model_id=%s has_multipart=%s has_session=%s",
@@ -379,12 +397,19 @@ async def create_model(
         bool(upload_session_s),
     )
     if upload_session_s:
-        upload_temp_path, upload_session = await run_in_threadpool(
-            download_upload_session_to_tempfile,
+        upload_uri, upload_session, upload_size = await run_in_threadpool(
+            upload_session_gcs_uri,
             settings,
             upload_session_s,
             purpose="model create",
         )
+        if upload_session is not None:
+            rasterio_uri = await run_in_threadpool(
+                resolve_env_cog_uri_for_sampling,
+                settings,
+                f"gs://{upload_session.gcs_bucket}",
+                upload_session.object_path,
+            )
         logger.info(
             "model_create_ingest_session model_id=%s upload_session_id=%s",
             model_id,
@@ -406,13 +431,23 @@ async def create_model(
             ),
         )
     try:
-        upload_size = os.path.getsize(str(upload_temp_path))
+        if upload_temp_path is not None:
+            upload_size = os.path.getsize(str(upload_temp_path))
         logger.info(
             "model_create_upload_size model_id=%s upload_bytes=%s upload_session_id=%s",
             model_id,
             upload_size,
             upload_session.id if upload_session else None,
         )
+        if upload_size is None:
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(
+                    "UPLOAD_SIZE_UNKNOWN",
+                    "could not determine uploaded object size",
+                    context={"field": "file"},
+                ),
+            )
         if upload_size <= 0:
             raise HTTPException(
                 status_code=422,
@@ -432,13 +467,27 @@ async def create_model(
             best_effort_mark,
             settings,
             upload_session,
-            status="validating",
+            status="complete",
             stage="validate",
             context="model-create-validate",
         )
         try:
             logger.info("model_create_validate_start model_id=%s", model_id)
-            await validate_cog_path_threaded(str(upload_temp_path))
+            if upload_uri is not None:
+                await validate_cog_uri_threaded(
+                    rasterio_uri if rasterio_uri is not None else upload_uri
+                )
+            elif upload_temp_path is not None:
+                await validate_cog_path_threaded(str(upload_temp_path))
+            else:
+                raise HTTPException(
+                    status_code=422,
+                    detail=validation_error(
+                        "MISSING_FIELD",
+                        "file or upload_session_id is required.",
+                        context={"field": "file"},
+                    ),
+                )
             logger.info("model_create_validate_ok model_id=%s", model_id)
         except CogValidationError as e:
             await run_in_threadpool(
@@ -453,6 +502,16 @@ async def create_model(
             raise _cog_validation_422(e) from e
 
         def _write() -> tuple[str, str]:
+            if upload_uri is not None:
+                if upload_session is None:
+                    raise ValueError("upload session missing for session-based model create")
+                return storage.promote_upload_session_suitability_cog(
+                    model_id=model_id,
+                    source_bucket=upload_session.gcs_bucket,
+                    source_object_path=upload_session.object_path,
+                )
+            if upload_temp_path is None:
+                raise ValueError("missing upload source path")
             return storage.write_suitability_cog_from_path(model_id, str(upload_temp_path))
 
         try:
@@ -472,7 +531,10 @@ async def create_model(
                 error_message=str(e),
                 context="model-create-storage-layout-invalid",
             )
-            raise HTTPException(status_code=400, detail=str(e)) from e
+            raise HTTPException(
+                status_code=400,
+                detail=validation_error("STORAGE_LAYOUT_INVALID", str(e)),
+            ) from e
         except Exception as e:
             await run_in_threadpool(
                 best_effort_fail,
@@ -485,7 +547,10 @@ async def create_model(
             )
             raise HTTPException(
                 status_code=503,
-                detail=f"could not store file: {e}",
+                detail=validation_error(
+                    "STORAGE_WRITE_FAILED",
+                    f"could not store file: {e}",
+                ),
             ) from e
     finally:
         if upload_temp_path is not None:
@@ -532,7 +597,7 @@ async def create_model(
         best_effort_mark,
         settings,
         upload_session,
-        status="deriving",
+        status="complete",
         stage="derive",
         context="model-create-derive",
     )
@@ -560,7 +625,7 @@ async def create_model(
         best_effort_mark,
         settings,
         upload_session,
-        status="deriving",
+        status="complete",
         stage="persist",
         context="model-create-persist",
     )
@@ -586,7 +651,7 @@ async def create_model(
         best_effort_mark,
         settings,
         upload_session,
-        status="ready",
+        status="complete",
         stage="done",
         context="model-create-done",
     )

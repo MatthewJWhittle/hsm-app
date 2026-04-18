@@ -68,7 +68,7 @@ def download_upload_session_to_tempfile(
     session = get_upload_session(settings, upload_session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="upload session not found")
-    if session.status not in ("uploaded", "validating", "deriving", "ready"):
+    if session.status != "complete":
         raise HTTPException(
             status_code=409,
             detail=validation_error(
@@ -99,6 +99,46 @@ def download_upload_session_to_tempfile(
         tmp_path = Path(tmp.name)
     blob.download_to_filename(str(tmp_path))
     return tmp_path, session
+
+
+def upload_session_gcs_uri(
+    settings: Settings, upload_session_id: str, *, purpose: str
+) -> tuple[str, UploadSession, int | None]:
+    """Resolve a ready upload session and return ``(gs://uri, session, object_size_bytes)``."""
+    session = get_upload_session(settings, upload_session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="upload session not found")
+    if session.status != "complete":
+        raise HTTPException(
+            status_code=409,
+            detail=validation_error(
+                "UPLOAD_NOT_READY",
+                f"upload session status {session.status!r} is not ready for {purpose}",
+            ),
+        )
+    if not settings.gcs_bucket or session.gcs_bucket != settings.gcs_bucket:
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "UPLOAD_BUCKET_MISMATCH",
+                "upload session bucket does not match configured API bucket",
+            ),
+        )
+    client = storage.Client()
+    bucket = client.bucket(session.gcs_bucket)
+    blob = bucket.blob(session.object_path)
+    if not blob.exists():
+        raise HTTPException(
+            status_code=422,
+            detail=validation_error(
+                "UPLOAD_OBJECT_MISSING",
+                "upload object not found in storage",
+            ),
+        )
+    size_bytes: int | None = None
+    if blob.size is not None:
+        size_bytes = int(blob.size)
+    return f"gs://{session.gcs_bucket}/{session.object_path}", session, size_bytes
 
 
 def best_effort_mark(

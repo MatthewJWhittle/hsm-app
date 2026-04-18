@@ -47,8 +47,13 @@ def validate_suitability_cog_bytes(content: bytes) -> None:
 
 def validate_suitability_cog_path(path: Path) -> None:
     """Validate on-disk COG: tiled, EPSG:3857."""
+    validate_suitability_cog_uri(str(path))
+
+
+def validate_suitability_cog_uri(uri: str) -> None:
+    """Validate COG from a rasterio-readable URI/path: tiled, EPSG:3857."""
     try:
-        with rasterio.open(path) as src:
+        with rasterio.open(uri) as src:
             if src.crs is None:
                 raise CogValidationError(
                     "raster has no CRS; expected EPSG:3857",

@@ -8,10 +8,7 @@ from pydantic import BaseModel, Field
 
 UploadSessionStatus = Literal[
     "pending",
-    "uploaded",
-    "validating",
-    "deriving",
-    "ready",
+    "complete",
     "failed",
 ]
 

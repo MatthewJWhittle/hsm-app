@@ -299,17 +299,12 @@ export function AdminPage() {
       }
       setEditProjUploadStatus(
         uploadSessionId !== undefined
-          ? 'Validating and processing environmental raster…'
+          ? 'Replacing environmental raster…'
           : 'Saving project…',
       )
-      const updated =
-        uploadSessionId !== undefined
-          ? await replaceProjectEnvironmentalCog({
-              token,
-              projectId: editingProject.id,
-              uploadSessionId,
-            })
-          : await updateProject({
+      const updatedProject =
+        uploadSessionId === undefined
+          ? await updateProject({
               token,
               projectId: editingProject.id,
               name: editProjName.trim(),
@@ -318,8 +313,9 @@ export function AdminPage() {
               visibility: editProjVisibility,
               allowedUids: editProjAllowedUids,
             })
-      let merged = updated
-      if (!editProjFile && updated.driver_cog_path && editProjBandDefs.length > 0) {
+          : null
+      let merged: CatalogProject = updatedProject ?? editingProject
+      if (!editProjFile && updatedProject?.driver_cog_path && editProjBandDefs.length > 0) {
         merged = await patchProjectEnvironmentalBandDefinitions({
           token,
           projectId: editingProject.id,
@@ -327,6 +323,12 @@ export function AdminPage() {
         })
       }
       if (uploadSessionId !== undefined) {
+        const replaced = await replaceProjectEnvironmentalCog({
+          token,
+          projectId: editingProject.id,
+          uploadSessionId,
+        })
+        merged = replaced
         setEditProjSuccess(
           'Environmental COG replaced. Band definitions are ready. Generate explainability background to refresh variable influence.',
         )
