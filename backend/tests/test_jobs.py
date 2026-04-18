@@ -20,11 +20,28 @@ from backend_api.jobs import (
 from backend_api.schemas_job import (
     Job,
     JobError,
+    JobInputEnvironmentalCogReplace,
     JobKind,
     JobStatus,
+    parse_job_input_payload,
     validate_job_input,
 )
+from backend_api.job_handlers.registry import get_job_handler
 from backend_api.settings import Settings
+
+
+def test_job_handler_registry_has_all_kinds():
+    for k in JobKind:
+        assert get_job_handler(k) is not None
+
+
+def test_parse_job_input_payload_typed_union():
+    p = parse_job_input_payload(
+        JobKind.ENVIRONMENTAL_COG_REPLACE,
+        {"project_id": "proj-1", "upload_session_id": "upload-1"},
+    )
+    assert isinstance(p, JobInputEnvironmentalCogReplace)
+    assert p.project_id == "proj-1"
 
 
 def test_validate_job_input_environmental_ok():

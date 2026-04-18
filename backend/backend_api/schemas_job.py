@@ -130,16 +130,35 @@ class Job(BaseModel):
     completed_at: str | None = None
 
 
+# Validated ``input`` payload for a persisted job (discriminated by document ``kind``).
+JobInputPayload = (
+    JobInputEnvironmentalCogReplace
+    | JobInputProjectCreateWithEnvUpload
+    | JobInputModelCreateWithUpload
+    | JobInputModelReplaceSuitabilityCog
+    | JobInputExplainabilityBackgroundRegenerate
+)
+
+
+def parse_job_input_payload(kind: JobKind, raw: dict[str, Any]) -> JobInputPayload:
+    """
+    Parse flat Firestore ``input`` for ``kind`` into a typed model.
+
+    Document ``kind`` is the discriminator; ``input`` does not repeat it.
+    """
+    if kind == JobKind.ENVIRONMENTAL_COG_REPLACE:
+        return JobInputEnvironmentalCogReplace.model_validate(raw)
+    if kind == JobKind.PROJECT_CREATE_WITH_ENV_UPLOAD:
+        return JobInputProjectCreateWithEnvUpload.model_validate(raw)
+    if kind == JobKind.MODEL_CREATE_WITH_UPLOAD:
+        return JobInputModelCreateWithUpload.model_validate(raw)
+    if kind == JobKind.MODEL_REPLACE_SUITABILITY_COG:
+        return JobInputModelReplaceSuitabilityCog.model_validate(raw)
+    if kind == JobKind.EXPLAINABILITY_BACKGROUND_REGENERATE:
+        return JobInputExplainabilityBackgroundRegenerate.model_validate(raw)
+    raise ValueError(f"unsupported job kind: {kind!r}")
+
+
 def validate_job_input(kind: JobKind, raw: dict[str, Any]) -> dict[str, Any]:
     """Normalize and validate ``input`` for ``kind`` (raises ``ValueError`` if invalid)."""
-    if kind == JobKind.ENVIRONMENTAL_COG_REPLACE:
-        return JobInputEnvironmentalCogReplace.model_validate(raw).model_dump()
-    if kind == JobKind.PROJECT_CREATE_WITH_ENV_UPLOAD:
-        return JobInputProjectCreateWithEnvUpload.model_validate(raw).model_dump()
-    if kind == JobKind.MODEL_CREATE_WITH_UPLOAD:
-        return JobInputModelCreateWithUpload.model_validate(raw).model_dump()
-    if kind == JobKind.MODEL_REPLACE_SUITABILITY_COG:
-        return JobInputModelReplaceSuitabilityCog.model_validate(raw).model_dump()
-    if kind == JobKind.EXPLAINABILITY_BACKGROUND_REGENERATE:
-        return JobInputExplainabilityBackgroundRegenerate.model_validate(raw).model_dump()
-    raise ValueError(f"unsupported job kind: {kind!r}")
+    return parse_job_input_payload(kind, raw).model_dump()
