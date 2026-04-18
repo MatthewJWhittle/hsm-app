@@ -42,6 +42,8 @@ terraform apply -var-file=terraform.tfvars
 - `api-staging` and `api-prod` ignore image drift in Terraform via `lifecycle.ignore_changes`.
 - Cloud Run env vars are revision-bound; keep full intended env set in Terraform.
 - If Firestore already exists, keep `create_firestore_database = false`.
+- `api_timeout_seconds` defaults to `120` to reduce timeout risk on rare admin raster replacement
+  requests (`POST /api/projects/{project_id}/environmental-cogs`).
 
 ## MVP cost guardrails
 
