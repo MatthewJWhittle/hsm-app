@@ -100,6 +100,7 @@ export function AdminPage() {
   const [editProjFile, setEditProjFile] = useState<File | null>(null)
   const [editProjBandDefs, setEditProjBandDefs] = useState<EnvironmentalBandDefinition[]>([])
   const [editProjError, setEditProjError] = useState<string | null>(null)
+  const [editProjSuccess, setEditProjSuccess] = useState<string | null>(null)
   const [editProjUploadStatus, setEditProjUploadStatus] = useState<string | null>(null)
   const [savingProjectEdit, setSavingProjectEdit] = useState(false)
   const [regenerateExplainBgRows, setRegenerateExplainBgRows] = useState(256)
@@ -276,6 +277,7 @@ export function AdminPage() {
     if (snap === projectEditBaselineRef.current && (!includeUpload || !editProjFile)) return
 
     setEditProjError(null)
+    setEditProjSuccess(null)
     const token = await getIdToken(false)
     if (!token) {
       setEditProjError('Not signed in.')
@@ -295,7 +297,11 @@ export function AdminPage() {
           finalizingMessage: 'Finalizing environmental upload…',
         })
       }
-      setEditProjUploadStatus('Saving project…')
+      setEditProjUploadStatus(
+        uploadSessionId !== undefined
+          ? 'Validating and processing environmental raster…'
+          : 'Saving project…',
+      )
       const updated =
         uploadSessionId !== undefined
           ? await replaceProjectEnvironmentalCog({
@@ -319,6 +325,11 @@ export function AdminPage() {
           projectId: editingProject.id,
           definitions: editProjBandDefs,
         })
+      }
+      if (uploadSessionId !== undefined) {
+        setEditProjSuccess(
+          'Environmental COG replaced. Band definitions are ready. Generate explainability background to refresh variable influence.',
+        )
       }
       const nextBands = merged.environmental_band_definitions
         ? [...merged.environmental_band_definitions].sort((a, b) => a.index - b.index)
@@ -346,6 +357,7 @@ export function AdminPage() {
       })
     } catch (err) {
       setEditProjError(err instanceof Error ? err.message : 'Update failed')
+      setEditProjSuccess(null)
       if (includeUpload) {
         setEditProjFile(null)
       }
@@ -636,6 +648,7 @@ export function AdminPage() {
     )
     setEditProjError(null)
     setEditProjUploadStatus(null)
+    setEditProjSuccess(null)
     setRegenerateExplainBgRows(256)
     setRegenerateExplainBgError(null)
     setProjectEditSession((s) => s + 1)
@@ -672,6 +685,7 @@ export function AdminPage() {
       })
       setListError(null)
       setLastRefreshedAt(new Date())
+      setEditProjSuccess('Explainability background regenerated.')
       projectEditBaselineRef.current = projectFormSnapshot({
         name: editProjName,
         description: editProjDesc,
@@ -683,6 +697,7 @@ export function AdminPage() {
       })
     } catch (err) {
       setRegenerateExplainBgError(err instanceof Error ? err.message : 'Regenerate failed')
+      setEditProjSuccess(null)
     } finally {
       setRegeneratingExplainBg(false)
     }
@@ -732,6 +747,7 @@ export function AdminPage() {
     }
     setProjectEditOpen(false)
     setEditingProject(null)
+    setEditProjSuccess(null)
     setRegenerateExplainBgError(null)
     setEditProjUploadStatus(null)
   }, [projectEditOpen, editingProject, editProjName, buildProjectEditSnapshot, persistProjectEdit])
@@ -1116,6 +1132,7 @@ export function AdminPage() {
             onEditProjStatusChange={setEditProjStatus}
             onEditProjFileChange={setEditProjFile}
             editProjError={editProjError}
+            editProjSuccess={editProjSuccess}
             editProjUploadStatus={editProjUploadStatus}
             savingProjectEdit={savingProjectEdit}
             onUploadEnvironmentalCog={handleExplicitProjectCogUpload}

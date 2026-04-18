@@ -98,7 +98,7 @@ class CatalogProject(BaseModel):
     )
     explainability_background_path: str | None = Field(
         default=None,
-        description="Reference sample Parquet for SHAP (relative to driver_artifact_root); auto-generated when the COG is uploaded.",
+        description="Reference sample Parquet for SHAP (relative to driver_artifact_root); generated via admin background-sample action.",
     )
     explainability_background_sample_rows: int | None = Field(
         default=None,

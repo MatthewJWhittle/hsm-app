@@ -259,8 +259,7 @@ export function ProjectFormFields({
         </Stack>
         {isEdit && hasCog && sortedBands.length > 0 && onRegenerateExplainabilityBackground && (
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.75 }}>
-            Rebuilds the SHAP background Parquet without replacing the raster above (also runs automatically on
-            upload/replace).
+            Rebuilds the SHAP background Parquet without replacing the raster above.
           </Typography>
         )}
         {isEdit && explainabilityBackgroundPath && (

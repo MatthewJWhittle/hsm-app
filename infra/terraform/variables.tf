@@ -124,7 +124,7 @@ variable "api_ingress" {
 variable "api_timeout_seconds" {
   description = "Cloud Run request timeout in seconds."
   type        = number
-  default     = 60
+  default     = 120
 }
 
 variable "allow_unauthenticated_api" {

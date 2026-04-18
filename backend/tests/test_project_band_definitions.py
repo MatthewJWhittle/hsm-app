@@ -235,7 +235,9 @@ def test_patch_project_rejects_upload_fields_with_422(admin_client_proj):
     assert "environmental-cogs" in str(r.json().get("detail", "")).lower()
 
 
-def test_post_replace_environmental_cog_uses_upload_session(admin_client_proj):
+def test_post_replace_environmental_cog_uses_upload_session_clears_background_and_keeps_band_defs(
+    admin_client_proj,
+):
     c = admin_client_proj
     with (
         patch(
@@ -271,7 +273,14 @@ def test_post_replace_environmental_cog_uses_upload_session(admin_client_proj):
         assert r.status_code == 200, r.text
         mock_download.assert_called_once()
         mock_validate.assert_called_once()
-        mock_bg.assert_called_once()
+        mock_bg.assert_not_called()
         fake_upload.unlink.assert_called_once_with(missing_ok=True)
         body = r.json()
         assert body["id"] == "proj-1"
+        assert body["environmental_band_definitions"] == [
+            {"index": 0, "name": "a", "label": None},
+            {"index": 1, "name": "b", "label": None},
+        ]
+        assert body["explainability_background_path"] is None
+        assert body["explainability_background_sample_rows"] is None
+        assert body["explainability_background_generated_at"] is None

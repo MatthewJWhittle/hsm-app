@@ -6,8 +6,9 @@ import json
 import logging
 import os
 import uuid
-from pathlib import Path
 from datetime import UTC, datetime
+from pathlib import Path
+from time import perf_counter
 from typing import Annotated
 
 from fastapi import (
@@ -37,8 +38,6 @@ from backend_api.env_cog_bands import (
     apply_band_label_updates,
     band_definitions_for_upload_path,
     count_bands_in_path,
-    default_band_definitions_from_path,
-    parse_band_definitions_json,
     validate_band_definitions_match_raster,
 )
 from backend_api.deps.settings_dep import get_settings
@@ -833,7 +832,13 @@ async def replace_project_environmental_cogs(
     existing = catalog.get_project(project_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="project not found")
-    logger.info("project_replace_env_cog_start project_id=%s has_multipart=%s has_session=%s", project_id, file is not None, bool(upload_session_id))
+    overall_started = perf_counter()
+    logger.info(
+        "project_replace_env_cog_start project_id=%s has_multipart=%s has_session=%s",
+        project_id,
+        file is not None,
+        bool(upload_session_id),
+    )
 
     if file is not None and upload_session_id:
         raise _proj_422(
@@ -856,19 +861,30 @@ async def replace_project_environmental_cogs(
     uploaded_session: UploadSession | None = None
     upload_temp_path: Path | None = None
     if upload_session_id:
+        ingest_started = perf_counter()
         upload_temp_path, uploaded_session = await run_in_threadpool(
             download_upload_session_to_tempfile,
             settings,
             upload_session_id,
             purpose="project update",
         )
-        logger.info("project_replace_env_cog_ingest_session project_id=%s upload_session_id=%s", project_id, upload_session_id)
+        logger.info(
+            "project_replace_env_cog_ingest_done project_id=%s source=session upload_session_id=%s duration_ms=%s",
+            project_id,
+            upload_session_id,
+            int((perf_counter() - ingest_started) * 1000),
+        )
     elif file is not None:
+        ingest_started = perf_counter()
         upload_temp_path = await write_upload_file_to_tempfile(
             file,
             max_bytes=settings.max_environmental_upload_bytes,
         )
-        logger.info("project_replace_env_cog_ingest_multipart project_id=%s", project_id)
+        logger.info(
+            "project_replace_env_cog_ingest_done project_id=%s source=multipart duration_ms=%s",
+            project_id,
+            int((perf_counter() - ingest_started) * 1000),
+        )
 
     try:
         if upload_temp_path is not None:
@@ -906,11 +922,24 @@ async def replace_project_environmental_cogs(
                 stage="validate",
                 context="project-update-validate",
             )
+            validate_started = perf_counter()
             try:
-                logger.info("project_replace_env_cog_validate_start project_id=%s", project_id)
+                logger.info(
+                    "project_replace_env_cog_validate_start project_id=%s",
+                    project_id,
+                )
                 await validate_cog_path_threaded(str(upload_temp_path))
-                logger.info("project_replace_env_cog_validate_ok project_id=%s", project_id)
+                logger.info(
+                    "project_replace_env_cog_validate_ok project_id=%s duration_ms=%s",
+                    project_id,
+                    int((perf_counter() - validate_started) * 1000),
+                )
             except CogValidationError as e:
+                logger.info(
+                    "project_replace_env_cog_validate_failed project_id=%s duration_ms=%s",
+                    project_id,
+                    int((perf_counter() - validate_started) * 1000),
+                )
                 await run_in_threadpool(
                     best_effort_fail,
                     settings,
@@ -939,9 +968,15 @@ async def replace_project_environmental_cogs(
                     project_id, str(upload_temp_path)
                 )
 
+            persist_started = perf_counter()
             try:
                 artifact_root, cog_path = await run_in_threadpool(_write)
-                logger.info("project_replace_env_cog_persist_cog_ok project_id=%s artifact_root=%s", project_id, artifact_root)
+                logger.info(
+                    "project_replace_env_cog_persist_cog_ok project_id=%s artifact_root=%s duration_ms=%s",
+                    project_id,
+                    artifact_root,
+                    int((perf_counter() - persist_started) * 1000),
+                )
             except ValueError as e:
                 await run_in_threadpool(
                     best_effort_fail,
@@ -995,8 +1030,12 @@ async def replace_project_environmental_cogs(
                 stage="derive",
                 context="project-update-derive",
             )
+            derive_started = perf_counter()
             try:
-                logger.info("project_replace_env_cog_derive_bands_start project_id=%s", project_id)
+                logger.info(
+                    "project_replace_env_cog_derive_bands_start project_id=%s",
+                    project_id,
+                )
 
                 def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
                     return band_definitions_for_upload_path(
@@ -1009,8 +1048,18 @@ async def replace_project_environmental_cogs(
 
                 new_band_defs, infer_notes = await run_in_threadpool(_defs)
                 inference_notes = infer_notes if infer_notes else None
-                logger.info("project_replace_env_cog_derive_bands_ok project_id=%s band_count=%s", project_id, len(new_band_defs) if new_band_defs else 0)
+                logger.info(
+                    "project_replace_env_cog_derive_bands_ok project_id=%s band_count=%s duration_ms=%s",
+                    project_id,
+                    len(new_band_defs) if new_band_defs else 0,
+                    int((perf_counter() - derive_started) * 1000),
+                )
             except ValueError as e:
+                logger.info(
+                    "project_replace_env_cog_derive_bands_failed project_id=%s duration_ms=%s",
+                    project_id,
+                    int((perf_counter() - derive_started) * 1000),
+                )
                 await run_in_threadpool(
                     best_effort_fail,
                     settings,
@@ -1036,53 +1085,6 @@ async def replace_project_environmental_cogs(
         if upload_temp_path is not None:
             upload_temp_path.unlink(missing_ok=True)
 
-    new_explain_bg_path = existing.explainability_background_path
-    new_explain_bg_rows = existing.explainability_background_sample_rows
-    new_explain_bg_at = existing.explainability_background_generated_at
-    if new_band_defs and artifact_root and cog_path:
-        try:
-            logger.info("project_replace_env_cog_background_start project_id=%s sample_rows=%s", project_id, settings.env_background_sample_rows)
-
-            def _bg() -> None:
-                write_project_explainability_background_parquet(
-                    storage,
-                    settings,
-                    project_id,
-                    artifact_root,
-                    cog_path,
-                    new_band_defs,
-                    settings.env_background_sample_rows,
-                )
-
-            await run_in_threadpool(_bg)
-            new_explain_bg_path = EXPLAINABILITY_BACKGROUND_FILENAME
-            new_explain_bg_rows = settings.env_background_sample_rows
-            new_explain_bg_at = datetime.now(UTC).isoformat()
-            logger.info("project_replace_env_cog_background_ok project_id=%s sample_rows=%s", project_id, new_explain_bg_rows)
-        except Exception as e:
-            await run_in_threadpool(
-                best_effort_fail,
-                settings,
-                uploaded_session,
-                stage="derive",
-                error_code="EXPLAINABILITY_BACKGROUND_FAILED",
-                error_message=str(e),
-                context="project-update-explainability-background",
-            )
-            raise HTTPException(
-                status_code=422,
-                detail=validation_error(
-                    "EXPLAINABILITY_BACKGROUND_FAILED",
-                    "could not build explainability background sample from COG",
-                    context=_upload_error_context(
-                        project_id=project_id,
-                        phase="derive",
-                        uploaded_session=uploaded_session,
-                        extra={"cause": sanitize_exception_for_client(e)},
-                    ),
-                ),
-            ) from e
-
     now = datetime.now(UTC).isoformat()
     project = existing.model_copy(
         update={
@@ -1090,9 +1092,9 @@ async def replace_project_environmental_cogs(
             "driver_cog_path": cog_path,
             "environmental_band_definitions": new_band_defs,
             "band_inference_notes": inference_notes,
-            "explainability_background_path": new_explain_bg_path,
-            "explainability_background_sample_rows": new_explain_bg_rows,
-            "explainability_background_generated_at": new_explain_bg_at,
+            "explainability_background_path": None,
+            "explainability_background_sample_rows": None,
+            "explainability_background_generated_at": None,
             "updated_at": now,
         }
     )
@@ -1108,9 +1110,14 @@ async def replace_project_environmental_cogs(
         stage="persist",
         context="project-update-persist",
     )
+    catalog_save_started = perf_counter()
     try:
         await run_in_threadpool(_persist)
-        logger.info("project_replace_env_cog_catalog_save_ok project_id=%s", project_id)
+        logger.info(
+            "project_replace_env_cog_catalog_save_ok project_id=%s duration_ms=%s",
+            project_id,
+            int((perf_counter() - catalog_save_started) * 1000),
+        )
     except Exception as e:
         await run_in_threadpool(
             best_effort_fail,
@@ -1134,7 +1141,13 @@ async def replace_project_environmental_cogs(
             ),
         ) from e
 
+    reload_started = perf_counter()
     await reload_catalog_threaded(request)
+    logger.info(
+        "project_replace_env_cog_catalog_reload_ok project_id=%s duration_ms=%s",
+        project_id,
+        int((perf_counter() - reload_started) * 1000),
+    )
     if uploaded_session is not None and uploaded_session.status != "ready":
         await run_in_threadpool(
             best_effort_mark,
@@ -1144,4 +1157,9 @@ async def replace_project_environmental_cogs(
             stage="done",
             context="project-update-done",
         )
+    logger.info(
+        "project_replace_env_cog_done project_id=%s total_duration_ms=%s",
+        project_id,
+        int((perf_counter() - overall_started) * 1000),
+    )
     return project

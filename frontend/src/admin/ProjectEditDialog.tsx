@@ -23,6 +23,7 @@ type ProjectEditDialogProps = {
   onEditProjStatusChange: (v: 'active' | 'archived') => void
   onEditProjFileChange: (f: File | null) => void
   editProjError: string | null
+  editProjSuccess?: string | null
   editProjUploadStatus: string | null
   savingProjectEdit: boolean
   onUploadEnvironmentalCog: () => void | Promise<void>
@@ -55,6 +56,7 @@ export function ProjectEditDialog({
   onEditProjStatusChange,
   onEditProjFileChange,
   editProjError,
+  editProjSuccess,
   editProjUploadStatus,
   savingProjectEdit,
   onUploadEnvironmentalCog,
@@ -119,6 +121,11 @@ export function ProjectEditDialog({
           {editProjError && (
             <Alert severity="error" sx={{ mt: 2 }}>
               {editProjError}
+            </Alert>
+          )}
+          {!editProjError && editProjSuccess && (
+            <Alert severity="success" sx={{ mt: 2 }}>
+              {editProjSuccess}
             </Alert>
           )}
           {editProjUploadStatus && (

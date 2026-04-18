@@ -18,6 +18,7 @@ titiler_container_image     = "docker.io/developmentseed/titiler:latest"
 
 api_min_instance_count = 0
 api_max_instance_count = 1
+api_timeout_seconds    = 180
 
 create_gcs_bucket = true
 gcs_bucket_name   = "hsm-dashboard-model-artifacts"
