@@ -580,7 +580,7 @@ async def replace_project_environmental_cogs(
 
     When ``JOB_QUEUE_BACKEND`` is not ``disabled`` and the client sends only
     ``upload_session_id`` (no multipart file), the API returns **202** and processes
-    the replace in a background worker (Cloud Tasks or direct HTTP).
+    the replace in a background worker (Cloud Tasks).
     """
     existing = catalog.get_project(project_id)
     if existing is None:

@@ -16,7 +16,7 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 1. **Jobs are generic:** `Job` has `kind`, `status`, `input`, errors, timestamps—not a COG-specific subsystem.
 2. **Cloud Tasks** schedules a **second HTTP request** to **our** worker; it does not run Python for us.
-3. **One executor:** `execute_job(job_id)` in code; enqueue is pluggable (`cloud_tasks` vs `direct` for local/tests). **`direct` blocks** the caller until the worker HTTP handler finishes the job (the enqueue HTTP round-trip is synchronous); **`cloud_tasks` does not** (task queued, worker runs later).
+3. **One executor:** `execute_job(job_id)` in code; enqueue is **`disabled`** (local: run pipelines inline in-process) or **`cloud_tasks`** (deployed: HTTP task to worker). **`cloud_tasks`** returns after the task is queued; the worker runs later.
 4. **Idempotency** for enqueue and safe worker retries.
 
 ---
@@ -29,7 +29,7 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 | **First `kind`** | `environmental_cog_replace` |
 | **Input** | `{ "project_id", "upload_session_id" }` (validated per kind) |
 | **Idempotency** | Optional header/key → Firestore `job_idempotency` doc |
-| **Worker auth** | OIDC (Tasks SA → Cloud Run) in prod; dev secret or direct call |
+| **Worker auth** | `JOB_WORKER_AUTH_MODE=oidc` in staging/prod; `secret` + `INTERNAL_JOB_SECRET` for local dev only |
 
 ---
 
@@ -43,8 +43,8 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 ## Phase 2 — `JobQueue` interface (**complete**)
 
-- [x] `job_queue.py` — `JobQueue` protocol, `DisabledJobQueue`, `DirectJobQueue`, `CloudTasksJobQueue`, `build_job_queue(settings)`.
-- [x] Settings — `JOB_QUEUE_BACKEND`, `CLOUD_TASKS_*`, `JOB_WORKER_URL`, OIDC fields, `INTERNAL_JOB_SECRET`, `JOB_DIRECT_HTTP_TIMEOUT_SECONDS` (each accepts env **or** Python field name via `AliasChoices`).
+- [x] `job_queue.py` — `JobQueue` protocol, `DisabledJobQueue`, `CloudTasksJobQueue`, `build_job_queue(settings)`.
+- [x] Settings — `JOB_QUEUE_BACKEND`, `CLOUD_TASKS_*`, `JOB_WORKER_URL`, OIDC fields, `INTERNAL_JOB_SECRET`, `JOB_WORKER_AUTH_MODE` (each accepts env **or** Python field name via `AliasChoices`).
 - [x] Dependency: `google-cloud-tasks`.
 - [x] `tests/test_job_queue.py`.
 
@@ -53,7 +53,7 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 ## Phase 3 — Worker route (**complete**)
 
 - [x] `POST /api/internal/jobs/run` — body `{"job_id": "..."}`, `include_in_schema=False`.
-- [x] `job_worker_auth.verify_internal_job_caller` — `X-Internal-Job-Secret` **or** Bearer OIDC (`CLOUD_TASKS_OIDC_AUDIENCE` / worker URL).
+- [x] `job_worker_auth.verify_internal_job_caller` — explicit **`secret`** vs **`oidc`** mode (no secret bypass of OIDC in production).
 - [x] `job_runner.execute_job` — claim job, run kind-specific work, `complete_job_success` / `complete_job_failure`; avoid re-raising after recording failure (limits Cloud Tasks retry storms).
 
 ---
@@ -72,7 +72,7 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 - [x] Enable **`cloudtasks.googleapis.com`** alongside existing project services.
 - [x] **`google_cloud_tasks_queue`** — id `var.cloud_tasks_queue_name` (default `hsm-jobs`), location `var.cloud_tasks_queue_location` (default `us-central1`).
 - [x] **IAM** — runtime API SAs (`api_staging`, `api_prod`) → `roles/cloudtasks.enqueuer`; same SAs → `roles/run.invoker` on their Cloud Run service (OIDC self-call for the worker URL).
-- [x] **Cloud Run job env in Terraform** (`infra/terraform/`): `JOB_QUEUE_BACKEND`, `CLOUD_TASKS_*`, `CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL`, and (after the two-step URI flow) `JOB_WORKER_URL` + `CLOUD_TASKS_OIDC_AUDIENCE`. **CI deploy workflows only update the image** — do not set these in GitHub Actions for routine rollouts. Prefer **OIDC-only** worker auth: **omit `INTERNAL_JOB_SECRET`** in production — if set, the worker accepts the secret and **does not** verify OIDC for that request. Raise **`api_timeout_seconds`** in `terraform.tfvars` when enabling **`cloud_tasks`** / **`direct`** if worker jobs can exceed the default (same service serves the worker route).
+- [x] **Cloud Run job env in Terraform** (`infra/terraform/`): `JOB_QUEUE_BACKEND`, `CLOUD_TASKS_*`, `CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL`, and (after the two-step URI flow) `JOB_WORKER_URL` + `CLOUD_TASKS_OIDC_AUDIENCE`. **CI deploy workflows only update the image** — do not set these in GitHub Actions for routine rollouts. Use **`JOB_WORKER_AUTH_MODE=oidc`** in deployed environments. Raise **`api_timeout_seconds`** in `terraform.tfvars` when enabling **`cloud_tasks`** if worker jobs can exceed the default (same service serves the worker route).
 
 ---
 
@@ -94,7 +94,7 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 1. [x] Ship job storage, worker, Terraform queue/IAM scaffolding, and admin UI polling; **`JOB_QUEUE_BACKEND`** defaults keep **synchronous** behavior until explicitly configured.
 2. [ ] **Apply Terraform** so `cloudtasks.googleapis.com`, the **jobs queue**, and **IAM** (`cloudtasks.enqueuer`, self **`run.invoker`**) match the target project. Base API env (including job-related keys with `JOB_QUEUE_BACKEND=disabled` if you are not ready for async yet) should live in **`terraform.tfvars`** / variables — not in CI.
-3. [ ] **Wire public API origins for jobs** (Terraform cannot inject a service’s own URL in one apply): run **`terraform apply`**, read outputs **`api_staging_uri`** / **`api_prod_uri`**, set **`api_staging_service_public_uri`** / **`api_prod_service_public_uri`** in `terraform.tfvars` (HTTPS origin, no trailing slash), set **`api_job_queue_backend_*`** to `cloud_tasks` (or `direct` for dev-only), **`terraform apply`** again. That adds **`JOB_WORKER_URL`** and **`CLOUD_TASKS_OIDC_AUDIENCE`**; keep **`INTERNAL_JOB_SECRET`** unset in production unless you intentionally use secret auth. See **`infra/terraform/README.md`**.
+3. [ ] **Wire public API origins for jobs** (Terraform cannot inject a service’s own URL in one apply): run **`terraform apply`**, read outputs **`api_staging_uri`** / **`api_prod_uri`**, set **`api_staging_service_public_uri`** / **`api_prod_service_public_uri`** in `terraform.tfvars` (HTTPS origin, no trailing slash), set **`api_job_queue_backend_*`** to `cloud_tasks`, **`terraform apply`** again. That adds **`JOB_WORKER_URL`** and **`CLOUD_TASKS_OIDC_AUDIENCE`**. See **`infra/terraform/README.md`**.
 4. [ ] **Soak** staging with a large environmental COG (upload-session path returns **202**; confirm job + catalog update end-to-end).
 5. [ ] **Production** after staging sign-off; multipart replace remains synchronous by design. **Prod API image** rollouts stay **`release-deploy-prod.yml`** (image only); job env changes remain Terraform applies.
 

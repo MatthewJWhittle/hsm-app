@@ -1,4 +1,4 @@
-"""Authenticate calls to internal job worker endpoints (dev secret or Cloud Tasks OIDC)."""
+"""Authenticate calls to internal job worker endpoints (explicit secret vs OIDC modes)."""
 
 from __future__ import annotations
 
@@ -11,27 +11,38 @@ from backend_api.settings import Settings
 
 def verify_internal_job_caller(request: Request, settings: Settings) -> None:
     """
-    Allow either:
+    Auth is explicit (JOB_WORKER_AUTH_MODE), not inferred from whether a secret is set:
 
-    - ``X-Internal-Job-Secret`` matching :attr:`Settings.internal_job_secret` (development / direct queue), or
-    - ``Authorization: Bearer`` Google OIDC token with audience
-      :attr:`Settings.cloud_tasks_oidc_audience` (or ``JOB_WORKER_URL`` fallback).
-
-    If ``internal_job_secret`` is non-empty, only the header is checked (OIDC is skipped). Production
-    Cloud Tasks setups should leave the secret unset and rely on OIDC.
+    - **secret** — require ``X-Internal-Job-Secret`` matching :attr:`Settings.internal_job_secret`.
+    - **oidc** — require ``Authorization: Bearer`` Google OIDC token; reject ``X-Internal-Job-Secret``.
     """
-    secret = (settings.internal_job_secret or "").strip()
-    if secret:
+    mode = (settings.job_worker_auth_mode or "oidc").strip().lower()
+    if mode not in ("secret", "oidc"):
+        raise HTTPException(status_code=503, detail="invalid JOB_WORKER_AUTH_MODE")
+
+    if mode == "secret":
+        secret = (settings.internal_job_secret or "").strip()
+        if not secret:
+            raise HTTPException(
+                status_code=503,
+                detail="JOB_WORKER_AUTH_MODE=secret requires INTERNAL_JOB_SECRET",
+            )
         got = request.headers.get("X-Internal-Job-Secret") or ""
         if not hmac.compare_digest(got.encode("utf-8"), secret.encode("utf-8")):
             raise HTTPException(status_code=401, detail="invalid internal job secret")
         return
 
+    # OIDC mode: never accept secret-only auth (production footgun if secret leaked).
+    if (request.headers.get("X-Internal-Job-Secret") or "").strip():
+        raise HTTPException(
+            status_code=401,
+            detail="worker auth is OIDC-only; remove X-Internal-Job-Secret",
+        )
     auth = request.headers.get("Authorization") or ""
     if not auth.startswith("Bearer "):
         raise HTTPException(
             status_code=401,
-            detail="missing bearer token (set INTERNAL_JOB_SECRET for local direct dispatch)",
+            detail="missing bearer OIDC token (set JOB_WORKER_AUTH_MODE=secret for local secret auth)",
         )
     token = auth.removeprefix("Bearer ").strip()
     audience = (settings.cloud_tasks_oidc_audience or settings.job_worker_url or "").strip()

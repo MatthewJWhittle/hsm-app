@@ -49,7 +49,7 @@ Terraform cannot set `JOB_WORKER_URL` from the same Cloud Run service’s own `.
 
 1. **First apply** with `api_job_queue_backend_* = "disabled"` (default) and **empty** `api_*_service_public_uri`.
 2. Read outputs `api_staging_uri` / `api_prod_uri`, put each value into `api_staging_service_public_uri` / `api_prod_service_public_uri` (HTTPS origin, no trailing slash).
-3. Set `api_job_queue_backend_staging` / `api_job_queue_backend_prod` to `cloud_tasks` or `direct` as needed and **apply again**. Plan will fail the `check` blocks until the public URI variables are set when the backend is not `disabled`.
+3. Set `api_job_queue_backend_staging` / `api_job_queue_backend_prod` to `cloud_tasks` and **apply again**. Plan will fail the `check` blocks until the public URI variables are set when the backend is `cloud_tasks`.
 
 When a public URI is set, Terraform adds `JOB_WORKER_URL` (`{origin}/api/internal/jobs/run`), `CLOUD_TASKS_OIDC_AUDIENCE` (service root), plus `JOB_QUEUE_BACKEND`, `CLOUD_TASKS_*`, and the API runtime service account email for OIDC.
 
@@ -61,7 +61,7 @@ Custom domains: use the HTTPS origin clients use (must match OIDC audience expec
 - API image rollout is handled by GitHub Actions deploy workflows.
 - `api-staging` and `api-prod` ignore image drift in Terraform via `lifecycle.ignore_changes`.
 - Cloud Run env vars are revision-bound; keep full intended env set in Terraform.
-- **`api_timeout_seconds`** (Cloud Run, default `60`) is the **platform** ceiling for every request on `api-staging` / `api-prod`. Raise it (e.g. `900`) when background jobs are enabled so it stays **≥** the app’s **`INTERNAL_JOB_HTTP_TIMEOUT_SECONDS`** (worker `POST /api/internal/jobs/run`; default `900` in code). The app also applies a **shorter ASGI timeout** (`HTTP_DEFAULT_REQUEST_TIMEOUT_SECONDS`, default `120`) on all routes **except** that worker path, so normal browser traffic is not held on a 15‑minute window. **`titiler_timeout_seconds`** is separate (default `60`).
+- **`api_timeout_seconds`** (Cloud Run, default `60`) is the **platform** ceiling for each request. Raise it (e.g. `900`) when `JOB_QUEUE_BACKEND=cloud_tasks` so worker `POST /api/internal/jobs/run` can run as long as your longest job. Prefer a **separate worker Cloud Run service** later for tighter API vs worker timeouts. **`titiler_timeout_seconds`** is separate (default `60`). The Cloud Tasks queue uses explicit `rate_limits` and `retry_config` in Terraform.
 - If Firestore already exists, keep `create_firestore_database = false`.
 
 ## MVP cost guardrails

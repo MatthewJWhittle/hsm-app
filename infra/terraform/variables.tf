@@ -124,7 +124,7 @@ variable "api_ingress" {
 variable "api_timeout_seconds" {
   description = <<-EOT
     Maximum request duration (seconds) for api-staging and api-prod. This is a per-request ceiling: normal routes still return as fast as ever; a high value only raises how long a single stuck or long-running request may run before Cloud Run aborts it.
-    When JOB_QUEUE_BACKEND is cloud_tasks or direct, POST /api/internal/jobs/run runs in-process until the job finishes — set high enough for your longest job (often 900+). With jobs disabled, 60 is usually fine.
+    When JOB_QUEUE_BACKEND is cloud_tasks, POST /api/internal/jobs/run runs in-process until the job finishes — set high enough for your longest job (often 900+). With jobs disabled, 60 is usually fine.
     TiTiler uses titiler_timeout_seconds.
   EOT
   type        = number
@@ -252,10 +252,46 @@ variable "cloud_tasks_queue_location" {
   default     = "us-central1"
 }
 
+variable "cloud_tasks_max_dispatches_per_second" {
+  description = "Queue rate limit: max task dispatches per second (Cloud Tasks rate_limits)."
+  type        = number
+  default     = 50
+}
+
+variable "cloud_tasks_max_concurrent_dispatches" {
+  description = "Queue limit on concurrent in-flight task dispatches."
+  type        = number
+  default     = 100
+}
+
+variable "cloud_tasks_max_attempts" {
+  description = "Max delivery attempts per task (includes first try)."
+  type        = number
+  default     = 10
+}
+
+variable "cloud_tasks_min_backoff" {
+  description = "Minimum backoff between retries (duration string, e.g. 10s)."
+  type        = string
+  default     = "10s"
+}
+
+variable "cloud_tasks_max_backoff" {
+  description = "Maximum backoff between retries."
+  type        = string
+  default     = "300s"
+}
+
+variable "cloud_tasks_max_retry_duration" {
+  description = "Cumulative retry window from first attempt."
+  type        = string
+  default     = "3600s"
+}
+
 variable "api_staging_service_public_uri" {
   description = <<-EOT
     HTTPS origin of the staging API (no trailing slash), e.g. the value of output `api_staging_uri` after the first `terraform apply`.
-    Required when `api_job_queue_backend_staging` is `cloud_tasks` or `direct` so `JOB_WORKER_URL` and OIDC audience can be set without a Terraform circular dependency on the service's own URL.
+    Required when `api_job_queue_backend_staging` is `cloud_tasks` so `JOB_WORKER_URL` and OIDC audience can be set without a Terraform circular dependency on the service's own URL.
     Leave empty when job queue is `disabled` or until you copy the URL from output and apply again.
   EOT
   type        = string
@@ -269,13 +305,13 @@ variable "api_prod_service_public_uri" {
 }
 
 variable "api_job_queue_backend_staging" {
-  description = "Maps to Cloud Run env `JOB_QUEUE_BACKEND` for staging (`disabled`, `cloud_tasks`, or `direct`)."
+  description = "Maps to Cloud Run env `JOB_QUEUE_BACKEND` for staging (`disabled` or `cloud_tasks`)."
   type        = string
   default     = "disabled"
 
   validation {
-    condition     = contains(["disabled", "cloud_tasks", "direct"], var.api_job_queue_backend_staging)
-    error_message = "api_job_queue_backend_staging must be disabled, cloud_tasks, or direct."
+    condition     = contains(["disabled", "cloud_tasks"], var.api_job_queue_backend_staging)
+    error_message = "api_job_queue_backend_staging must be disabled or cloud_tasks."
   }
 }
 
@@ -285,8 +321,8 @@ variable "api_job_queue_backend_prod" {
   default     = "disabled"
 
   validation {
-    condition     = contains(["disabled", "cloud_tasks", "direct"], var.api_job_queue_backend_prod)
-    error_message = "api_job_queue_backend_prod must be disabled, cloud_tasks, or direct."
+    condition     = contains(["disabled", "cloud_tasks"], var.api_job_queue_backend_prod)
+    error_message = "api_job_queue_backend_prod must be disabled or cloud_tasks."
   }
 }
 

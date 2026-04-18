@@ -4,7 +4,7 @@ import {
   parseJobAcceptedResourceIds,
   type AdminJobStatus,
   waitForBackgroundJobThen,
-} from './adminProjects'
+} from './adminJobs'
 import { readFetchErrorDetail } from './errors'
 import { parseModel } from './models'
 

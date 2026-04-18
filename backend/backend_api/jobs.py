@@ -252,3 +252,21 @@ def complete_job_failure(settings: Settings, job_id: str, error: JobError) -> No
             "error": err_map,
         }
     )
+
+
+def requeue_job_for_retry(settings: Settings, job_id: str) -> None:
+    """
+    Move ``running`` job back to ``queued`` and clear ``started_at`` for Cloud Tasks retry.
+
+    Call only after a transient failure before returning HTTP 503 to the task handler.
+    """
+    client = firestore.Client(project=settings.google_cloud_project)
+    now = _now_iso()
+    ref = client.collection(JOBS_COLLECTION_ID).document(job_id)
+    ref.update(
+        {
+            "status": JobStatus.QUEUED.value,
+            "updated_at": now,
+            "started_at": firestore.DELETE_FIELD,
+        }
+    )

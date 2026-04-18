@@ -198,6 +198,19 @@ resource "google_cloud_tasks_queue" "jobs" {
   name     = var.cloud_tasks_queue_name
   location = var.cloud_tasks_queue_location
 
+  rate_limits {
+    max_dispatches_per_second = var.cloud_tasks_max_dispatches_per_second
+    max_concurrent_dispatches = var.cloud_tasks_max_concurrent_dispatches
+  }
+
+  retry_config {
+    max_attempts       = var.cloud_tasks_max_attempts
+    min_backoff        = var.cloud_tasks_min_backoff
+    max_backoff        = var.cloud_tasks_max_backoff
+    max_doublings      = 5
+    max_retry_duration = var.cloud_tasks_max_retry_duration
+  }
+
   depends_on = [google_project_service.required]
 }
 
@@ -597,14 +610,14 @@ resource "google_cloud_run_v2_service_iam_member" "titiler_invoker" {
 
 check "staging_jobs_need_public_api_uri" {
   assert {
-    condition     = !contains(["cloud_tasks", "direct"], var.api_job_queue_backend_staging) || length(local.api_staging_public_trim) > 0
-    error_message = "api_job_queue_backend_staging is ${var.api_job_queue_backend_staging}: set api_staging_service_public_uri to the staging API HTTPS origin (no trailing slash), e.g. from terraform output api_staging_uri after the first apply."
+    condition     = var.api_job_queue_backend_staging != "cloud_tasks" || length(local.api_staging_public_trim) > 0
+    error_message = "api_job_queue_backend_staging is cloud_tasks: set api_staging_service_public_uri to the staging API HTTPS origin (no trailing slash), e.g. from terraform output api_staging_uri after the first apply."
   }
 }
 
 check "prod_jobs_need_public_api_uri" {
   assert {
-    condition     = !contains(["cloud_tasks", "direct"], var.api_job_queue_backend_prod) || length(local.api_prod_public_trim) > 0
-    error_message = "api_job_queue_backend_prod is ${var.api_job_queue_backend_prod}: set api_prod_service_public_uri to the production API HTTPS origin (no trailing slash), e.g. from terraform output api_prod_uri."
+    condition     = var.api_job_queue_backend_prod != "cloud_tasks" || length(local.api_prod_public_trim) > 0
+    error_message = "api_job_queue_backend_prod is cloud_tasks: set api_prod_service_public_uri to the production API HTTPS origin (no trailing slash), e.g. from terraform output api_prod_uri."
   }
 }

@@ -1,4 +1,4 @@
-"""Tests for job queue dispatch (Phase 2)."""
+"""Tests for job queue dispatch."""
 
 from __future__ import annotations
 
@@ -7,12 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from backend_api.job_queue import (
-    CloudTasksJobQueue,
-    DirectJobQueue,
-    DisabledJobQueue,
-    build_job_queue,
-)
+from backend_api.job_queue import CloudTasksJobQueue, DisabledJobQueue, build_job_queue
 from backend_api.settings import Settings
 
 _JOB_ENV_KEYS = (
@@ -23,7 +18,7 @@ _JOB_ENV_KEYS = (
     "CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL",
     "CLOUD_TASKS_OIDC_AUDIENCE",
     "INTERNAL_JOB_SECRET",
-    "JOB_DIRECT_HTTP_TIMEOUT_SECONDS",
+    "JOB_WORKER_AUTH_MODE",
 )
 
 
@@ -53,35 +48,9 @@ def test_build_job_queue_unknown():
         build_job_queue(Settings(job_queue_backend="typo"))
 
 
-def test_direct_queue_requires_url():
-    q = DirectJobQueue(Settings(job_queue_backend="direct", job_worker_url=None))
-    with pytest.raises(RuntimeError, match="JOB_WORKER_URL"):
-        q.enqueue_run_job("j1")
-
-
-@patch("backend_api.job_queue.urllib.request.urlopen")
-def test_direct_queue_posts_json(mock_urlopen):
-    resp = MagicMock()
-    resp.status = 202
-    mock_urlopen.return_value.__enter__.return_value = resp
-    mock_urlopen.return_value.__exit__.return_value = None
-
-    q = DirectJobQueue(
-        Settings(
-            google_cloud_project="p",
-            job_queue_backend="direct",
-            job_worker_url="https://worker.example/internal/jobs/run",
-            internal_job_secret="dev-secret",
-        )
-    )
-    q.enqueue_run_job("job-abc")
-
-    mock_urlopen.assert_called_once()
-    req = mock_urlopen.call_args[0][0]
-    assert req.get_full_url() == "https://worker.example/internal/jobs/run"
-    assert json.loads(req.data.decode()) == {"job_id": "job-abc"}
-    secret_headers = [v for k, v in req.header_items() if k.lower() == "x-internal-job-secret"]
-    assert secret_headers == ["dev-secret"]
+def test_direct_backend_rejected():
+    with pytest.raises(ValueError, match="unknown JOB_QUEUE_BACKEND"):
+        build_job_queue(Settings(job_queue_backend="direct"))
 
 
 @patch("backend_api.job_queue.tasks_v2.CloudTasksClient")

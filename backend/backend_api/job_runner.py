@@ -11,11 +11,13 @@ from fastapi import HTTPException, Request
 from backend_api.catalog_service import CatalogService
 from backend_api.deps.catalog import get_object_storage
 from backend_api.deps.settings_dep import get_settings
+from backend_api.job_errors import JobRetryableError
 from backend_api.job_handlers import JobRunContext, get_job_handler, run_job_handler
 from backend_api.jobs import (
     complete_job_failure,
     complete_job_success,
     get_job,
+    requeue_job_for_retry,
     try_claim_job,
 )
 from backend_api.schemas_job import JobError, JobKind, JobStatus
@@ -38,9 +40,11 @@ async def execute_job(request: Request, job_id: str) -> None:
     """
     Claim ``job_id`` and run the registered handler.
 
-    Raises :class:`HTTPException` only for infrastructure issues (e.g. missing job).
-    Business failures are recorded on the job document and the handler returns **200**
-    so Cloud Tasks does not retry indefinitely.
+    Raises :class:`HTTPException` for: missing job (404), claim conflict (409), or
+    transient work (:exc:`JobRetryableError` → 503 after requeue).
+
+    Business / validation failures are recorded on the job document and the worker
+    responds **2xx** so Cloud Tasks does not retry indefinitely.
     """
     settings = get_settings(request)
     job = get_job(settings, job_id)
@@ -127,6 +131,16 @@ async def execute_job(request: Request, job_id: str) -> None:
             e.detail,
         )
         complete_job_failure(settings, job_id, _job_error_from_http_exception(e))
+    except JobRetryableError as e:
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        logger.warning(
+            "execute_job transient job_id=%s duration_ms=%s err=%s",
+            job_id,
+            duration_ms,
+            e,
+        )
+        requeue_job_for_retry(settings, job_id)
+        raise HTTPException(status_code=503, detail=str(e)[:2000]) from e
     except Exception as e:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         logger.exception(

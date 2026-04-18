@@ -1,11 +1,9 @@
-"""Pluggable dispatch for background jobs (Cloud Tasks vs direct HTTP vs disabled)."""
+"""Background job dispatch: disabled (inline dev) or Cloud Tasks (deployed async)."""
 
 from __future__ import annotations
 
 import json
 import logging
-import urllib.error
-import urllib.request
 from typing import Protocol, runtime_checkable
 
 from google.cloud import tasks_v2
@@ -29,55 +27,10 @@ class JobQueue(Protocol):
 
 
 class DisabledJobQueue:
-    """No-op queue (default until infra wires Cloud Tasks or direct worker)."""
+    """No-op queue: use with local/test sync pipelines (no Cloud Tasks)."""
 
     def enqueue_run_job(self, job_id: str) -> None:
         logger.debug("job queue disabled; skip enqueue job_id=%s", job_id)
-
-
-class DirectJobQueue:
-    """
-    POST ``{\"job_id\": ...}`` to :attr:`Settings.job_worker_url`.
-
-    **Semantics:** This call waits for the worker HTTP response. The worker runs ``execute_job`` to completion
-    before returning, so the **API handler that enqueues also blocks** until the job finishes (unlike
-    :class:`CloudTasksJobQueue`, which returns after the task is queued). Use for local/dev; production async
-    enqueue should use ``cloud_tasks``.
-    """
-
-    def __init__(self, settings: Settings) -> None:
-        self._settings = settings
-
-    def enqueue_run_job(self, job_id: str) -> None:
-        url = (self._settings.job_worker_url or "").strip()
-        if not url:
-            raise RuntimeError("JOB_WORKER_URL is required when JOB_QUEUE_BACKEND=direct")
-        payload = json.dumps({"job_id": job_id}).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            method="POST",
-            headers={"Content-Type": "application/json"},
-        )
-        secret = self._settings.internal_job_secret
-        if secret:
-            req.add_header("X-Internal-Job-Secret", secret)
-        try:
-            with urllib.request.urlopen(
-                req, timeout=self._settings.job_direct_http_timeout_seconds
-            ) as resp:
-                if resp.status < 200 or resp.status >= 300:
-                    body = resp.read(512).decode("utf-8", errors="replace")
-                    raise RuntimeError(
-                        f"direct job worker returned HTTP {resp.status}: {body[:200]}"
-                    )
-        except urllib.error.HTTPError as e:
-            body = e.read(512).decode("utf-8", errors="replace") if e.fp else ""
-            raise RuntimeError(
-                f"direct job worker HTTP {e.code}: {body[:200]}"
-            ) from e
-        except urllib.error.URLError as e:
-            raise RuntimeError(f"direct job worker request failed: {e}") from e
 
 
 class CloudTasksJobQueue:
@@ -123,14 +76,12 @@ def build_job_queue(settings: Settings) -> JobQueue:
     raw = _job_queue_backend_token(settings)
     if raw in ("", "disabled", "off", "none"):
         return DisabledJobQueue()
-    if raw == "direct":
-        return DirectJobQueue(settings)
     if raw in ("cloud_tasks", "cloudtasks", "tasks"):
         return CloudTasksJobQueue(settings)
     raise ValueError(f"unknown JOB_QUEUE_BACKEND: {settings.job_queue_backend!r}")
 
 
 def job_queue_enabled(settings: Settings) -> bool:
-    """True when background job dispatch is configured (not the default disabled backend)."""
+    """True when Cloud Tasks dispatch is configured (not the default disabled backend)."""
     raw = _job_queue_backend_token(settings)
     return raw not in ("", "disabled", "off", "none")

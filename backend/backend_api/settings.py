@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -184,39 +186,11 @@ class Settings(BaseSettings):
         le=300.0,
     )
 
-    http_default_request_timeout_seconds: float = Field(
-        default=120.0,
-        description=(
-            "ASGI-level max duration for most requests (see RequestTimeoutMiddleware). "
-            "Does not apply to POST /api/internal/jobs/run (uses internal_job_http_timeout_seconds). "
-            "Independent of Cloud Run's service timeout, which must be >= both limits when jobs are enabled."
-        ),
-        validation_alias=AliasChoices(
-            "HTTP_DEFAULT_REQUEST_TIMEOUT_SECONDS",
-            "http_default_request_timeout_seconds",
-        ),
-        ge=5.0,
-        le=600.0,
-    )
-    internal_job_http_timeout_seconds: float = Field(
-        default=900.0,
-        description=(
-            "ASGI-level max duration for POST /api/internal/jobs/run only (background worker). "
-            "Set Cloud Run api_timeout_seconds (Terraform) >= this value."
-        ),
-        validation_alias=AliasChoices(
-            "INTERNAL_JOB_HTTP_TIMEOUT_SECONDS",
-            "internal_job_http_timeout_seconds",
-        ),
-        ge=30.0,
-        le=3600.0,
-    )
-
     job_queue_backend: str = Field(
         default="disabled",
         description=(
-            "Dispatch background jobs: 'disabled' (no enqueue), 'cloud_tasks' (async; enqueue returns immediately), "
-            "or 'direct' (HTTP POST to JOB_WORKER_URL; blocks until the worker finishes the job — use for local/dev only)."
+            "Dispatch background jobs: 'disabled' (local/test: run pipelines inline in the API process) "
+            "or 'cloud_tasks' (deployed: enqueue HTTP task to worker URL)."
         ),
         validation_alias=AliasChoices("JOB_QUEUE_BACKEND", "job_queue_backend"),
     )
@@ -231,7 +205,7 @@ class Settings(BaseSettings):
     )
     job_worker_url: str | None = Field(
         default=None,
-        description="Worker URL for Cloud Tasks or direct dispatch (POST, JSON {\"job_id\": ...}).",
+        description="Worker URL for Cloud Tasks (POST JSON {\"job_id\": ...}).",
         validation_alias=AliasChoices("JOB_WORKER_URL", "job_worker_url"),
     )
     cloud_tasks_oidc_service_account_email: str | None = Field(
@@ -249,19 +223,15 @@ class Settings(BaseSettings):
     )
     internal_job_secret: str | None = Field(
         default=None,
-        description=(
-            "Optional X-Internal-Job-Secret for worker auth. When set, OIDC is not used for the worker route. "
-            "Omit in production when using Cloud Tasks OIDC; do not set a weak value alongside OIDC."
-        ),
+        description="Shared secret for X-Internal-Job-Secret when JOB_WORKER_AUTH_MODE=secret (local dev only).",
         validation_alias=AliasChoices("INTERNAL_JOB_SECRET", "internal_job_secret"),
     )
-    job_direct_http_timeout_seconds: float = Field(
-        default=15.0,
-        validation_alias=AliasChoices(
-            "JOB_DIRECT_HTTP_TIMEOUT_SECONDS",
-            "job_direct_http_timeout_seconds",
+    job_worker_auth_mode: Literal["secret", "oidc"] = Field(
+        default="oidc",
+        description=(
+            "Worker endpoint auth: 'secret' (require X-Internal-Job-Secret) or 'oidc' "
+            "(require Google OIDC bearer; reject secret header). Use oidc in staging/prod."
         ),
-        ge=1.0,
-        le=120.0,
+        validation_alias=AliasChoices("JOB_WORKER_AUTH_MODE", "job_worker_auth_mode"),
     )
 
