@@ -20,6 +20,8 @@ export interface CatalogProject {
   /** Set after environmental COG is uploaded. */
   driver_artifact_root?: string | null
   driver_cog_path?: string | null
+  /** Original filename from the last environmental COG upload (display); object is stored as ``driver_cog_path``. */
+  driver_cog_upload_filename?: string | null
   /** Per-band names/labels for the environmental COG (aligned with raster band order). */
   environmental_band_definitions?: EnvironmentalBandDefinition[] | null
   /** Present only on upload responses when names were inferred from the raster (not stored). */

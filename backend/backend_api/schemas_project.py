@@ -85,6 +85,13 @@ class CatalogProject(BaseModel):
         default=None,
         description="Filename or path relative to driver_artifact_root",
     )
+    driver_cog_upload_filename: str | None = Field(
+        default=None,
+        description=(
+            "Original client filename for the last environmental COG upload (display only). "
+            "The object in storage uses ``driver_cog_path`` (typically environmental_cog.tif)."
+        ),
+    )
     environmental_band_definitions: list[EnvironmentalBandDefinition] | None = Field(
         default=None,
         description="Per-band machine name, optional display label, optional description; set after upload.",

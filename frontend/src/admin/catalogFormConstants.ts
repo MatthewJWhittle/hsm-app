@@ -13,6 +13,10 @@ export const COG_REQUIREMENTS_INFO =
 export const DRIVER_COG_INFO =
   'Optional: one shared environmental raster for this project (several bands in one file). Same format rules as suitability uploads. You can add or replace it later when editing the project.'
 
+/** Shown next to the canonical storage filename so uploads feel “real” after replace. */
+export const DRIVER_COG_STORAGE_NOTE =
+  'The server always stores this raster as environmental_cog.tif under the project folder; your original filename is shown for reference.'
+
 export const COG_REPLACE_HINT =
   'Optional replacement file with the same rules. Leave empty to keep the current upload.'
 

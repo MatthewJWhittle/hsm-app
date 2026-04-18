@@ -19,7 +19,7 @@ import {
 } from '@mui/material'
 
 import type { EnvironmentalBandDefinition } from '../types/project'
-import { DRIVER_COG_INFO, COG_REPLACE_HINT } from './catalogFormConstants'
+import { DRIVER_COG_INFO, COG_REPLACE_HINT, DRIVER_COG_STORAGE_NOTE } from './catalogFormConstants'
 
 function formatBackgroundGeneratedAt(iso: string | null | undefined): string {
   if (!iso) return ''
@@ -51,6 +51,10 @@ export interface ProjectFormFieldsProps {
   projectId?: string
   /** Edit: existing stored path, if any */
   existingDriverPath?: string | null
+  /** Edit: original filename from last upload (API), for display */
+  driverCogUploadFilename?: string | null
+  /** Edit: catalog ``updated_at`` when showing last change */
+  catalogUpdatedAt?: string | null
   /** Edit: band names/labels for the environmental COG (one row per raster band). */
   environmentalBandDefinitions?: EnvironmentalBandDefinition[]
   onEnvironmentalBandDefinitionsChange?: (value: EnvironmentalBandDefinition[]) => void
@@ -87,6 +91,8 @@ export function ProjectFormFields({
   canUploadEnvironmentalCog = false,
   projectId,
   existingDriverPath,
+  driverCogUploadFilename = null,
+  catalogUpdatedAt = null,
   environmentalBandDefinitions = [],
   onEnvironmentalBandDefinitionsChange,
   environmentalBandEditableFields = 'label',
@@ -194,9 +200,24 @@ export function ProjectFormFields({
         {isEdit && (
           <>
             {existingDriverPath ? (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Current file: <strong>{existingDriverPath}</strong>
-              </Typography>
+              <Stack spacing={0.75} sx={{ mb: 1 }}>
+                {driverCogUploadFilename ? (
+                  <Typography variant="body2" color="text.secondary">
+                    Last upload: <strong>{driverCogUploadFilename}</strong>
+                    {catalogUpdatedAt ? (
+                      <Box component="span" sx={{ display: 'block', mt: 0.25 }}>
+                        Catalog updated {formatBackgroundGeneratedAt(catalogUpdatedAt)}
+                      </Box>
+                    ) : null}
+                  </Typography>
+                ) : null}
+                <Typography variant="body2" color="text.secondary">
+                  Stored in bucket as: <strong>{existingDriverPath}</strong>
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  {DRIVER_COG_STORAGE_NOTE}
+                </Typography>
+              </Stack>
             ) : (
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                 No environmental file uploaded yet.
