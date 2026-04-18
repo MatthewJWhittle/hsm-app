@@ -16,7 +16,6 @@ from fastapi import (
     Request,
     status,
 )
-from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import Response
 
@@ -33,8 +32,12 @@ from backend_api.deps.visibility_models import (
     get_model_visible_or_404,
 )
 from backend_api.deps.settings_dep import get_settings
-from backend_api.job_queue import build_job_queue, job_queue_enabled
-from backend_api.jobs import create_job
+from backend_api.job_http import (
+    accepted_job_202_response,
+    admin_created_by_uid,
+    enqueue_and_schedule_job,
+)
+from backend_api.job_queue import job_queue_enabled
 from backend_api.point_explainability import warm_explainability_cache
 from backend_api.point_sampling import (
     PointSamplingError,
@@ -42,7 +45,7 @@ from backend_api.point_sampling import (
     inspect_point,
 )
 from backend_api.schemas import Model, ModelMetadata, PointInspection
-from backend_api.schemas_job import JobAcceptedResponse, JobKind
+from backend_api.schemas_job import JobKind
 from backend_api.model_suitability_pipeline import (
     create_model_with_suitability_upload_pipeline,
     update_model_pipeline,
@@ -341,7 +344,7 @@ async def create_model(
     ):
         model_id = str(uuid.uuid4())
         metadata_json = meta_in.model_dump_json() if meta_in is not None else None
-        job = create_job(
+        job = enqueue_and_schedule_job(
             settings,
             kind=JobKind.MODEL_CREATE_WITH_UPLOAD,
             input={
@@ -352,19 +355,10 @@ async def create_model(
                 "upload_session_id": upload_session_s,
                 "metadata_json": metadata_json,
             },
-            created_by_uid=str(_claims.get("uid") or "") or None,
+            created_by_uid=admin_created_by_uid(_claims),
         )
-        build_job_queue(settings).enqueue_run_job(job.id)
-        body = JobAcceptedResponse(
-            job_id=job.id,
-            status=job.status.value,
-            model_id=model_id,
-            project_id=project_id,
-        )
-        return JSONResponse(
-            status_code=202,
-            content=body.model_dump(mode="json"),
-            headers={"Location": f"/api/jobs/{job.id}"},
+        return accepted_job_202_response(
+            job, model_id=model_id, project_id=project_id
         )
 
     model_id = str(uuid.uuid4())
@@ -479,7 +473,7 @@ async def update_model(
         metadata_json = (
             new_metadata.model_dump_json() if new_metadata is not None else None
         )
-        job = create_job(
+        job = enqueue_and_schedule_job(
             settings,
             kind=JobKind.MODEL_REPLACE_SUITABILITY_COG,
             input={
@@ -490,19 +484,10 @@ async def update_model(
                 "project_id": new_project_id,
                 "metadata_json": metadata_json,
             },
-            created_by_uid=str(_claims.get("uid") or "") or None,
+            created_by_uid=admin_created_by_uid(_claims),
         )
-        build_job_queue(settings).enqueue_run_job(job.id)
-        body = JobAcceptedResponse(
-            job_id=job.id,
-            status=job.status.value,
-            model_id=model_id,
-            project_id=new_project_id,
-        )
-        return JSONResponse(
-            status_code=202,
-            content=body.model_dump(mode="json"),
-            headers={"Location": f"/api/jobs/{job.id}"},
+        return accepted_job_202_response(
+            job, model_id=model_id, project_id=new_project_id
         )
 
     serialized_model_file = sm_part if has_serialized else None

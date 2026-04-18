@@ -21,7 +21,6 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from backend_api.auth_deps import optional_id_token_claims, require_admin_claims
@@ -44,8 +43,12 @@ from backend_api.project_create_pipeline import create_project_with_environmenta
 from backend_api.explainability_background_pipeline import (
     regenerate_explainability_background_pipeline,
 )
-from backend_api.job_queue import build_job_queue, job_queue_enabled
-from backend_api.jobs import create_job
+from backend_api.job_http import (
+    accepted_job_202_response,
+    admin_created_by_uid,
+    enqueue_and_schedule_job,
+)
+from backend_api.job_queue import job_queue_enabled
 from backend_api.deps.settings_dep import get_settings
 from backend_api.deps.visibility_models import (
     filter_projects_for_viewer,
@@ -61,7 +64,7 @@ from backend_api.routers.project_visibility_parse import (
     parse_visibility_optional,
 )
 from backend_api.project_manifest import resolve_env_cog_path_from_parts
-from backend_api.schemas_job import JobAcceptedResponse, JobKind
+from backend_api.schemas_job import JobKind
 from backend_api.schemas_project import (
     BandLabelPatch,
     CatalogProject,
@@ -394,26 +397,16 @@ async def post_explainability_background_sample(
         )
 
     if job_queue_enabled(settings):
-        job = create_job(
+        job = enqueue_and_schedule_job(
             settings,
             kind=JobKind.EXPLAINABILITY_BACKGROUND_REGENERATE,
             input={
                 "project_id": project_id,
                 "sample_rows": body.sample_rows,
             },
-            created_by_uid=str(_claims.get("uid") or "") or None,
+            created_by_uid=admin_created_by_uid(_claims),
         )
-        build_job_queue(settings).enqueue_run_job(job.id)
-        body_out = JobAcceptedResponse(
-            job_id=job.id,
-            status=job.status.value,
-            project_id=project_id,
-        )
-        return JSONResponse(
-            status_code=202,
-            content=body_out.model_dump(mode="json"),
-            headers={"Location": f"/api/jobs/{job.id}"},
-        )
+        return accepted_job_202_response(job, project_id=project_id)
 
     return await regenerate_explainability_background_pipeline(
         request,
@@ -502,7 +495,7 @@ async def create_project(
         return project
 
     if job_queue_enabled(settings) and upload_session_id and file is None:
-        job = create_job(
+        job = enqueue_and_schedule_job(
             settings,
             kind=JobKind.PROJECT_CREATE_WITH_ENV_UPLOAD,
             input={
@@ -515,19 +508,9 @@ async def create_project(
                 "environmental_band_definitions": environmental_band_definitions,
                 "infer_band_definitions": infer_band_definitions,
             },
-            created_by_uid=str(_claims.get("uid") or "") or None,
+            created_by_uid=admin_created_by_uid(_claims),
         )
-        build_job_queue(settings).enqueue_run_job(job.id)
-        body = JobAcceptedResponse(
-            job_id=job.id,
-            status=job.status.value,
-            project_id=project_id,
-        )
-        return JSONResponse(
-            status_code=202,
-            content=body.model_dump(mode="json"),
-            headers={"Location": f"/api/jobs/{job.id}"},
-        )
+        return accepted_job_202_response(job, project_id=project_id)
 
     return await create_project_with_environmental_cog_pipeline(
         request,
@@ -679,7 +662,7 @@ async def replace_project_environmental_cogs(
         )
 
     if job_queue_enabled(settings) and upload_session_id and file is None:
-        job = create_job(
+        job = enqueue_and_schedule_job(
             settings,
             kind=JobKind.ENVIRONMENTAL_COG_REPLACE,
             input={
@@ -688,15 +671,9 @@ async def replace_project_environmental_cogs(
                 "environmental_band_definitions": environmental_band_definitions,
                 "infer_band_definitions": infer_band_definitions,
             },
-            created_by_uid=str(_claims.get("uid") or "") or None,
+            created_by_uid=admin_created_by_uid(_claims),
         )
-        build_job_queue(settings).enqueue_run_job(job.id)
-        body = JobAcceptedResponse(job_id=job.id, status=job.status.value)
-        return JSONResponse(
-            status_code=202,
-            content=body.model_dump(mode="json"),
-            headers={"Location": f"/api/jobs/{job.id}"},
-        )
+        return accepted_job_202_response(job)
 
     return await replace_project_environmental_cogs_pipeline(
         request,

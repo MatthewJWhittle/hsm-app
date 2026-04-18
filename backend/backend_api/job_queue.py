@@ -15,6 +15,10 @@ from backend_api.settings import Settings
 logger = logging.getLogger(__name__)
 
 
+def _job_queue_backend_token(settings: Settings) -> str:
+    return (settings.job_queue_backend or "disabled").strip().lower()
+
+
 @runtime_checkable
 class JobQueue(Protocol):
     """Enqueue execution of a persisted job (worker loads ``job_id`` from Firestore)."""
@@ -116,7 +120,7 @@ class CloudTasksJobQueue:
 
 def build_job_queue(settings: Settings) -> JobQueue:
     """Factory for :class:`JobQueue` from settings."""
-    raw = (settings.job_queue_backend or "disabled").strip().lower()
+    raw = _job_queue_backend_token(settings)
     if raw in ("", "disabled", "off", "none"):
         return DisabledJobQueue()
     if raw == "direct":
@@ -128,5 +132,5 @@ def build_job_queue(settings: Settings) -> JobQueue:
 
 def job_queue_enabled(settings: Settings) -> bool:
     """True when background job dispatch is configured (not the default disabled backend)."""
-    raw = (settings.job_queue_backend or "disabled").strip().lower()
+    raw = _job_queue_backend_token(settings)
     return raw not in ("", "disabled", "off", "none")

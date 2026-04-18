@@ -71,7 +71,8 @@ async def execute_job(request: Request, job_id: str) -> None:
         return
 
     kind = claimed.kind
-    if get_job_handler(kind) is None:
+    handler = get_job_handler(kind)
+    if handler is None:
         complete_job_failure(
             settings,
             job_id,
@@ -90,7 +91,7 @@ async def execute_job(request: Request, job_id: str) -> None:
     t0 = time.perf_counter()
     try:
         logger.info("execute_job start job_id=%s kind=%s", job_id, kind)
-        await run_job_handler(ctx, kind, claimed.input)
+        await run_job_handler(ctx, kind, claimed.input, handler)
 
         latest = get_job(settings, job_id)
         if latest is None:

@@ -113,6 +113,30 @@ export async function pollAdminJobUntilTerminal(params: {
   throw new Error(timeoutMsg)
 }
 
+/** Shared by 202 → poll → refetch flows when the job document reports `failed`. */
+export function throwIfFailedAdminJob(job: AdminJob, fallbackMessage: string): void {
+  if (job.status === 'failed') {
+    throw new Error(job.error?.message?.trim() || fallbackMessage)
+  }
+}
+
+/** Poll until terminal, throw if the job failed, then run ``onSuccess`` (e.g. refetch entity). */
+export async function waitForBackgroundJobThen<T>(
+  poll: {
+    token: string
+    jobId: string
+    onStatus?: (status: AdminJobStatus) => void
+    signal?: AbortSignal
+    timeoutMessage?: string
+  },
+  fallbackOnFailure: string,
+  onSuccess: () => Promise<T>,
+): Promise<T> {
+  const job = await pollAdminJobUntilTerminal(poll)
+  throwIfFailedAdminJob(job, fallbackOnFailure)
+  return onSuccess()
+}
+
 export function parseJobAcceptedResourceIds(raw: unknown): {
   job_id: string
   project_id: string | null
@@ -154,21 +178,21 @@ export async function createProject(params: {
   if (r.status === 202) {
     const rawAccept: unknown = await r.json()
     const acc = parseJobAcceptedResourceIds(rawAccept)
-    if (acc === null || !acc.project_id) {
+    if (acc === null || acc.project_id === null) {
       throw new Error('Invalid job accept response')
     }
-    const job = await pollAdminJobUntilTerminal({
-      token: params.token,
-      jobId: acc.job_id,
-      onStatus: params.onJobStatus,
-      signal: params.signal,
-      timeoutMessage: 'Project create job timed out while waiting for completion.',
-    })
-    if (job.status === 'failed') {
-      const msg = job.error?.message?.trim() || 'Project create job failed'
-      throw new Error(msg)
-    }
-    return fetchAdminProject({ token: params.token, projectId: acc.project_id })
+    const { job_id, project_id } = acc
+    return waitForBackgroundJobThen(
+      {
+        token: params.token,
+        jobId: job_id,
+        onStatus: params.onJobStatus,
+        signal: params.signal,
+        timeoutMessage: 'Project create job timed out while waiting for completion.',
+      },
+      'Project create job failed',
+      () => fetchAdminProject({ token: params.token, projectId: project_id }),
+    )
   }
   if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()
@@ -305,22 +329,22 @@ export async function replaceProjectEnvironmentalCog(params: {
   })
   if (r.status === 202) {
     const rawAccept: unknown = await r.json()
-    if (!isRecord(rawAccept) || typeof rawAccept.job_id !== 'string') {
+    const acc = parseJobAcceptedResourceIds(rawAccept)
+    if (acc === null) {
       throw new Error('Invalid job accept response')
     }
-    const job = await pollAdminJobUntilTerminal({
-      token: params.token,
-      jobId: rawAccept.job_id,
-      onStatus: params.onJobStatus,
-      signal: params.signal,
-      timeoutMessage:
-        'Environmental COG replace job timed out while waiting for completion.',
-    })
-    if (job.status === 'failed') {
-      const msg = job.error?.message?.trim() || 'Environmental COG replace failed'
-      throw new Error(msg)
-    }
-    return fetchAdminProject({ token: params.token, projectId: params.projectId })
+    return waitForBackgroundJobThen(
+      {
+        token: params.token,
+        jobId: acc.job_id,
+        onStatus: params.onJobStatus,
+        signal: params.signal,
+        timeoutMessage:
+          'Environmental COG replace job timed out while waiting for completion.',
+      },
+      'Environmental COG replace failed',
+      () => fetchAdminProject({ token: params.token, projectId: params.projectId }),
+    )
   }
   if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()
@@ -405,22 +429,22 @@ export async function postRegenerateExplainabilityBackgroundSample(params: {
   if (r.status === 202) {
     const rawAccept: unknown = await r.json()
     const acc = parseJobAcceptedResourceIds(rawAccept)
-    if (acc === null || !acc.project_id) {
+    if (acc === null || acc.project_id === null) {
       throw new Error('Invalid job accept response')
     }
-    const job = await pollAdminJobUntilTerminal({
-      token: params.token,
-      jobId: acc.job_id,
-      onStatus: params.onJobStatus,
-      signal: params.signal,
-      timeoutMessage:
-        'Explainability background job timed out while waiting for completion.',
-    })
-    if (job.status === 'failed') {
-      const msg = job.error?.message?.trim() || 'Explainability background job failed'
-      throw new Error(msg)
-    }
-    return fetchAdminProject({ token: params.token, projectId: acc.project_id })
+    const { job_id, project_id } = acc
+    return waitForBackgroundJobThen(
+      {
+        token: params.token,
+        jobId: job_id,
+        onStatus: params.onJobStatus,
+        signal: params.signal,
+        timeoutMessage:
+          'Explainability background job timed out while waiting for completion.',
+      },
+      'Explainability background job failed',
+      () => fetchAdminProject({ token: params.token, projectId: project_id }),
+    )
   }
   if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -14,8 +13,6 @@ from . import model_create_upload
 from . import model_replace_cog
 from . import project_create_env
 from backend_api.schemas_job import JobKind, parse_job_input_payload
-
-logger = logging.getLogger(__name__)
 
 _HandlerFn = Callable[..., Awaitable[None]]
 
@@ -36,12 +33,8 @@ async def run_job_handler(
     ctx: JobRunContext,
     kind: JobKind,
     raw_input: dict[str, Any],
+    handler: _HandlerFn,
 ) -> None:
-    """Parse ``raw_input`` for ``kind`` and invoke the registered handler."""
-    handler = get_job_handler(kind)
-    if handler is None:
-        logger.error("no job handler registered for kind=%s job_id=%s", kind, ctx.job_id)
-        raise RuntimeError(f"no job handler for kind {kind!r}")
-
+    """Parse ``raw_input`` for ``kind`` and invoke ``handler`` (:func:`get_job_handler` in :mod:`job_runner`)."""
     payload = parse_job_input_payload(kind, raw_input)
     await handler(ctx, payload)

@@ -2,8 +2,8 @@ import type { Model, ModelMetadata } from '../types/model'
 import { apiBase } from '../utils/apiBase'
 import {
   parseJobAcceptedResourceIds,
-  pollAdminJobUntilTerminal,
   type AdminJobStatus,
+  waitForBackgroundJobThen,
 } from './adminProjects'
 import { readFetchErrorDetail } from './errors'
 import { parseModel } from './models'
@@ -67,21 +67,21 @@ export async function createModel(params: {
   if (r.status === 202) {
     const rawAccept: unknown = await r.json()
     const acc = parseJobAcceptedResourceIds(rawAccept)
-    if (acc === null || !acc.model_id) {
+    if (acc === null || acc.model_id === null) {
       throw new Error('Invalid job accept response')
     }
-    const job = await pollAdminJobUntilTerminal({
-      token: params.token,
-      jobId: acc.job_id,
-      onStatus: params.onJobStatus,
-      signal: params.signal,
-      timeoutMessage: 'Create model job timed out while waiting for completion.',
-    })
-    if (job.status === 'failed') {
-      const msg = job.error?.message?.trim() || 'Create model job failed'
-      throw new Error(msg)
-    }
-    return fetchAdminModel({ token: params.token, modelId: acc.model_id })
+    const { job_id, model_id } = acc
+    return waitForBackgroundJobThen(
+      {
+        token: params.token,
+        jobId: job_id,
+        onStatus: params.onJobStatus,
+        signal: params.signal,
+        timeoutMessage: 'Create model job timed out while waiting for completion.',
+      },
+      'Create model job failed',
+      () => fetchAdminModel({ token: params.token, modelId: model_id }),
+    )
   }
   if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()
@@ -132,21 +132,21 @@ export async function updateModel(params: {
   if (r.status === 202) {
     const rawAccept: unknown = await r.json()
     const acc = parseJobAcceptedResourceIds(rawAccept)
-    if (acc === null || !acc.model_id) {
+    if (acc === null || acc.model_id === null) {
       throw new Error('Invalid job accept response')
     }
-    const job = await pollAdminJobUntilTerminal({
-      token: params.token,
-      jobId: acc.job_id,
-      onStatus: params.onJobStatus,
-      signal: params.signal,
-      timeoutMessage: 'Update model job timed out while waiting for completion.',
-    })
-    if (job.status === 'failed') {
-      const msg = job.error?.message?.trim() || 'Update model job failed'
-      throw new Error(msg)
-    }
-    return fetchAdminModel({ token: params.token, modelId: acc.model_id })
+    const { job_id, model_id } = acc
+    return waitForBackgroundJobThen(
+      {
+        token: params.token,
+        jobId: job_id,
+        onStatus: params.onJobStatus,
+        signal: params.signal,
+        timeoutMessage: 'Update model job timed out while waiting for completion.',
+      },
+      'Update model job failed',
+      () => fetchAdminModel({ token: params.token, modelId: model_id }),
+    )
   }
   if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()

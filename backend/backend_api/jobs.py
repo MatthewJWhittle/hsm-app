@@ -39,6 +39,30 @@ def _job_document_data(job: Job) -> dict:
     return job.model_dump(exclude={"id"}, exclude_none=True, mode="json")
 
 
+def _new_queued_job(
+    *,
+    job_id: str,
+    kind: JobKind,
+    normalized: dict,
+    idempotency_key: str | None,
+    created_by_uid: str | None,
+    now: str,
+) -> Job:
+    return Job(
+        id=job_id,
+        kind=kind,
+        status=JobStatus.QUEUED,
+        input=normalized,
+        error=None,
+        idempotency_key=idempotency_key,
+        created_by_uid=created_by_uid,
+        created_at=now,
+        updated_at=now,
+        started_at=None,
+        completed_at=None,
+    )
+
+
 def get_job(settings: Settings, job_id: str) -> Job | None:
     """Load ``jobs/{job_id}`` or return ``None``."""
     client = firestore.Client(project=settings.google_cloud_project)
@@ -60,18 +84,13 @@ def _create_job_no_idempotency(
 ) -> Job:
     job_id = str(uuid.uuid4())
     now = _now_iso()
-    job = Job(
-        id=job_id,
+    job = _new_queued_job(
+        job_id=job_id,
         kind=kind,
-        status=JobStatus.QUEUED,
-        input=normalized,
-        error=None,
+        normalized=normalized,
         idempotency_key=idempotency_key,
         created_by_uid=created_by_uid,
-        created_at=now,
-        updated_at=now,
-        started_at=None,
-        completed_at=None,
+        now=now,
     )
     _persist_job(client, job)
     return job
@@ -100,18 +119,13 @@ def _create_job_idempotency_transaction(
 
     job_id = str(uuid.uuid4())
     now = _now_iso()
-    job = Job(
-        id=job_id,
+    job = _new_queued_job(
+        job_id=job_id,
         kind=kind,
-        status=JobStatus.QUEUED,
-        input=normalized,
-        error=None,
+        normalized=normalized,
         idempotency_key=idempotency_key,
         created_by_uid=created_by_uid,
-        created_at=now,
-        updated_at=now,
-        started_at=None,
-        completed_at=None,
+        now=now,
     )
     data = _job_document_data(job)
     job_ref = client.collection(JOBS_COLLECTION_ID).document(job_id)
