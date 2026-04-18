@@ -271,7 +271,10 @@ def test_post_replace_environmental_cog_uses_upload_session(admin_client_proj):
         assert r.status_code == 200, r.text
         mock_download.assert_called_once()
         mock_validate.assert_called_once()
-        mock_bg.assert_called_once()
+        mock_bg.assert_not_called()
         fake_upload.unlink.assert_called_once_with(missing_ok=True)
         body = r.json()
         assert body["id"] == "proj-1"
+        assert body["explainability_background_path"] is None
+        assert body["explainability_background_sample_rows"] is None
+        assert body["explainability_background_generated_at"] is None
