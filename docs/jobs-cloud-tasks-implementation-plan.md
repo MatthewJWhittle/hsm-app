@@ -90,11 +90,13 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 ---
 
-## Phase 8 — Rollout
+## Phase 8 — Rollout (checklist)
 
-1. Ship job storage + worker behind flag.
-2. Staging: **202** for environmental COG replace; soak with large COG.
-3. Prod; remove sync fallback when stable.
+1. [x] Ship job storage, worker, Terraform queue/IAM scaffolding, and admin UI polling; **`JOB_QUEUE_BACKEND`** defaults keep **synchronous** behavior until explicitly configured.
+2. [ ] **Apply Terraform** (or equivalent) so `cloudtasks.googleapis.com`, the **jobs queue**, and **IAM** (`cloudtasks.enqueuer`, self **`run.invoker`**) match the target project.
+3. [ ] **Configure Cloud Run** (staging): `JOB_QUEUE_BACKEND=cloud_tasks`, `CLOUD_TASKS_QUEUE_PATH`, `CLOUD_TASKS_LOCATION`, full **`JOB_WORKER_URL`** (`POST …/api/internal/jobs/run`), **`CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL`**, optional **`INTERNAL_JOB_SECRET`**, and a **request timeout** suited to large COGs.
+4. [ ] **Soak** staging with a large environmental COG (upload-session path returns **202**; confirm job + catalog update end-to-end).
+5. [ ] **Production** after staging sign-off; multipart replace remains synchronous by design.
 
 ---
 
@@ -109,4 +111,4 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 ## References
 
 - [`docs/issue-59-investigation-guide.md`](issue-59-investigation-guide.md)
-- Backend: `backend_api/routers/projects.py` (`replace_project_environmental_cogs`)
+- Backend: `backend_api/routers/projects.py` (route), `backend_api/env_cog_replace_pipeline.py` (pipeline + worker)
