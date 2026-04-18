@@ -75,6 +75,7 @@ export async function createModel(params: {
       jobId: acc.job_id,
       onStatus: params.onJobStatus,
       signal: params.signal,
+      timeoutMessage: 'Create model job timed out while waiting for completion.',
     })
     if (job.status === 'failed') {
       const msg = job.error?.message?.trim() || 'Create model job failed'
@@ -139,6 +140,7 @@ export async function updateModel(params: {
       jobId: acc.job_id,
       onStatus: params.onJobStatus,
       signal: params.signal,
+      timeoutMessage: 'Update model job timed out while waiting for completion.',
     })
     if (job.status === 'failed') {
       const msg = job.error?.message?.trim() || 'Update model job failed'

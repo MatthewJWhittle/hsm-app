@@ -16,7 +16,7 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 1. **Jobs are generic:** `Job` has `kind`, `status`, `input`, errors, timestamps—not a COG-specific subsystem.
 2. **Cloud Tasks** schedules a **second HTTP request** to **our** worker; it does not run Python for us.
-3. **One executor:** `execute_job(job_id)` in code; enqueue is pluggable (`cloud_tasks` vs `direct` for local/tests).
+3. **One executor:** `execute_job(job_id)` in code; enqueue is pluggable (`cloud_tasks` vs `direct` for local/tests). **`direct` blocks** the caller until the worker HTTP handler finishes the job (the enqueue HTTP round-trip is synchronous); **`cloud_tasks` does not** (task queued, worker runs later).
 4. **Idempotency** for enqueue and safe worker retries.
 
 ---
@@ -72,7 +72,7 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 - [x] Enable **`cloudtasks.googleapis.com`** alongside existing project services.
 - [x] **`google_cloud_tasks_queue`** — id `var.cloud_tasks_queue_name` (default `hsm-jobs`), location `var.cloud_tasks_queue_location` (default `us-central1`).
 - [x] **IAM** — runtime API SAs (`api_staging`, `api_prod`) → `roles/cloudtasks.enqueuer`; same SAs → `roles/run.invoker` on their Cloud Run service (OIDC self-call for the worker URL).
-- [ ] **Deploy-time env** (outside Terraform / CI): set `JOB_QUEUE_BACKEND=cloud_tasks`, `CLOUD_TASKS_QUEUE_PATH`, `CLOUD_TASKS_LOCATION`, `JOB_WORKER_URL` (full `POST` URL), `CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL`, `INTERNAL_JOB_SECRET` or rely on OIDC only, and raise **`api_timeout_seconds`** if the worker must run longer than the default (see Cloud Run limits).
+- [ ] **Deploy-time env** (outside Terraform / CI): set `JOB_QUEUE_BACKEND=cloud_tasks`, **`CLOUD_TASKS_QUEUE_ID`** (match Terraform queue name, default `hsm-jobs`), `CLOUD_TASKS_LOCATION`, **`JOB_WORKER_URL`** (full `POST` URL to `/api/internal/jobs/run`), **`CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL`**. Prefer **OIDC-only** worker auth: **omit `INTERNAL_JOB_SECRET`** in production — if set, the worker accepts the secret and **does not** verify OIDC for that request. Raise **Cloud Run request timeout** if the worker must run longer than the default for large COGs.
 
 ---
 
@@ -94,7 +94,7 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 1. [x] Ship job storage, worker, Terraform queue/IAM scaffolding, and admin UI polling; **`JOB_QUEUE_BACKEND`** defaults keep **synchronous** behavior until explicitly configured.
 2. [ ] **Apply Terraform** (or equivalent) so `cloudtasks.googleapis.com`, the **jobs queue**, and **IAM** (`cloudtasks.enqueuer`, self **`run.invoker`**) match the target project.
-3. [ ] **Configure Cloud Run** (staging): `JOB_QUEUE_BACKEND=cloud_tasks`, `CLOUD_TASKS_QUEUE_PATH`, `CLOUD_TASKS_LOCATION`, full **`JOB_WORKER_URL`** (`POST …/api/internal/jobs/run`), **`CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL`**, optional **`INTERNAL_JOB_SECRET`**, and a **request timeout** suited to large COGs.
+3. [ ] **Configure Cloud Run** (staging): `JOB_QUEUE_BACKEND=cloud_tasks`, `CLOUD_TASKS_QUEUE_ID` (e.g. `hsm-jobs`), `CLOUD_TASKS_LOCATION`, full **`JOB_WORKER_URL`**, **`CLOUD_TASKS_OIDC_SERVICE_ACCOUNT_EMAIL`**, **`CLOUD_TASKS_OIDC_AUDIENCE`** if it differs from the worker URL, **no `INTERNAL_JOB_SECRET`** unless you intentionally use secret auth, and a **request timeout** suited to large COGs.
 4. [ ] **Soak** staging with a large environmental COG (upload-session path returns **202**; confirm job + catalog update end-to-end).
 5. [ ] **Production** after staging sign-off; multipart replace remains synchronous by design.
 

@@ -16,6 +16,9 @@ def verify_internal_job_caller(request: Request, settings: Settings) -> None:
     - ``X-Internal-Job-Secret`` matching :attr:`Settings.internal_job_secret` (development / direct queue), or
     - ``Authorization: Bearer`` Google OIDC token with audience
       :attr:`Settings.cloud_tasks_oidc_audience` (or ``JOB_WORKER_URL`` fallback).
+
+    If ``internal_job_secret`` is non-empty, only the header is checked (OIDC is skipped). Production
+    Cloud Tasks setups should leave the secret unset and rely on OIDC.
     """
     secret = (settings.internal_job_secret or "").strip()
     if secret:

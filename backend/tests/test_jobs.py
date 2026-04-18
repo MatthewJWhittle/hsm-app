@@ -215,12 +215,32 @@ class _FakeCollection:
         return _FakeDocRef(doc_id, self._db[self._name])
 
 
+class _FakeTransaction:
+    """Minimal write batch so transactional create_job tests avoid real RPCs."""
+
+    def set(self, doc_ref: _FakeDocRef, data: dict, merge: bool = False) -> None:
+        doc_ref.set(data)
+
+
 class _FakeFirestoreClient:
     def __init__(self) -> None:
         self._db: dict[str, dict[str, dict]] = {}
 
     def collection(self, name: str) -> _FakeCollection:
         return _FakeCollection(name, self._db)
+
+    def transaction(self) -> _FakeTransaction:
+        return _FakeTransaction()
+
+
+def _passthrough_transactional(fn):
+    """Run the wrapped function once (no begin/commit); use with fake Firestore."""
+
+    class _Inner:
+        def __call__(self, transaction, *args, **kwargs):
+            return fn(transaction, *args, **kwargs)
+
+    return _Inner()
 
 
 def test_create_job_and_get_roundtrip():
@@ -247,7 +267,13 @@ def test_create_job_and_get_roundtrip():
 def test_create_job_idempotency_returns_same_job():
     fake = _FakeFirestoreClient()
     settings = Settings(google_cloud_project="test-project")
-    with patch("backend_api.jobs.firestore.Client", return_value=fake):
+    with (
+        patch("backend_api.jobs.firestore.Client", return_value=fake),
+        patch(
+            "backend_api.jobs.firestore.transactional",
+            _passthrough_transactional,
+        ),
+    ):
         a = create_job(
             settings,
             kind=JobKind.ENVIRONMENTAL_COG_REPLACE,

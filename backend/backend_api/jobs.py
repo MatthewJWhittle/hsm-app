@@ -35,6 +35,10 @@ def _persist_job(client: firestore.Client, job: Job) -> None:
     client.collection(JOBS_COLLECTION_ID).document(job.id).set(data)
 
 
+def _job_document_data(job: Job) -> dict:
+    return job.model_dump(exclude={"id"}, exclude_none=True, mode="json")
+
+
 def get_job(settings: Settings, job_id: str) -> Job | None:
     """Load ``jobs/{job_id}`` or return ``None``."""
     client = firestore.Client(project=settings.google_cloud_project)
@@ -46,34 +50,14 @@ def get_job(settings: Settings, job_id: str) -> Job | None:
     return Job.model_validate(payload)
 
 
-def create_job(
-    settings: Settings,
+def _create_job_no_idempotency(
+    client: firestore.Client,
     *,
     kind: JobKind,
-    input: dict,
-    created_by_uid: str | None = None,
-    idempotency_key: str | None = None,
+    normalized: dict,
+    idempotency_key: str | None,
+    created_by_uid: str | None,
 ) -> Job:
-    """
-    Create a ``queued`` job. When ``idempotency_key`` is set and a mapping already exists,
-    returns the existing job (best-effort duplicate detection).
-    """
-    normalized = validate_job_input(kind, input)
-    client = firestore.Client(project=settings.google_cloud_project)
-
-    idem_id: str | None = None
-    if idempotency_key:
-        idem_id = _idempotency_doc_id(idempotency_key)
-        idem_snap = (
-            client.collection(JOB_IDEMPOTENCY_COLLECTION_ID).document(idem_id).get()
-        )
-        if idem_snap.exists:
-            existing_job_id = (idem_snap.to_dict() or {}).get("job_id")
-            if isinstance(existing_job_id, str) and existing_job_id:
-                existing = get_job(settings, existing_job_id)
-                if existing is not None:
-                    return existing
-
     job_id = str(uuid.uuid4())
     now = _now_iso()
     job = Job(
@@ -90,13 +74,91 @@ def create_job(
         completed_at=None,
     )
     _persist_job(client, job)
+    return job
 
-    if idempotency_key and idem_id is not None:
-        client.collection(JOB_IDEMPOTENCY_COLLECTION_ID).document(idem_id).set(
-            {"job_id": job_id, "created_at": now}
+
+def _create_job_idempotency_transaction(
+    transaction,
+    *,
+    client: firestore.Client,
+    idem_ref,
+    kind: JobKind,
+    normalized: dict,
+    idempotency_key: str,
+    created_by_uid: str | None,
+) -> Job:
+    idem_snap = idem_ref.get(transaction=transaction)
+    if idem_snap.exists:
+        existing_job_id = (idem_snap.to_dict() or {}).get("job_id")
+        if isinstance(existing_job_id, str) and existing_job_id:
+            job_ref = client.collection(JOBS_COLLECTION_ID).document(existing_job_id)
+            job_snap = job_ref.get(transaction=transaction)
+            if job_snap.exists:
+                payload = dict(job_snap.to_dict() or {})
+                payload["id"] = existing_job_id
+                return Job.model_validate(payload)
+
+    job_id = str(uuid.uuid4())
+    now = _now_iso()
+    job = Job(
+        id=job_id,
+        kind=kind,
+        status=JobStatus.QUEUED,
+        input=normalized,
+        error=None,
+        idempotency_key=idempotency_key,
+        created_by_uid=created_by_uid,
+        created_at=now,
+        updated_at=now,
+        started_at=None,
+        completed_at=None,
+    )
+    data = _job_document_data(job)
+    job_ref = client.collection(JOBS_COLLECTION_ID).document(job_id)
+    transaction.set(job_ref, data)
+    transaction.set(
+        idem_ref,
+        {"job_id": job_id, "created_at": now},
+    )
+    return job
+
+
+def create_job(
+    settings: Settings,
+    *,
+    kind: JobKind,
+    input: dict,
+    created_by_uid: str | None = None,
+    idempotency_key: str | None = None,
+) -> Job:
+    """
+    Create a ``queued`` job. When ``idempotency_key`` is set and a mapping already exists,
+    returns the existing job (duplicate-safe via a Firestore transaction).
+    """
+    normalized = validate_job_input(kind, input)
+    client = firestore.Client(project=settings.google_cloud_project)
+
+    if not idempotency_key:
+        return _create_job_no_idempotency(
+            client,
+            kind=kind,
+            normalized=normalized,
+            idempotency_key=None,
+            created_by_uid=created_by_uid,
         )
 
-    return job
+    idem_id = _idempotency_doc_id(idempotency_key)
+    idem_ref = client.collection(JOB_IDEMPOTENCY_COLLECTION_ID).document(idem_id)
+    txn_runner = firestore.transactional(_create_job_idempotency_transaction)
+    return txn_runner(
+        client.transaction(),
+        client=client,
+        idem_ref=idem_ref,
+        kind=kind,
+        normalized=normalized,
+        idempotency_key=idempotency_key,
+        created_by_uid=created_by_uid,
+    )
 
 
 def _claim_job_in_transaction(

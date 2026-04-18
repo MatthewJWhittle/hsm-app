@@ -9,14 +9,16 @@ from fastapi.testclient import TestClient
 
 from tests.helpers import mock_firestore_client_for_documents
 
+from backend_api.schemas_project import EnvironmentalBandDefinition
+
 SAMPLE_PROJECT = {
     "id": "proj-1",
     "name": "Test project",
     "driver_artifact_root": "/data/projects/proj-1",
     "driver_cog_path": "environmental_cog.tif",
     "environmental_band_definitions": [
-        {"index": 0, "name": "a", "label": None},
-        {"index": 1, "name": "b", "label": None},
+        EnvironmentalBandDefinition(index=0, name="a", label=None),
+        EnvironmentalBandDefinition(index=1, name="b", label=None),
     ],
     "explainability_background_path": "explainability_background.parquet",
     "explainability_background_sample_rows": 256,
@@ -260,8 +262,8 @@ def test_post_replace_environmental_cog_uses_upload_session(admin_client_proj):
         mock_download.return_value = (fake_upload, None)
         mock_band_defs.return_value = (
             [
-                {"index": 0, "name": "a", "label": None},
-                {"index": 1, "name": "b", "label": None},
+                EnvironmentalBandDefinition(index=0, name="a", label=None),
+                EnvironmentalBandDefinition(index=1, name="b", label=None),
             ],
             [],
         )

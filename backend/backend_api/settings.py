@@ -187,7 +187,8 @@ class Settings(BaseSettings):
     job_queue_backend: str = Field(
         default="disabled",
         description=(
-            "Dispatch background jobs: 'disabled' (log only), 'cloud_tasks', or 'direct' (HTTP POST to JOB_WORKER_URL)."
+            "Dispatch background jobs: 'disabled' (no enqueue), 'cloud_tasks' (async; enqueue returns immediately), "
+            "or 'direct' (HTTP POST to JOB_WORKER_URL; blocks until the worker finishes the job — use for local/dev only)."
         ),
         validation_alias=AliasChoices("JOB_QUEUE_BACKEND", "job_queue_backend"),
     )
@@ -196,7 +197,8 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("CLOUD_TASKS_LOCATION", "cloud_tasks_location"),
     )
     cloud_tasks_queue_id: str = Field(
-        default="hsm-jobs-default",
+        default="hsm-jobs",
+        description="Queue id (must match Terraform google_cloud_tasks_queue / var.cloud_tasks_queue_name).",
         validation_alias=AliasChoices("CLOUD_TASKS_QUEUE_ID", "cloud_tasks_queue_id"),
     )
     job_worker_url: str | None = Field(
@@ -219,7 +221,10 @@ class Settings(BaseSettings):
     )
     internal_job_secret: str | None = Field(
         default=None,
-        description="Optional X-Internal-Job-Secret value for direct worker calls in development.",
+        description=(
+            "Optional X-Internal-Job-Secret for worker auth. When set, OIDC is not used for the worker route. "
+            "Omit in production when using Cloud Tasks OIDC; do not set a weak value alongside OIDC."
+        ),
         validation_alias=AliasChoices("INTERNAL_JOB_SECRET", "internal_job_secret"),
     )
     job_direct_http_timeout_seconds: float = Field(

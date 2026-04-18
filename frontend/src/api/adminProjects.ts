@@ -89,10 +89,15 @@ export async function pollAdminJobUntilTerminal(params: {
   jobId: string
   onStatus?: (status: AdminJobStatus) => void
   signal?: AbortSignal
+  /** Shown if polling exceeds the deadline (defaults to a generic message). */
+  timeoutMessage?: string
 }): Promise<AdminJob> {
   let waitMs = 500
   const maxWaitMs = 10_000
   const deadline = Date.now() + 45 * 60 * 1000
+  const timeoutMsg =
+    params.timeoutMessage?.trim() ||
+    'Background job timed out while waiting for completion.'
   while (Date.now() < deadline) {
     if (params.signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError')
@@ -105,7 +110,7 @@ export async function pollAdminJobUntilTerminal(params: {
     await delay(waitMs)
     waitMs = Math.min(maxWaitMs, Math.floor(waitMs * 1.5))
   }
-  throw new Error('Environmental COG replace job timed out while waiting for completion.')
+  throw new Error(timeoutMsg)
 }
 
 export function parseJobAcceptedResourceIds(raw: unknown): {
@@ -157,6 +162,7 @@ export async function createProject(params: {
       jobId: acc.job_id,
       onStatus: params.onJobStatus,
       signal: params.signal,
+      timeoutMessage: 'Project create job timed out while waiting for completion.',
     })
     if (job.status === 'failed') {
       const msg = job.error?.message?.trim() || 'Project create job failed'
@@ -307,6 +313,8 @@ export async function replaceProjectEnvironmentalCog(params: {
       jobId: rawAccept.job_id,
       onStatus: params.onJobStatus,
       signal: params.signal,
+      timeoutMessage:
+        'Environmental COG replace job timed out while waiting for completion.',
     })
     if (job.status === 'failed') {
       const msg = job.error?.message?.trim() || 'Environmental COG replace failed'
@@ -405,6 +413,8 @@ export async function postRegenerateExplainabilityBackgroundSample(params: {
       jobId: acc.job_id,
       onStatus: params.onJobStatus,
       signal: params.signal,
+      timeoutMessage:
+        'Explainability background job timed out while waiting for completion.',
     })
     if (job.status === 'failed') {
       const msg = job.error?.message?.trim() || 'Explainability background job failed'

@@ -32,7 +32,14 @@ class DisabledJobQueue:
 
 
 class DirectJobQueue:
-    """POST ``{\"job_id\": ...}`` to :attr:`Settings.job_worker_url` (local / dev parity)."""
+    """
+    POST ``{\"job_id\": ...}`` to :attr:`Settings.job_worker_url`.
+
+    **Semantics:** This call waits for the worker HTTP response. The worker runs ``execute_job`` to completion
+    before returning, so the **API handler that enqueues also blocks** until the job finishes (unlike
+    :class:`CloudTasksJobQueue`, which returns after the task is queued). Use for local/dev; production async
+    enqueue should use ``cloud_tasks``.
+    """
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
