@@ -302,6 +302,10 @@ export function AdminPage() {
               token,
               projectId: editingProject.id,
               uploadSessionId,
+              onJobStatus: (s) => {
+                if (s === 'queued') setEditProjUploadStatus('Environmental COG replace queued…')
+                else if (s === 'running') setEditProjUploadStatus('Processing environmental COG…')
+              },
             })
           : await updateProject({
               token,

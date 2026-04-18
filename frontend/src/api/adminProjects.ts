@@ -8,7 +8,105 @@ export type BandLabelPatch = {
 }
 import { apiBase } from '../utils/apiBase'
 import { readFetchErrorDetail } from './errors'
+import { isRecord } from './jsonGuards'
 import { parseProject } from './projects'
+
+export type AdminJobStatus = 'queued' | 'running' | 'succeeded' | 'failed'
+
+export type AdminJobError = { code: string; message: string; detail?: string | null }
+
+export type AdminJob = {
+  id: string
+  kind: string
+  status: AdminJobStatus
+  input: Record<string, unknown>
+  error: AdminJobError | null
+}
+
+function isAdminJobStatus(value: string): value is AdminJobStatus {
+  return value === 'queued' || value === 'running' || value === 'succeeded' || value === 'failed'
+}
+
+function parseAdminJob(raw: unknown): AdminJob | null {
+  if (!isRecord(raw)) return null
+  if (typeof raw.id !== 'string' || typeof raw.kind !== 'string' || typeof raw.status !== 'string') {
+    return null
+  }
+  if (!isAdminJobStatus(raw.status)) return null
+  const inputRaw = raw.input
+  const input: Record<string, unknown> =
+    inputRaw !== undefined && inputRaw !== null && isRecord(inputRaw) ? inputRaw : {}
+  let error: AdminJobError | null = null
+  if (raw.error !== undefined && raw.error !== null) {
+    if (!isRecord(raw.error)) return null
+    const { code, message, detail } = raw.error
+    if (typeof code !== 'string' || typeof message !== 'string') return null
+    if (
+      detail !== undefined &&
+      detail !== null &&
+      typeof detail !== 'string'
+    ) {
+      return null
+    }
+    error = { code, message, ...(detail !== undefined ? { detail } : {}) }
+  }
+  return { id: raw.id, kind: raw.kind, status: raw.status, input, error }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
+export async function fetchAdminProject(params: {
+  token: string
+  projectId: string
+}): Promise<CatalogProject> {
+  const r = await fetch(`${apiBase()}/projects/${encodeURIComponent(params.projectId)}`, {
+    headers: { Authorization: `Bearer ${params.token}` },
+  })
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  const p = parseProject(raw)
+  if (p === null) throw new Error('Invalid project response')
+  return p
+}
+
+export async function fetchAdminJob(params: { token: string; jobId: string }): Promise<AdminJob> {
+  const r = await fetch(`${apiBase()}/jobs/${encodeURIComponent(params.jobId)}`, {
+    headers: { Authorization: `Bearer ${params.token}` },
+  })
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  const job = parseAdminJob(raw)
+  if (job === null) throw new Error('Invalid job response')
+  return job
+}
+
+export async function pollAdminJobUntilTerminal(params: {
+  token: string
+  jobId: string
+  onStatus?: (status: AdminJobStatus) => void
+  signal?: AbortSignal
+}): Promise<AdminJob> {
+  let waitMs = 500
+  const maxWaitMs = 10_000
+  const deadline = Date.now() + 45 * 60 * 1000
+  while (Date.now() < deadline) {
+    if (params.signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError')
+    }
+    const job = await fetchAdminJob({ token: params.token, jobId: params.jobId })
+    params.onStatus?.(job.status)
+    if (job.status === 'succeeded' || job.status === 'failed') {
+      return job
+    }
+    await delay(waitMs)
+    waitMs = Math.min(maxWaitMs, Math.floor(waitMs * 1.5))
+  }
+  throw new Error('Environmental COG replace job timed out while waiting for completion.')
+}
 
 export async function createProject(params: {
   token: string
@@ -154,6 +252,8 @@ export async function replaceProjectEnvironmentalCog(params: {
   token: string
   projectId: string
   uploadSessionId: string
+  onJobStatus?: (status: AdminJobStatus) => void
+  signal?: AbortSignal
 }): Promise<CatalogProject> {
   const form = new FormData()
   form.append('upload_session_id', params.uploadSessionId)
@@ -161,7 +261,25 @@ export async function replaceProjectEnvironmentalCog(params: {
     method: 'POST',
     headers: { Authorization: `Bearer ${params.token}` },
     body: form,
+    signal: params.signal,
   })
+  if (r.status === 202) {
+    const rawAccept: unknown = await r.json()
+    if (!isRecord(rawAccept) || typeof rawAccept.job_id !== 'string') {
+      throw new Error('Invalid job accept response')
+    }
+    const job = await pollAdminJobUntilTerminal({
+      token: params.token,
+      jobId: rawAccept.job_id,
+      onStatus: params.onJobStatus,
+      signal: params.signal,
+    })
+    if (job.status === 'failed') {
+      const msg = job.error?.message?.trim() || 'Environmental COG replace failed'
+      throw new Error(msg)
+    }
+    return fetchAdminProject({ token: params.token, projectId: params.projectId })
+  }
   if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()
   const p = parseProject(raw)

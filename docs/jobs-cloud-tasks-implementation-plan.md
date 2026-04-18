@@ -76,9 +76,10 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 ---
 
-## Phase 6 — Admin UI
+## Phase 6 — Admin UI (**complete**)
 
-- Poll `GET /api/jobs/{id}` with backoff; surface errors.
+- [x] `replaceProjectEnvironmentalCog` handles **202** — poll `GET /api/jobs/{job_id}` with exponential backoff (cap 10s, overall deadline 45m), then **`GET /api/projects/{id}`** to refresh the catalog row.
+- [x] Upload status strings while the job is **queued** / **running**.
 
 ---
 
