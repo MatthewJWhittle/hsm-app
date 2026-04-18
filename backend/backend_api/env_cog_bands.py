@@ -182,6 +182,28 @@ def band_definitions_for_upload_path(
         return infer_band_definitions_from_dataset(src)
 
 
+def band_definitions_for_upload_uri(
+    uri: str,
+    definitions_form: str | None,
+    *,
+    infer_band_definitions: bool = True,
+) -> tuple[list[EnvironmentalBandDefinition], list[str]]:
+    """
+    Resolve band definitions for a new upload from a raster URI/path readable by rasterio.
+    """
+    parsed = parse_band_definitions_json(definitions_form)
+    with rasterio.open(uri) as src:
+        count = int(src.count)
+        if parsed is not None:
+            validate_band_definitions_match_raster(count, parsed)
+            return parsed, []
+        if not infer_band_definitions:
+            raise ValueError(
+                "environmental_band_definitions JSON is required when infer_band_definitions is false"
+            )
+        return infer_band_definitions_from_dataset(src)
+
+
 def validate_band_definitions_match_raster(
     count: int, defs: list[EnvironmentalBandDefinition]
 ) -> None:

@@ -46,7 +46,12 @@ export type UploadSession = {
   upload_url: string | null
   object_path: string
   gcs_bucket: string
+  error_code?: string | null
+  error_message?: string | null
+  error_stage?: 'init' | 'upload' | 'validate' | 'derive' | 'persist' | 'done' | null
 }
+
+export type ReplaceEnvironmentalCogTask = UploadSession
 
 function isUploadSession(raw: unknown): raw is UploadSession {
   if (!raw || typeof raw !== 'object') return false
@@ -57,7 +62,12 @@ function isUploadSession(raw: unknown): raw is UploadSession {
     typeof rec.stage === 'string' &&
     (rec.upload_url === null || typeof rec.upload_url === 'string') &&
     typeof rec.object_path === 'string' &&
-    typeof rec.gcs_bucket === 'string'
+    typeof rec.gcs_bucket === 'string' &&
+    (rec.error_code === undefined || rec.error_code === null || typeof rec.error_code === 'string') &&
+    (rec.error_message === undefined ||
+      rec.error_message === null ||
+      typeof rec.error_message === 'string') &&
+    (rec.error_stage === undefined || rec.error_stage === null || typeof rec.error_stage === 'string')
   )
 }
 
@@ -104,6 +114,46 @@ export async function completeUploadSession(params: {
   const raw: unknown = await r.json()
   if (!isUploadSession(raw)) throw new Error('Invalid upload session complete response')
   return raw
+}
+
+export async function getUploadSession(params: {
+  token: string
+  uploadId: string
+}): Promise<UploadSession> {
+  const r = await fetch(`${apiBase()}/uploads/${encodeURIComponent(params.uploadId)}`, {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${params.token}` },
+  })
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  if (!isUploadSession(raw)) throw new Error('Invalid upload session status response')
+  return raw
+}
+
+export async function pollUploadSessionUntilTerminal(params: {
+  token: string
+  uploadId: string
+  intervalMs?: number
+  timeoutMs?: number
+}): Promise<UploadSession> {
+  const intervalMs = params.intervalMs ?? 1500
+  const timeoutMs = params.timeoutMs ?? 180000
+  const startedAt = Date.now()
+  while (true) {
+    const session = await getUploadSession({
+      token: params.token,
+      uploadId: params.uploadId,
+    })
+    if (session.status === 'ready' || session.status === 'failed') {
+      return session
+    }
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error('Timed out waiting for environmental processing to complete.')
+    }
+    await new Promise((resolve) => {
+      window.setTimeout(resolve, intervalMs)
+    })
+  }
 }
 
 export async function uploadFileToSignedUrl(params: {
@@ -154,7 +204,7 @@ export async function replaceProjectEnvironmentalCog(params: {
   token: string
   projectId: string
   uploadSessionId: string
-}): Promise<CatalogProject> {
+}): Promise<ReplaceEnvironmentalCogTask> {
   const form = new FormData()
   form.append('upload_session_id', params.uploadSessionId)
   const r = await fetch(`${apiBase()}/projects/${encodeURIComponent(params.projectId)}/environmental-cogs`, {
@@ -164,9 +214,8 @@ export async function replaceProjectEnvironmentalCog(params: {
   })
   if (!r.ok) throw new Error(await readFetchErrorDetail(r))
   const raw: unknown = await r.json()
-  const p = parseProject(raw)
-  if (p === null) throw new Error('Invalid environmental COG replacement response')
-  return p
+  if (!isUploadSession(raw)) throw new Error('Invalid environmental COG replacement response')
+  return raw
 }
 
 /** Replace band manifest (indices 0..n-1). Validates against the project’s environmental COG band count. */

@@ -41,6 +41,15 @@ class ObjectStorage(Protocol):
     def write_project_driver_cog_from_path(self, project_id: str, source_path: str) -> tuple[str, str]:
         """Persist project environmental COG from a local on-disk path; return catalog path fields."""
 
+    def promote_upload_session_driver_cog(
+        self,
+        *,
+        project_id: str,
+        source_bucket: str,
+        source_object_path: str,
+    ) -> tuple[str, str]:
+        """Promote uploaded object into project environmental COG location; return ``(artifact_root, path)``."""
+
     def write_project_artifact(self, project_id: str, relative_name: str, content: bytes) -> None:
         """Write a non-COG file under ``projects/{project_id}/`` (e.g. explainability background Parquet)."""
 
@@ -100,6 +109,17 @@ class LocalObjectStorage:
         shutil.copyfile(source_path, dest_path)
         artifact_root = str(dest_dir)
         return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
+
+    def promote_upload_session_driver_cog(
+        self,
+        *,
+        project_id: str,
+        source_bucket: str,
+        source_object_path: str,
+    ) -> tuple[str, str]:
+        raise NotImplementedError(
+            "upload session promotion is only supported when STORAGE_BACKEND=gcs"
+        )
 
     def write_project_artifact(self, project_id: str, relative_name: str, content: bytes) -> None:
         _validate_artifact_relative_name(relative_name)
@@ -173,6 +193,24 @@ class GcsObjectStorage:
         blob_name = f"{self._prefix}projects/{safe_id}/{ENVIRONMENTAL_DRIVER_FILENAME}"
         blob = self._bucket.blob(blob_name)
         blob.upload_from_filename(source_path, content_type="image/tiff")
+        artifact_root = f"gs://{self._bucket.name}/{self._prefix}projects/{safe_id}"
+        return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
+
+    def promote_upload_session_driver_cog(
+        self,
+        *,
+        project_id: str,
+        source_bucket: str,
+        source_object_path: str,
+    ) -> tuple[str, str]:
+        safe_id = _safe_segment(project_id)
+        if source_bucket != self._bucket.name:
+            raise ValueError("upload session bucket does not match storage backend bucket")
+        src_blob = self._bucket.blob(source_object_path)
+        if not src_blob.exists():
+            raise ValueError("upload source object not found in storage")
+        dst_name = f"{self._prefix}projects/{safe_id}/{ENVIRONMENTAL_DRIVER_FILENAME}"
+        self._bucket.copy_blob(src_blob, self._bucket, new_name=dst_name)
         artifact_root = f"gs://{self._bucket.name}/{self._prefix}projects/{safe_id}"
         return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
 

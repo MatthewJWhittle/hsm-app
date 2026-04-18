@@ -11,6 +11,7 @@ import {
   createProject,
   initUploadSession,
   patchProjectEnvironmentalBandDefinitions,
+  pollUploadSessionUntilTerminal,
   replaceProjectEnvironmentalCog,
   postRegenerateExplainabilityBackgroundSample,
   uploadFileToSignedUrl,
@@ -299,17 +300,12 @@ export function AdminPage() {
       }
       setEditProjUploadStatus(
         uploadSessionId !== undefined
-          ? 'Validating and processing environmental raster…'
+          ? 'Queueing environmental raster processing…'
           : 'Saving project…',
       )
-      const updated =
-        uploadSessionId !== undefined
-          ? await replaceProjectEnvironmentalCog({
-              token,
-              projectId: editingProject.id,
-              uploadSessionId,
-            })
-          : await updateProject({
+      const updatedProject =
+        uploadSessionId === undefined
+          ? await updateProject({
               token,
               projectId: editingProject.id,
               name: editProjName.trim(),
@@ -318,8 +314,9 @@ export function AdminPage() {
               visibility: editProjVisibility,
               allowedUids: editProjAllowedUids,
             })
-      let merged = updated
-      if (!editProjFile && updated.driver_cog_path && editProjBandDefs.length > 0) {
+          : null
+      let merged: CatalogProject = updatedProject ?? editingProject
+      if (!editProjFile && updatedProject?.driver_cog_path && editProjBandDefs.length > 0) {
         merged = await patchProjectEnvironmentalBandDefinitions({
           token,
           projectId: editingProject.id,
@@ -327,6 +324,26 @@ export function AdminPage() {
         })
       }
       if (uploadSessionId !== undefined) {
+        setEditProjUploadStatus('Processing environmental raster in background…')
+        const queuedTask = await replaceProjectEnvironmentalCog({
+          token,
+          projectId: editingProject.id,
+          uploadSessionId,
+        })
+        const processed = await pollUploadSessionUntilTerminal({
+          token,
+          uploadId: queuedTask.id,
+        })
+        if (processed.status === 'failed') {
+          throw new Error(processed.error_message ?? 'Environmental raster processing failed.')
+        }
+        setEditProjUploadStatus('Refreshing project after environmental processing…')
+        const refreshedProjects = await fetchProjectCatalog({ token })
+        const refreshed = refreshedProjects.find((p) => p.id === editingProject.id)
+        if (!refreshed) {
+          throw new Error('Project not found after environmental raster processing.')
+        }
+        merged = refreshed
         setEditProjSuccess(
           'Environmental COG replaced. Band definitions are ready. Generate explainability background to refresh variable influence.',
         )
