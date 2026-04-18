@@ -106,6 +106,8 @@ export function ProjectEditDialog({
             canUploadEnvironmentalCog={canUploadEnvironmentalCog}
             projectId={editingProject?.id}
             existingDriverPath={editingProject?.driver_cog_path ?? null}
+            driverCogUploadFilename={editingProject?.driver_cog_upload_filename ?? null}
+            catalogUpdatedAt={editingProject?.updated_at ?? null}
             environmentalBandDefinitions={environmentalBandDefinitions}
             onEnvironmentalBandDefinitionsChange={onEnvironmentalBandDefinitionsChange}
             environmentalBandEditableFields={environmentalBandEditableFields}

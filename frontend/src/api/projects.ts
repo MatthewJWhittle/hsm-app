@@ -69,6 +69,15 @@ export function parseProject(value: unknown): CatalogProject | null {
   }
   if (driver_artifact_root !== undefined) out.driver_artifact_root = driver_artifact_root
   if (driver_cog_path !== undefined) out.driver_cog_path = driver_cog_path
+  if (value.driver_cog_upload_filename !== undefined) {
+    if (value.driver_cog_upload_filename === null) {
+      out.driver_cog_upload_filename = null
+    } else if (typeof value.driver_cog_upload_filename === 'string') {
+      out.driver_cog_upload_filename = value.driver_cog_upload_filename
+    } else {
+      return null
+    }
+  }
   if (description !== undefined) {
     if (description !== null && typeof description !== 'string') return null
     out.description = description

@@ -330,7 +330,9 @@ export function AdminPage() {
         })
         merged = replaced
         setEditProjSuccess(
-          'Environmental COG replaced. Band definitions are ready. Generate explainability background to refresh variable influence.',
+          merged.driver_cog_upload_filename
+            ? `Environmental COG replaced (uploaded as “${merged.driver_cog_upload_filename}”). Band definitions are ready. Generate explainability background to refresh variable influence.`
+            : 'Environmental COG replaced. Band definitions are ready. Generate explainability background to refresh variable influence.',
         )
       }
       const nextBands = merged.environmental_band_definitions

@@ -89,6 +89,30 @@ _ADMIN_RESPONSES: dict[int | str, dict[str, str]] = {
 }
 
 
+def _safe_upload_display_filename(name: str | None) -> str | None:
+    """Basename for admin display; storage still uses fixed ``environmental_cog.tif``."""
+    if not name:
+        return None
+    base = Path(str(name).strip()).name
+    if not base:
+        return None
+    if len(base) > 512:
+        return base[:512]
+    return base
+
+
+def _driver_cog_upload_label(
+    *,
+    uploaded_session: UploadSession | None,
+    file: UploadFile | None,
+) -> str | None:
+    if uploaded_session is not None:
+        return _safe_upload_display_filename(uploaded_session.filename)
+    if file is not None:
+        return _safe_upload_display_filename(file.filename)
+    return None
+
+
 def _proj_422(
     code: str, message: str, *, context: dict | None = None
 ) -> HTTPException:
@@ -729,6 +753,11 @@ async def create_project(
         allowed_uids=uids,
         driver_artifact_root=artifact_root,
         driver_cog_path=cog_path,
+        driver_cog_upload_filename=_driver_cog_upload_label(
+            uploaded_session=uploaded_session, file=file
+        )
+        if cog_path
+        else None,
         environmental_band_definitions=band_defs,
         band_inference_notes=inference_notes,
         explainability_background_path=explain_bg_path,
@@ -847,6 +876,7 @@ async def update_project(
         allowed_uids=new_uids if new_uids is not None else existing.allowed_uids,
         driver_artifact_root=existing.driver_artifact_root,
         driver_cog_path=existing.driver_cog_path,
+        driver_cog_upload_filename=existing.driver_cog_upload_filename,
         environmental_band_definitions=existing.environmental_band_definitions,
         band_inference_notes=existing.band_inference_notes,
         explainability_background_path=existing.explainability_background_path,
@@ -1185,6 +1215,9 @@ async def replace_project_environmental_cogs(
             update={
                 "driver_artifact_root": artifact_root,
                 "driver_cog_path": cog_path,
+                "driver_cog_upload_filename": _safe_upload_display_filename(
+                    uploaded_session.filename if uploaded_session else None
+                ),
                 "environmental_band_definitions": new_band_defs,
                 "band_inference_notes": inference_notes,
                 "explainability_background_path": None,
