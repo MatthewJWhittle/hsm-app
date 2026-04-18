@@ -47,7 +47,7 @@ def catalog_docs():
 @contextmanager
 def _admin_client(
     documents: list[dict],
-    mock_storage: MagicMock,
+    mock_storage: object,
     admin: bool = True,
     *,
     project_documents: list[dict] | None = None,
@@ -295,7 +295,8 @@ def test_post_models_201_creates_model(catalog_docs):
 
 def test_post_models_201_with_upload_session_id(catalog_docs):
     mock_storage = MagicMock()
-    mock_storage.write_suitability_cog_from_path.return_value = (
+    mock_storage.__class__.__name__ = "GcsObjectStorage"
+    mock_storage.promote_upload_session_suitability_cog.return_value = (
         "/data/models/new-id",
         "suitability_cog.tif",
     )
@@ -315,29 +316,30 @@ def test_post_models_201_with_upload_session_id(catalog_docs):
         updated_at="2026-01-01T00:00:00+00:00",
     )
 
-    class _Blob:
-        def exists(self):
-            return True
-
-        def download_to_filename(self, filename: str):
-            with open(filename, "wb") as f:
-                f.write(b"dummy")
-
-    class _Bucket:
-        def blob(self, _path):
-            return _Blob()
-
-    class _StorageClient:
-        def bucket(self, _name):
-            return _Bucket()
-
     with (
         patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
         patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
-        patch("backend_api.routers.models.validate_cog_path_threaded", new_callable=AsyncMock),
-        patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
-        patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
-        patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
+        patch("backend_api.routers.models.validate_cog_uri_threaded", new_callable=AsyncMock),
+        patch(
+            "backend_api.routers.models.upload_session_gcs_uri",
+            return_value=(
+                "gs://hsm-dashboard-model-artifacts/uploads/upload-1/suitability.tif",
+                upload_session,
+                10,
+            ),
+        ),
+        patch(
+            "backend_api.routers.models.resolve_env_cog_uri_for_sampling",
+            return_value="/vsicurl/signed-model-upload",
+        ),
+        patch.dict(
+            os.environ,
+            {
+                "STORAGE_BACKEND": "gcs",
+                "GCS_BUCKET": "hsm-dashboard-model-artifacts",
+            },
+            clear=False,
+        ),
     ):
         with _admin_client(
             catalog_docs,
@@ -355,11 +357,13 @@ def test_post_models_201_with_upload_session_id(catalog_docs):
                 },
             )
     assert r.status_code == 201
+    mock_storage.promote_upload_session_suitability_cog.assert_called_once()
 
 
 def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
     mock_storage = MagicMock()
-    mock_storage.write_suitability_cog_from_path.side_effect = RuntimeError("disk full")
+    mock_storage.__class__.__name__ = "GcsObjectStorage"
+    mock_storage.promote_upload_session_suitability_cog.side_effect = RuntimeError("disk full")
     upload_session = UploadSession(
         id="upload-1",
         project_id="proj-1",
@@ -376,30 +380,31 @@ def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
         updated_at="2026-01-01T00:00:00+00:00",
     )
 
-    class _Blob:
-        def exists(self):
-            return True
-
-        def download_to_filename(self, filename: str):
-            with open(filename, "wb") as f:
-                f.write(b"dummy")
-
-    class _Bucket:
-        def blob(self, _path):
-            return _Blob()
-
-    class _StorageClient:
-        def bucket(self, _name):
-            return _Bucket()
-
     with (
         patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
         patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
-        patch("backend_api.routers.models.validate_cog_path_threaded", new_callable=AsyncMock),
-        patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
-        patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
+        patch("backend_api.routers.models.validate_cog_uri_threaded", new_callable=AsyncMock),
+        patch(
+            "backend_api.routers.models.upload_session_gcs_uri",
+            return_value=(
+                "gs://hsm-dashboard-model-artifacts/uploads/upload-1/suitability.tif",
+                upload_session,
+                10,
+            ),
+        ),
+        patch(
+            "backend_api.routers.models.resolve_env_cog_uri_for_sampling",
+            return_value="/vsicurl/signed-model-upload",
+        ),
         patch("backend_api.upload_session_ingest.fail_upload_session") as mock_fail_upload_session,
-        patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
+        patch.dict(
+            os.environ,
+            {
+                "STORAGE_BACKEND": "gcs",
+                "GCS_BUCKET": "hsm-dashboard-model-artifacts",
+            },
+            clear=False,
+        ),
     ):
         with _admin_client(
             catalog_docs,
@@ -462,7 +467,8 @@ def test_put_models_unknown_404(catalog_docs):
 
 def test_post_projects_upload_session_explainability_failure_not_ready():
     mock_storage = MagicMock()
-    mock_storage.write_project_driver_cog_from_path.return_value = (
+    mock_storage.__class__.__name__ = "GcsObjectStorage"
+    mock_storage.promote_upload_session_driver_cog.return_value = (
         "/data/projects/new-id",
         "environmental_cog.tif",
     )
@@ -482,28 +488,22 @@ def test_post_projects_upload_session_explainability_failure_not_ready():
         updated_at="2026-01-01T00:00:00+00:00",
     )
 
-    class _Blob:
-        def exists(self):
-            return True
-
-        def download_to_filename(self, filename: str):
-            with open(filename, "wb") as f:
-                f.write(b"dummy")
-
-    class _Bucket:
-        def blob(self, _path):
-            return _Blob()
-
-    class _StorageClient:
-        def bucket(self, _name):
-            return _Bucket()
-
     with (
-        patch("backend_api.upload_session_ingest.get_upload_session", return_value=upload_session),
-        patch("backend_api.upload_session_ingest.storage.Client", return_value=_StorageClient()),
-        patch("backend_api.routers.projects.validate_cog_path_threaded", new_callable=AsyncMock),
         patch(
-            "backend_api.routers.projects.band_definitions_for_upload_path",
+            "backend_api.routers.projects.upload_session_gcs_uri",
+            return_value=(
+                "gs://hsm-dashboard-model-artifacts/uploads/upload-1/environmental.tif",
+                upload_session,
+                10,
+            ),
+        ),
+        patch(
+            "backend_api.routers.projects.resolve_env_cog_uri_for_sampling",
+            return_value="/vsicurl/signed-project-upload",
+        ),
+        patch("backend_api.routers.projects.validate_cog_uri_threaded", new_callable=AsyncMock),
+        patch(
+            "backend_api.routers.projects.band_definitions_for_upload_uri",
             return_value=(
                 [
                     {"index": 0, "name": "a", "label": None},
@@ -518,7 +518,14 @@ def test_post_projects_upload_session_explainability_failure_not_ready():
         ),
         patch("backend_api.upload_session_ingest.mark_upload_session") as mock_mark_upload_session,
         patch("backend_api.upload_session_ingest.fail_upload_session") as mock_fail_upload_session,
-        patch.dict(os.environ, {"GCS_BUCKET": "hsm-dashboard-model-artifacts"}, clear=False),
+        patch.dict(
+            os.environ,
+            {
+                "STORAGE_BACKEND": "gcs",
+                "GCS_BUCKET": "hsm-dashboard-model-artifacts",
+            },
+            clear=False,
+        ),
     ):
         mock_mark_upload_session.side_effect = (
             lambda settings, session, **kwargs: session.model_copy(
@@ -553,3 +560,68 @@ def test_post_projects_upload_session_explainability_failure_not_ready():
     assert mock_fail_upload_session.called
     mark_statuses = [call.kwargs.get("status") for call in mock_mark_upload_session.call_args_list]
     assert "ready" not in mark_statuses
+    mock_storage.promote_upload_session_driver_cog.assert_called_once()
+
+
+def test_post_models_upload_session_requires_gcs_backend(catalog_docs):
+    mock_storage = MagicMock()
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "STORAGE_BACKEND": "local",
+                "LOCAL_STORAGE_ROOT": "/tmp/hsm-local",
+            },
+            clear=False,
+        ),
+        _admin_client(
+            catalog_docs,
+            mock_storage,
+            project_documents=[SAMPLE_PROJECT],
+        ) as c,
+    ):
+        r = c.post(
+            "/api/models",
+            headers={"Authorization": "Bearer fake.token"},
+            data={
+                "project_id": "proj-1",
+                "species": "New species",
+                "activity": "Flight",
+                "upload_session_id": "upload-1",
+            },
+        )
+    assert r.status_code == 503
+    detail = r.json().get("detail", {})
+    assert isinstance(detail, dict)
+    assert detail.get("code") == "STORAGE_BACKEND_UNSUPPORTED"
+
+
+def test_post_projects_upload_session_requires_gcs_backend():
+    mock_storage = MagicMock()
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "STORAGE_BACKEND": "local",
+                "LOCAL_STORAGE_ROOT": "/tmp/hsm-local",
+            },
+            clear=False,
+        ),
+        _admin_client(
+            [],
+            mock_storage,
+            project_documents=[],
+        ) as c,
+    ):
+        r = c.post(
+            "/api/projects",
+            headers={"Authorization": "Bearer fake.token"},
+            data={
+                "name": "New Project",
+                "upload_session_id": "upload-1",
+            },
+        )
+    assert r.status_code == 503
+    detail = r.json().get("detail", {})
+    assert isinstance(detail, dict)
+    assert detail.get("code") == "STORAGE_BACKEND_UNSUPPORTED"

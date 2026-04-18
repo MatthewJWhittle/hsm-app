@@ -41,6 +41,15 @@ class ObjectStorage(Protocol):
     def write_project_driver_cog_from_path(self, project_id: str, source_path: str) -> tuple[str, str]:
         """Persist project environmental COG from a local on-disk path; return catalog path fields."""
 
+    def promote_upload_session_suitability_cog(
+        self,
+        *,
+        model_id: str,
+        source_bucket: str,
+        source_object_path: str,
+    ) -> tuple[str, str]:
+        """Promote uploaded object into model suitability COG location; return ``(artifact_root, path)``."""
+
     def promote_upload_session_driver_cog(
         self,
         *,
@@ -114,6 +123,17 @@ class LocalObjectStorage:
         self,
         *,
         project_id: str,
+        source_bucket: str,
+        source_object_path: str,
+    ) -> tuple[str, str]:
+        raise NotImplementedError(
+            "upload session promotion is only supported when STORAGE_BACKEND=gcs"
+        )
+
+    def promote_upload_session_suitability_cog(
+        self,
+        *,
+        model_id: str,
         source_bucket: str,
         source_object_path: str,
     ) -> tuple[str, str]:
@@ -213,6 +233,24 @@ class GcsObjectStorage:
         self._bucket.copy_blob(src_blob, self._bucket, new_name=dst_name)
         artifact_root = f"gs://{self._bucket.name}/{self._prefix}projects/{safe_id}"
         return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
+
+    def promote_upload_session_suitability_cog(
+        self,
+        *,
+        model_id: str,
+        source_bucket: str,
+        source_object_path: str,
+    ) -> tuple[str, str]:
+        safe_id = _safe_segment(model_id)
+        if source_bucket != self._bucket.name:
+            raise ValueError("upload session bucket does not match storage backend bucket")
+        src_blob = self._bucket.blob(source_object_path)
+        if not src_blob.exists():
+            raise ValueError("upload source object not found in storage")
+        dst_name = f"{self._prefix}models/{safe_id}/{SUITABILITY_FILENAME}"
+        self._bucket.copy_blob(src_blob, self._bucket, new_name=dst_name)
+        artifact_root = f"gs://{self._bucket.name}/{self._prefix}models/{safe_id}"
+        return artifact_root, SUITABILITY_FILENAME
 
     def write_project_artifact(self, project_id: str, relative_name: str, content: bytes) -> None:
         _validate_artifact_relative_name(relative_name)

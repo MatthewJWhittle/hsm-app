@@ -68,6 +68,7 @@ from backend_api.schemas_project import (
 from backend_api.settings import Settings
 from backend_api.storage import (
     EXPLAINABILITY_BACKGROUND_FILENAME,
+    GcsObjectStorage,
     ObjectStorage,
 )
 from backend_api.schemas_upload import (
@@ -502,6 +503,11 @@ async def create_project(
     """
     if not name.strip():
         raise _proj_422("MISSING_FIELD", "name is required")
+    if upload_session_id and settings.storage_backend.strip().lower() != "gcs":
+        raise _proj_503(
+            "STORAGE_BACKEND_UNSUPPORTED",
+            "upload_session_id project create currently requires STORAGE_BACKEND=gcs",
+        )
     visibility_v = parse_visibility(visibility)
     try:
         uids = _parse_allowed_uids(allowed_uids)
@@ -524,14 +530,28 @@ async def create_project(
         )
     uploaded_session = None
     upload_temp_path: Path | None = None
+    upload_uri: str | None = None
+    upload_size: int | None = None
+    rasterio_uri: str | None = None
     if upload_session_id:
-        upload_temp_path, uploaded_session = await run_in_threadpool(
-            download_upload_session_to_tempfile,
+        upload_uri, uploaded_session, upload_size = await run_in_threadpool(
+            upload_session_gcs_uri,
             settings,
             upload_session_id,
             purpose="project create",
         )
-        logger.info("project_create_ingest_session project_id=%s upload_session_id=%s", project_id, upload_session_id)
+        if uploaded_session is not None:
+            rasterio_uri = await run_in_threadpool(
+                resolve_env_cog_uri_for_sampling,
+                settings,
+                f"gs://{uploaded_session.gcs_bucket}",
+                uploaded_session.object_path,
+            )
+        logger.info(
+            "project_create_ingest_session project_id=%s upload_session_id=%s",
+            project_id,
+            upload_session_id,
+        )
     elif file is not None:
         upload_temp_path = await write_upload_file_to_tempfile(
             file,
@@ -540,9 +560,18 @@ async def create_project(
         logger.info("project_create_ingest_multipart project_id=%s", project_id)
 
     try:
-        if upload_temp_path is not None:
-            upload_size = os.path.getsize(str(upload_temp_path))
+        if upload_temp_path is not None or upload_uri is not None:
+            if upload_temp_path is not None:
+                upload_size = os.path.getsize(str(upload_temp_path))
             logger.info("project_create_upload_size project_id=%s upload_bytes=%s upload_session_id=%s", project_id, upload_size, uploaded_session.id if uploaded_session else None)
+            if upload_size is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=validation_error(
+                        "UPLOAD_SIZE_UNKNOWN",
+                        "could not determine uploaded object size",
+                    ),
+                )
             if upload_size <= 0:
                 raise _proj_422("EMPTY_FILE", "empty file")
             if upload_size > settings.max_environmental_upload_bytes:
@@ -564,7 +593,12 @@ async def create_project(
             )
             try:
                 logger.info("project_create_validate_start project_id=%s", project_id)
-                await validate_cog_path_threaded(str(upload_temp_path))
+                if upload_uri is not None:
+                    await validate_cog_uri_threaded(
+                        rasterio_uri if rasterio_uri is not None else upload_uri
+                    )
+                elif upload_temp_path is not None:
+                    await validate_cog_path_threaded(str(upload_temp_path))
                 logger.info("project_create_validate_ok project_id=%s", project_id)
             except CogValidationError as e:
                 await run_in_threadpool(
@@ -582,6 +616,16 @@ async def create_project(
                 ) from e
 
             def _write() -> tuple[str, str]:
+                if upload_uri is not None:
+                    if uploaded_session is None:
+                        raise ValueError("upload session missing for session-based project create")
+                    return storage.promote_upload_session_driver_cog(
+                        project_id=project_id,
+                        source_bucket=uploaded_session.gcs_bucket,
+                        source_object_path=uploaded_session.object_path,
+                    )
+                if upload_temp_path is None:
+                    raise ValueError("missing upload source path")
                 return storage.write_project_driver_cog_from_path(
                     project_id, str(upload_temp_path)
                 )
@@ -627,13 +671,23 @@ async def create_project(
                 logger.info("project_create_derive_bands_start project_id=%s", project_id)
 
                 def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
-                    return band_definitions_for_upload_path(
-                        str(upload_temp_path),
-                        environmental_band_definitions,
-                        infer_band_definitions=_infer_band_definitions_from_form(
-                            infer_band_definitions
-                        ),
-                    )
+                    if upload_uri is not None:
+                        return band_definitions_for_upload_uri(
+                            rasterio_uri if rasterio_uri is not None else upload_uri,
+                            environmental_band_definitions,
+                            infer_band_definitions=_infer_band_definitions_from_form(
+                                infer_band_definitions
+                            ),
+                        )
+                    if upload_temp_path is not None:
+                        return band_definitions_for_upload_path(
+                            str(upload_temp_path),
+                            environmental_band_definitions,
+                            infer_band_definitions=_infer_band_definitions_from_form(
+                                infer_band_definitions
+                            ),
+                        )
+                    raise ValueError("missing upload source for band definition inference")
 
                 band_defs, infer_notes = await run_in_threadpool(_defs)
                 inference_notes = infer_notes if infer_notes else None
