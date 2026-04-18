@@ -128,6 +128,12 @@ class Job(BaseModel):
     updated_at: str
     started_at: str | None = None
     completed_at: str | None = None
+    #: Incremented each time the job transitions queued → running (incl. retries after requeue).
+    attempt_count: int = 0
+    #: ISO timestamp when a transient failure triggered requeue (debugging / ops).
+    last_error_at: str | None = None
+    #: Short code for the last retryable failure (e.g. ``INFRA_TRANSIENT``).
+    last_error_code: str | None = None
 
 
 # Validated ``input`` payload for a persisted job (discriminated by document ``kind``).

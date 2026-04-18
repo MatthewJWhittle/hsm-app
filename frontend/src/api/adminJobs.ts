@@ -15,6 +15,10 @@ export type AdminJob = {
   status: AdminJobStatus
   input: Record<string, unknown>
   error: AdminJobError | null
+  /** Present when the API persists retry metadata (background jobs). */
+  attempt_count?: number
+  last_error_at?: string | null
+  last_error_code?: string | null
 }
 
 function isAdminJobStatus(value: string): value is AdminJobStatus {
@@ -44,7 +48,27 @@ function parseAdminJob(raw: unknown): AdminJob | null {
     }
     error = { code, message, ...(detail !== undefined ? { detail } : {}) }
   }
-  return { id: raw.id, kind: raw.kind, status: raw.status, input, error }
+  const out: AdminJob = {
+    id: raw.id,
+    kind: raw.kind,
+    status: raw.status,
+    input,
+    error,
+  }
+  if (typeof raw.attempt_count === 'number' && Number.isFinite(raw.attempt_count)) {
+    out.attempt_count = raw.attempt_count
+  }
+  if (raw.last_error_at === null) {
+    out.last_error_at = null
+  } else if (typeof raw.last_error_at === 'string') {
+    out.last_error_at = raw.last_error_at
+  }
+  if (raw.last_error_code === null) {
+    out.last_error_code = null
+  } else if (typeof raw.last_error_code === 'string') {
+    out.last_error_code = raw.last_error_code
+  }
+  return out
 }
 
 function delay(ms: number): Promise<void> {

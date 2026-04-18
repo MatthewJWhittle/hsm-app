@@ -46,12 +46,16 @@ from backend_api.env_cog_explainability_preflight import (
 from backend_api.explainability_background_pipeline import (
     regenerate_explainability_background_pipeline,
 )
+from backend_api.job_async_policy import (
+    should_async_explainability_background,
+    should_async_project_create_with_env,
+    should_async_replace_environmental_cogs,
+)
 from backend_api.job_http import (
     accepted_job_202_response,
     admin_created_by_uid,
     enqueue_and_schedule_job,
 )
-from backend_api.job_queue import job_queue_enabled
 from backend_api.deps.settings_dep import get_settings
 from backend_api.deps.visibility_models import (
     filter_projects_for_viewer,
@@ -331,7 +335,7 @@ async def post_explainability_background_sample(
     Does not require re-uploading the COG. Omit ``sample_rows`` to use
     ``ENV_BACKGROUND_SAMPLE_ROWS``.
     """
-    if job_queue_enabled(settings):
+    if should_async_explainability_background(settings):
         require_catalog_project_env_cog_for_explainability(catalog, project_id)
         job = enqueue_and_schedule_job(
             settings,
@@ -430,7 +434,11 @@ async def create_project(
         await reload_catalog_threaded(request)
         return project
 
-    if job_queue_enabled(settings) and upload_session_id and file is None:
+    if should_async_project_create_with_env(
+        settings,
+        has_multipart_file=file is not None,
+        upload_session_id=upload_session_id,
+    ):
         job = enqueue_and_schedule_job(
             settings,
             kind=JobKind.PROJECT_CREATE_WITH_ENV_UPLOAD,
@@ -597,7 +605,11 @@ async def replace_project_environmental_cogs(
             "provide multipart file or upload_session_id",
         )
 
-    if job_queue_enabled(settings) and upload_session_id and file is None:
+    if should_async_replace_environmental_cogs(
+        settings,
+        has_multipart_file=file is not None,
+        upload_session_id=upload_session_id,
+    ):
         job = enqueue_and_schedule_job(
             settings,
             kind=JobKind.ENVIRONMENTAL_COG_REPLACE,

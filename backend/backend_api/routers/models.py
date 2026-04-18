@@ -32,12 +32,15 @@ from backend_api.deps.visibility_models import (
     get_model_visible_or_404,
 )
 from backend_api.deps.settings_dep import get_settings
+from backend_api.job_async_policy import (
+    should_async_model_create_with_upload,
+    should_async_model_replace_suitability,
+)
 from backend_api.job_http import (
     accepted_job_202_response,
     admin_created_by_uid,
     enqueue_and_schedule_job,
 )
-from backend_api.job_queue import job_queue_enabled
 from backend_api.point_explainability import warm_explainability_cache
 from backend_api.point_sampling import (
     PointSamplingError,
@@ -336,11 +339,11 @@ async def create_model(
             detail=validation_error("METADATA_INVALID", str(e)),
         ) from e
 
-    if (
-        job_queue_enabled(settings)
-        and upload_session_s
-        and not isinstance(file_part, StarletteUploadFile)
-        and not has_serialized
+    if should_async_model_create_with_upload(
+        settings,
+        upload_session_id=upload_session_s,
+        has_multipart_file=isinstance(file_part, StarletteUploadFile),
+        has_serialized_pickle=has_serialized,
     ):
         model_id = str(uuid.uuid4())
         metadata_json = meta_in.model_dump_json() if meta_in is not None else None
@@ -464,11 +467,11 @@ async def update_model(
     else:
         new_metadata = existing.metadata
 
-    if (
-        job_queue_enabled(settings)
-        and upload_session_s
-        and not isinstance(file_part, StarletteUploadFile)
-        and not has_serialized
+    if should_async_model_replace_suitability(
+        settings,
+        upload_session_id=upload_session_s,
+        has_multipart_file=isinstance(file_part, StarletteUploadFile),
+        has_serialized_pickle=has_serialized,
     ):
         metadata_json = (
             new_metadata.model_dump_json() if new_metadata is not None else None

@@ -54,7 +54,8 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 - [x] `POST /api/internal/jobs/run` — body `{"job_id": "..."}`, `include_in_schema=False`.
 - [x] `job_worker_auth.verify_internal_job_caller` — explicit **`secret`** vs **`oidc`** mode (no secret bypass of OIDC in production).
-- [x] `job_runner.execute_job` — claim job, run kind-specific work, `complete_job_success` / `complete_job_failure`; avoid re-raising after recording failure (limits Cloud Tasks retry storms).
+- [x] `job_runner.execute_job` — claim job, run kind-specific work, `complete_job_success` / `complete_job_failure`; **2xx** for terminal failures; **503** + requeue for :exc:`JobRetryableError` (transient infra). Job documents include **`attempt_count`**, **`last_error_at`**, **`last_error_code`** for retry visibility.
+- [x] `job_async_policy` — shallow **`should_async_*`** helpers matching admin routes; pipelines classify infra vs business errors (see :mod:`backend_api.job_errors`).
 
 ---
 

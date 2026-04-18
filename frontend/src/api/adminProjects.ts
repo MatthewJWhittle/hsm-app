@@ -15,15 +15,6 @@ import {
 import { readFetchErrorDetail } from './errors'
 import { parseProject } from './projects'
 
-export type { AdminJob, AdminJobError, AdminJobStatus } from './adminJobs'
-export {
-  fetchAdminJob,
-  parseJobAcceptedResourceIds,
-  pollAdminJobUntilTerminal,
-  throwIfFailedAdminJob,
-  waitForBackgroundJobThen,
-} from './adminJobs'
-
 export async function fetchAdminProject(params: {
   token: string
   projectId: string

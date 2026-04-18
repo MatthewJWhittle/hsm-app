@@ -35,6 +35,12 @@ Create `hsm-dashboard-dev` once (`firebase hosting:sites:create` or Firebase con
 - **Low-ops rollouts:** use Cloud Run built-in revision tags, traffic migration, and rollback.
 - **Cost control by default:** `min-instances=0`, low `max-instances`, request-based billing, budgets + alerts.
 
+### API and internal worker route (same Cloud Run service — temporary)
+
+Terraform and deploys currently run **one** Cloud Run service per environment (`api-staging` / `api-prod`) that serves both public REST traffic and the internal worker `POST /api/internal/jobs/run` invoked by Cloud Tasks. That is an **operational compromise**: the service-level **request timeout** must be high enough for the longest worker job. Config is structured so a **future split** into separate `api` and `worker` services (same container image, different Cloud Run service name, `JOB_WORKER_URL` pointing at the worker URL) is mostly **Terraform + IAM** work, not an application rewrite.
+
+Job queue modes are only **`disabled`** (local: pipelines run inline in the API process) and **`cloud_tasks`** (deployed async). There is no blocking “fake async” HTTP self-queue. Worker authentication is explicit: **`JOB_WORKER_AUTH_MODE=secret`** (local) vs **`oidc`** (staging/prod).
+
 ## 3) Initial bootstrap (manual, one time)
 
 1. Create Artifact Registry repository for backend images.

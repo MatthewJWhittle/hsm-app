@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 from google.cloud import firestore
 
+from backend_api.job_errors import JobRetryableError
 from backend_api.schemas_job import Job, JobError, JobKind, JobStatus, validate_job_input
 from backend_api.settings import Settings
 
@@ -60,6 +61,9 @@ def _new_queued_job(
         updated_at=now,
         started_at=None,
         completed_at=None,
+        attempt_count=0,
+        last_error_at=None,
+        last_error_code=None,
     )
 
 
@@ -188,15 +192,19 @@ def _claim_job_in_transaction(
     if payload.get("status") != JobStatus.QUEUED.value:
         return None
     now = _now_iso()
+    prev_attempt = int(payload.get("attempt_count") or 0)
+    new_attempt = prev_attempt + 1
     payload["status"] = JobStatus.RUNNING.value
     payload["started_at"] = now
     payload["updated_at"] = now
+    payload["attempt_count"] = new_attempt
     transaction.update(
         doc_ref,
         {
             "status": JobStatus.RUNNING.value,
             "started_at": now,
             "updated_at": now,
+            "attempt_count": new_attempt,
         },
     )
     payload["id"] = job_id
@@ -235,6 +243,8 @@ def complete_job_success(settings: Settings, job_id: str) -> None:
             "updated_at": now,
             "completed_at": now,
             "error": firestore.DELETE_FIELD,
+            "last_error_at": firestore.DELETE_FIELD,
+            "last_error_code": firestore.DELETE_FIELD,
         }
     )
 
@@ -250,23 +260,33 @@ def complete_job_failure(settings: Settings, job_id: str, error: JobError) -> No
             "updated_at": now,
             "completed_at": now,
             "error": err_map,
+            "last_error_at": firestore.DELETE_FIELD,
+            "last_error_code": firestore.DELETE_FIELD,
         }
     )
 
 
-def requeue_job_for_retry(settings: Settings, job_id: str) -> None:
+def requeue_job_for_retry(
+    settings: Settings,
+    job_id: str,
+    *,
+    exc: JobRetryableError | None = None,
+) -> None:
     """
     Move ``running`` job back to ``queued`` and clear ``started_at`` for Cloud Tasks retry.
 
     Call only after a transient failure before returning HTTP 503 to the task handler.
+    Records ``last_error_at`` / ``last_error_code`` when ``exc`` is provided.
     """
     client = firestore.Client(project=settings.google_cloud_project)
     now = _now_iso()
     ref = client.collection(JOBS_COLLECTION_ID).document(job_id)
-    ref.update(
-        {
-            "status": JobStatus.QUEUED.value,
-            "updated_at": now,
-            "started_at": firestore.DELETE_FIELD,
-        }
-    )
+    update: dict = {
+        "status": JobStatus.QUEUED.value,
+        "updated_at": now,
+        "started_at": firestore.DELETE_FIELD,
+    }
+    if exc is not None:
+        update["last_error_at"] = now
+        update["last_error_code"] = exc.code
+    ref.update(update)

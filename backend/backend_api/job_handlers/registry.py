@@ -1,4 +1,9 @@
-"""Dispatch table: :class:`JobKind` → async handler (typed input)."""
+"""
+Dispatch table: :class:`JobKind` → handler (thin wrapper calling one canonical pipeline each).
+
+Trace: route → :mod:`backend_api.job_http` / :mod:`backend_api.routers` → worker
+:func:`backend_api.job_runner.execute_job` → :func:`run_job_handler` → per-kind module in this package.
+"""
 
 from __future__ import annotations
 

@@ -38,13 +38,22 @@ def _job_error_from_http_exception(exc: HTTPException) -> JobError:
 
 async def execute_job(request: Request, job_id: str) -> None:
     """
-    Claim ``job_id`` and run the registered handler.
+    Claim ``job_id`` and run the registered handler (Cloud Tasks worker entrypoint).
 
-    Raises :class:`HTTPException` for: missing job (404), claim conflict (409), or
-    transient work (:exc:`JobRetryableError` → 503 after requeue).
+    **HTTP response contract (for Cloud Tasks)**
 
-    Business / validation failures are recorded on the job document and the worker
-    responds **2xx** so Cloud Tasks does not retry indefinitely.
+    - **2xx** — Safe to acknowledge the task: job **succeeded**; job already **succeeded** or
+      **failed** (idempotent duplicate); or job **failed** after a **terminal** business/validation
+      error (failure persisted; do not retry the same mistake).
+    - **404** — Job id unknown (no document).
+    - **409** — Claim lost (e.g. race); task may retry.
+    - **503** — Transient infra failure: job requeued (``queued`` + ``last_error_*``), Cloud Tasks should retry.
+
+    **Firestore state after a successful HTTP 2xx**
+
+    Job is **terminal** (``succeeded`` or ``failed``) unless the handler left it **failed** with
+    recorded error; or **skipped** because already terminal. After **503**, job is **queued** again
+    with retry metadata; **attempt_count** increments on each **queued→running** transition.
     """
     settings = get_settings(request)
     job = get_job(settings, job_id)
@@ -139,7 +148,7 @@ async def execute_job(request: Request, job_id: str) -> None:
             duration_ms,
             e,
         )
-        requeue_job_for_retry(settings, job_id)
+        requeue_job_for_retry(settings, job_id, exc=e)
         raise HTTPException(status_code=503, detail=str(e)[:2000]) from e
     except Exception as e:
         duration_ms = int((time.perf_counter() - t0) * 1000)
