@@ -36,22 +36,9 @@ from backend_api.upload_session_ingest import (
     download_upload_session_to_tempfile,
     write_upload_file_to_tempfile,
 )
+from backend_api.validation_http import service_unavailable_http, validation_http_exception
 
 logger = logging.getLogger(__name__)
-
-
-def _proj_422(
-    code: str, message: str, *, context: dict | None = None
-) -> HTTPException:
-    return HTTPException(
-        status_code=422, detail=validation_error(code, message, context=context)
-    )
-
-
-def _proj_503(code: str, message: str) -> HTTPException:
-    return HTTPException(
-        status_code=503, detail=validation_error(code, message)
-    )
 
 
 async def create_project_with_environmental_cog_pipeline(
@@ -75,7 +62,7 @@ async def create_project_with_environmental_cog_pipeline(
     Exactly one of ``upload_session_id`` or ``file`` must be set.
     """
     if (upload_session_id is not None) == (file is not None):
-        raise _proj_422(
+        raise validation_http_exception(
             "UPLOAD_CONFLICT",
             "provide either multipart file or upload_session_id, not both",
         )
@@ -114,7 +101,7 @@ async def create_project_with_environmental_cog_pipeline(
             uploaded_session.id if uploaded_session else None,
         )
         if upload_size <= 0:
-            raise _proj_422("EMPTY_FILE", "empty file")
+            raise validation_http_exception("EMPTY_FILE", "empty file")
         if upload_size > settings.max_environmental_upload_bytes:
             raise HTTPException(
                 status_code=413,
@@ -187,7 +174,7 @@ async def create_project_with_environmental_cog_pipeline(
                 error_message=str(e),
                 context="project-create-storage-write-failed",
             )
-            raise _proj_503("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
+            raise service_unavailable_http("STORAGE_WRITE_FAILED", f"could not store file: {e}") from e
 
         uploaded_session = await run_in_threadpool(
             best_effort_mark,
@@ -329,7 +316,7 @@ async def create_project_with_environmental_cog_pipeline(
             error_message=str(e),
             context="project-create-catalog-save",
         )
-        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
+        raise service_unavailable_http("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
     if uploaded_session is not None and uploaded_session.status != "ready":

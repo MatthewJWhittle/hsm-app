@@ -661,6 +661,10 @@ export function AdminPage() {
         token,
         projectId: editingProject.id,
         sampleRows: rows,
+        onJobStatus: (s) => {
+          if (s === 'queued') setEditProjUploadStatus('Explainability background job queued…')
+          else if (s === 'running') setEditProjUploadStatus('Sampling explainability background…')
+        },
       })
       const nextBands = updated.environmental_band_definitions
         ? [...updated.environmental_band_definitions].sort((a, b) => a.index - b.index)
@@ -773,6 +777,10 @@ export function AdminPage() {
         description: projDesc || undefined,
         visibility: projVisibility,
         allowedUids: projAllowedUids || undefined,
+        onJobStatus: (s) => {
+          if (s === 'queued') setProjUploadStatus('Creating project (queued)…')
+          else if (s === 'running') setProjUploadStatus('Creating project…')
+        },
       })
       setProjName('')
       setProjDesc('')
@@ -856,6 +864,10 @@ export function AdminPage() {
         uploadSessionId,
         metadata,
         serializedModelFile: explainEnabled ? explainModelFile : undefined,
+        onJobStatus: (s) => {
+          if (s === 'queued') setLayerUploadStatus('Creating layer (queued)…')
+          else if (s === 'running') setLayerUploadStatus('Creating layer…')
+        },
       })
       setSpecies('')
       setActivity('')

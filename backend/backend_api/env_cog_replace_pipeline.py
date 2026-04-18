@@ -30,39 +30,16 @@ from backend_api.schemas_project import CatalogProject, EnvironmentalBandDefinit
 from backend_api.schemas_upload import UploadSession
 from backend_api.settings import Settings
 from backend_api.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
+from backend_api.upload_session_error_context import upload_error_context
 from backend_api.upload_session_ingest import (
     best_effort_fail,
     best_effort_mark,
     download_upload_session_to_tempfile,
     write_upload_file_to_tempfile,
 )
+from backend_api.validation_http import validation_http_exception
 
 logger = logging.getLogger(__name__)
-
-
-def _ev_422(
-    code: str, message: str, *, context: dict | None = None
-) -> HTTPException:
-    return HTTPException(
-        status_code=422, detail=validation_error(code, message, context=context)
-    )
-
-
-def _upload_error_context(
-    *,
-    project_id: str,
-    phase: str,
-    uploaded_session: UploadSession | None,
-    extra: dict | None = None,
-) -> dict:
-    ctx: dict = {
-        "project_id": project_id,
-        "phase": phase,
-        "upload_session_id": uploaded_session.id if uploaded_session is not None else None,
-    }
-    if extra:
-        ctx.update(extra)
-    return ctx
 
 
 async def replace_project_environmental_cogs_pipeline(
@@ -88,12 +65,12 @@ async def replace_project_environmental_cogs_pipeline(
     )
 
     if file is not None and upload_session_id:
-        raise _ev_422(
+        raise validation_http_exception(
             "UPLOAD_CONFLICT",
             "provide either multipart file or upload_session_id, not both",
         )
     if file is None and upload_session_id is None:
-        raise _ev_422(
+        raise validation_http_exception(
             "MISSING_UPLOAD",
             "provide multipart file or upload_session_id",
         )
@@ -136,10 +113,10 @@ async def replace_project_environmental_cogs_pipeline(
                 uploaded_session.id if uploaded_session else None,
             )
             if upload_size <= 0:
-                raise _ev_422(
+                raise validation_http_exception(
                     "EMPTY_FILE",
                     "empty file",
-                    context=_upload_error_context(
+                    context=upload_error_context(
                         project_id=project_id,
                         phase="ingest",
                         uploaded_session=uploaded_session,
@@ -151,7 +128,7 @@ async def replace_project_environmental_cogs_pipeline(
                     detail=validation_error(
                         "UPLOAD_TOO_LARGE",
                         f"file exceeds max size {settings.max_environmental_upload_bytes} bytes",
-                        context=_upload_error_context(
+                        context=upload_error_context(
                             project_id=project_id,
                             phase="ingest",
                             uploaded_session=uploaded_session,
@@ -186,7 +163,7 @@ async def replace_project_environmental_cogs_pipeline(
                     detail=validation_error(
                         e.code,
                         e.message,
-                        context=_upload_error_context(
+                        context=upload_error_context(
                             project_id=project_id,
                             phase="validate",
                             uploaded_session=uploaded_session,
@@ -222,7 +199,7 @@ async def replace_project_environmental_cogs_pipeline(
                     detail=validation_error(
                         "STORAGE_LAYOUT_INVALID",
                         str(e),
-                        context=_upload_error_context(
+                        context=upload_error_context(
                             project_id=project_id,
                             phase="persist",
                             uploaded_session=uploaded_session,
@@ -244,7 +221,7 @@ async def replace_project_environmental_cogs_pipeline(
                     detail=validation_error(
                         "STORAGE_WRITE_FAILED",
                         f"could not store file: {e}",
-                        context=_upload_error_context(
+                        context=upload_error_context(
                             project_id=project_id,
                             phase="persist",
                             uploaded_session=uploaded_session,
@@ -294,7 +271,7 @@ async def replace_project_environmental_cogs_pipeline(
                     detail=validation_error(
                         "BAND_DEFINITIONS",
                         str(e),
-                        context=_upload_error_context(
+                        context=upload_error_context(
                             project_id=project_id,
                             phase="derive",
                             uploaded_session=uploaded_session,
@@ -351,7 +328,7 @@ async def replace_project_environmental_cogs_pipeline(
                 detail=validation_error(
                     "EXPLAINABILITY_BACKGROUND_FAILED",
                     "could not build explainability background sample from COG",
-                    context=_upload_error_context(
+                    context=upload_error_context(
                         project_id=project_id,
                         phase="derive",
                         uploaded_session=uploaded_session,
@@ -403,7 +380,7 @@ async def replace_project_environmental_cogs_pipeline(
             detail=validation_error(
                 "CATALOG_SAVE_FAILED",
                 f"could not save catalog: {e}",
-                context=_upload_error_context(
+                context=upload_error_context(
                     project_id=project_id,
                     phase="persist",
                     uploaded_session=uploaded_session,

@@ -40,6 +40,9 @@ from backend_api.env_cog_bands import (
 )
 from backend_api.env_cog_replace_pipeline import replace_project_environmental_cogs_pipeline
 from backend_api.project_create_pipeline import create_project_with_environmental_cog_pipeline
+from backend_api.env_cog_explainability_preflight import (
+    require_catalog_project_env_cog_for_explainability,
+)
 from backend_api.explainability_background_pipeline import (
     regenerate_explainability_background_pipeline,
 )
@@ -74,12 +77,14 @@ from backend_api.schemas_project import (
 from backend_api.settings import Settings
 from backend_api.storage import ObjectStorage
 from backend_api.schemas_upload import UploadSession
+from backend_api.upload_session_error_context import upload_error_context
 from backend_api.upload_session_ingest import (
     best_effort_fail,
     best_effort_mark,
     download_upload_session_to_tempfile,
     write_upload_file_to_tempfile,
 )
+from backend_api.validation_http import service_unavailable_http, validation_http_exception
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -98,38 +103,6 @@ _ADMIN_POST_PROJECTS_RESPONSES: dict[int | str, dict[str, str]] = {
         "description": "Background job enqueued (upload session + job queue enabled)",
     },
 }
-
-
-def _proj_422(
-    code: str, message: str, *, context: dict | None = None
-) -> HTTPException:
-    """422 with the same structured ``detail`` shape as admin model routes."""
-    return HTTPException(
-        status_code=422, detail=validation_error(code, message, context=context)
-    )
-
-
-def _proj_503(code: str, message: str) -> HTTPException:
-    return HTTPException(
-        status_code=503, detail=validation_error(code, message)
-    )
-
-
-def _upload_error_context(
-    *,
-    project_id: str,
-    phase: str,
-    uploaded_session: UploadSession | None,
-    extra: dict | None = None,
-) -> dict:
-    ctx: dict = {
-        "project_id": project_id,
-        "phase": phase,
-        "upload_session_id": uploaded_session.id if uploaded_session is not None else None,
-    }
-    if extra:
-        ctx.update(extra)
-    return ctx
 
 
 def _parse_allowed_uids(raw: str | None) -> list[str]:
@@ -189,12 +162,12 @@ async def patch_environmental_band_definitions(
     cog_path = existing.driver_cog_path
     abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
     if not abs_path:
-        raise _proj_422(
+        raise validation_http_exception(
             "ENV_COG_REQUIRED",
             "cannot set band definitions without an environmental COG uploaded",
         )
     if not Path(abs_path).is_file():
-        raise _proj_422(
+        raise validation_http_exception(
             "ENV_COG_NOT_ON_DISK",
             "environmental COG not found on server; upload the file first",
         )
@@ -225,7 +198,7 @@ async def patch_environmental_band_definitions(
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
-        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
+        raise service_unavailable_http("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
     return project
@@ -268,7 +241,7 @@ async def patch_environmental_band_definition_labels(
 
     defs = existing.environmental_band_definitions
     if not defs:
-        raise _proj_422(
+        raise validation_http_exception(
             "BAND_DEFINITIONS_MISSING",
             "project has no environmental band definitions; upload the environmental COG first",
         )
@@ -277,12 +250,12 @@ async def patch_environmental_band_definition_labels(
     cog_path = existing.driver_cog_path
     abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
     if not abs_path:
-        raise _proj_422(
+        raise validation_http_exception(
             "ENV_COG_REQUIRED",
             "cannot patch band labels without an environmental COG on the project",
         )
     if not Path(abs_path).is_file():
-        raise _proj_422(
+        raise validation_http_exception(
             "ENV_COG_NOT_ON_DISK",
             "environmental COG not found on server; upload the file first",
         )
@@ -318,17 +291,10 @@ async def patch_environmental_band_definition_labels(
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
-        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
+        raise service_unavailable_http("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
     return project
-
-
-def _environmental_cog_readable_for_sampling(abs_path: str) -> bool:
-    """Local files must exist on disk; ``gs://`` URIs are assumed present after upload."""
-    if abs_path.startswith("gs://"):
-        return True
-    return Path(abs_path).is_file()
 
 
 _ADMIN_EXPLAINABILITY_BG_RESPONSES: dict[int | str, dict[str, str]] = {
@@ -365,38 +331,8 @@ async def post_explainability_background_sample(
     Does not require re-uploading the COG. Omit ``sample_rows`` to use
     ``ENV_BACKGROUND_SAMPLE_ROWS``.
     """
-    existing = catalog.get_project(project_id)
-    if existing is None:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    artifact_root = existing.driver_artifact_root
-    cog_path = existing.driver_cog_path
-    band_defs = existing.environmental_band_definitions
-
-    if not artifact_root or not cog_path:
-        raise _proj_422(
-            "ENV_COG_REQUIRED",
-            "project has no environmental COG; upload one first",
-        )
-    if not band_defs:
-        raise _proj_422(
-            "BAND_DEFINITIONS_MISSING",
-            "project has no environmental band definitions; save band names first",
-        )
-
-    abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
-    if not abs_path:
-        raise _proj_422(
-            "ENV_COG_PATH_INVALID",
-            "cannot resolve environmental COG path",
-        )
-    if not _environmental_cog_readable_for_sampling(abs_path):
-        raise _proj_422(
-            "ENV_COG_NOT_ON_DISK",
-            "environmental COG not found on server",
-        )
-
     if job_queue_enabled(settings):
+        require_catalog_project_env_cog_for_explainability(catalog, project_id)
         job = enqueue_and_schedule_job(
             settings,
             kind=JobKind.EXPLAINABILITY_BACKGROUND_REGENERATE,
@@ -447,7 +383,7 @@ async def create_project(
     ``infer_band_definitions`` to ``false`` to require an explicit JSON array instead.
     """
     if not name.strip():
-        raise _proj_422("MISSING_FIELD", "name is required")
+        raise validation_http_exception("MISSING_FIELD", "name is required")
     visibility_v = parse_visibility(visibility)
     try:
         uids = _parse_allowed_uids(allowed_uids)
@@ -465,7 +401,7 @@ async def create_project(
         bool(upload_session_id),
     )
     if file is not None and upload_session_id:
-        raise _proj_422(
+        raise validation_http_exception(
             "UPLOAD_CONFLICT",
             "provide either multipart file or upload_session_id, not both",
         )
@@ -490,7 +426,7 @@ async def create_project(
             await run_in_threadpool(_persist_empty)
             logger.info("project_create_catalog_save_ok project_id=%s", project_id)
         except Exception as e:
-            raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
+            raise service_unavailable_http("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
         await reload_catalog_threaded(request)
         return project
 
@@ -562,7 +498,7 @@ async def update_project(
         or environmental_band_definitions is not None
         or infer_band_definitions is not None
     ):
-        raise _proj_422(
+        raise validation_http_exception(
             "ENV_COG_REPLACE_ROUTE_REQUIRED",
             "metadata updates do not accept environmental COG upload fields; use POST /projects/{project_id}/environmental-cogs",
         )
@@ -613,7 +549,7 @@ async def update_project(
     try:
         await run_in_threadpool(_persist)
     except Exception as e:
-        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
+        raise service_unavailable_http("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
 
     await reload_catalog_threaded(request)
     return project
@@ -651,12 +587,12 @@ async def replace_project_environmental_cogs(
         raise HTTPException(status_code=404, detail="project not found")
 
     if file is not None and upload_session_id:
-        raise _proj_422(
+        raise validation_http_exception(
             "UPLOAD_CONFLICT",
             "provide either multipart file or upload_session_id, not both",
         )
     if file is None and upload_session_id is None:
-        raise _proj_422(
+        raise validation_http_exception(
             "MISSING_UPLOAD",
             "provide multipart file or upload_session_id",
         )

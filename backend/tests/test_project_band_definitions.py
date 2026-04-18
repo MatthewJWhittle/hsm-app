@@ -52,7 +52,7 @@ def admin_client_proj():
             return_value=mock_storage,
         ),
         patch("backend_api.routers.projects.Path") as mock_path_cls,
-        patch("backend_api.explainability_background_pipeline.Path") as mock_exp_path_cls,
+        patch("backend_api.env_cog_explainability_preflight.Path") as mock_exp_path_cls,
         patch("backend_api.routers.projects.count_bands_in_path", return_value=2),
         patch(
             "backend_api.routers.projects.reload_catalog_threaded",

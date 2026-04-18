@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import HTTPException, Request
 from starlette.concurrency import run_in_threadpool
@@ -313,6 +314,44 @@ async def update_model_pipeline(
     artifact_root = existing.artifact_root
     suitability_cog_path = existing.suitability_cog_path
 
+    async def _replace_suitability_cog_from_local_path(
+        model_id: str,
+        upload_temp_path: Path,
+        *,
+        max_upload_bytes: int | None,
+    ) -> tuple[str, str]:
+        upload_size = os.path.getsize(str(upload_temp_path))
+        if upload_size <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail=validation_error(
+                    "EMPTY_FILE",
+                    "file is empty.",
+                    context={"field": "file"},
+                ),
+            )
+        if max_upload_bytes is not None and upload_size > max_upload_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"file exceeds max size {max_upload_bytes} bytes",
+            )
+        await validate_cog_path_threaded(str(upload_temp_path))
+
+        def _write() -> tuple[str, str]:
+            return storage.write_suitability_cog_from_path(
+                model_id, str(upload_temp_path)
+            )
+
+        try:
+            return await run_in_threadpool(_write)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"could not store file: {e}",
+            ) from e
+
     if file is not None and upload_session_id:
         raise HTTPException(
             status_code=422,
@@ -330,37 +369,13 @@ async def update_model_pipeline(
             purpose="model update",
         )
         try:
-            upload_size = os.path.getsize(str(upload_temp_path))
-            if upload_size <= 0:
-                raise HTTPException(
-                    status_code=422,
-                    detail=validation_error(
-                        "EMPTY_FILE",
-                        "file is empty.",
-                        context={"field": "file"},
-                    ),
+            artifact_root, suitability_cog_path = (
+                await _replace_suitability_cog_from_local_path(
+                    model_id,
+                    upload_temp_path,
+                    max_upload_bytes=settings.max_upload_bytes,
                 )
-            if upload_size > settings.max_upload_bytes:
-                raise HTTPException(
-                    status_code=413,
-                    detail=f"file exceeds max size {settings.max_upload_bytes} bytes",
-                )
-            await validate_cog_path_threaded(str(upload_temp_path))
-
-            def _write() -> tuple[str, str]:
-                return storage.write_suitability_cog_from_path(
-                    model_id, str(upload_temp_path)
-                )
-
-            try:
-                artifact_root, suitability_cog_path = await run_in_threadpool(_write)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e)) from e
-            except Exception as e:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"could not store file: {e}",
-                ) from e
+            )
         finally:
             upload_temp_path.unlink(missing_ok=True)
 
@@ -370,32 +385,13 @@ async def update_model_pipeline(
             max_bytes=settings.max_upload_bytes,
         )
         try:
-            upload_size = upload_temp_path.stat().st_size
-            if upload_size <= 0:
-                raise HTTPException(
-                    status_code=422,
-                    detail=validation_error(
-                        "EMPTY_FILE",
-                        "file is empty.",
-                        context={"field": "file"},
-                    ),
+            artifact_root, suitability_cog_path = (
+                await _replace_suitability_cog_from_local_path(
+                    model_id,
+                    upload_temp_path,
+                    max_upload_bytes=None,
                 )
-            await validate_cog_path_threaded(str(upload_temp_path))
-
-            def _write() -> tuple[str, str]:
-                return storage.write_suitability_cog_from_path(
-                    model_id, str(upload_temp_path)
-                )
-
-            try:
-                artifact_root, suitability_cog_path = await run_in_threadpool(_write)
-            except ValueError as e:
-                raise HTTPException(status_code=400, detail=str(e)) from e
-            except Exception as e:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"could not store file: {e}",
-                ) from e
+            )
         finally:
             upload_temp_path.unlink(missing_ok=True)
 
