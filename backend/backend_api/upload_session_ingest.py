@@ -8,6 +8,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 from google.cloud import storage
+from google.cloud.exceptions import NotFound
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from backend_api.api_errors import validation_error
@@ -127,14 +128,18 @@ def upload_session_gcs_uri(
     client = storage.Client()
     bucket = client.bucket(session.gcs_bucket)
     blob = bucket.blob(session.object_path)
-    if not blob.exists():
+    # `exists()` does not reliably populate `blob.size`. Reload metadata so size is
+    # available for downstream validation (environmental/model session uploads).
+    try:
+        blob.reload()
+    except NotFound:
         raise HTTPException(
             status_code=422,
             detail=validation_error(
                 "UPLOAD_OBJECT_MISSING",
                 "upload object not found in storage",
             ),
-        )
+        ) from None
     size_bytes: int | None = None
     if blob.size is not None:
         size_bytes = int(blob.size)
