@@ -276,3 +276,13 @@ def apply_band_label_updates(
         else:
             out.append(merge_band_label_patch(d, p))
     return out
+
+
+def infer_band_definitions_from_form(raw: str | None) -> bool:
+    """When omitted, infer band names from the raster. Use ``false``/``0``/``no`` to require JSON."""
+    if raw is None or not str(raw).strip():
+        return True
+    v = str(raw).strip().lower()
+    if v in ("0", "false", "no"):
+        return False
+    return True

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from backend_api.firebase_admin_app import init_firebase_admin
-from backend_api.routers import auth, models, projects, root, uploads
+from backend_api.routers import auth, internal_jobs, jobs_admin, models, projects, root, uploads
 from backend_api.catalog_service import build_catalog_service
 from backend_api.settings import Settings
 from backend_api.storage import build_object_storage
@@ -90,6 +90,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(projects.router, prefix="/api")
     app.include_router(models.router, prefix="/api")
     app.include_router(uploads.router, prefix="/api")
+    app.include_router(internal_jobs.router, prefix="/api")
+    app.include_router(jobs_admin.router, prefix="/api")
 
     if settings.openapi_enabled:
 

@@ -50,24 +50,27 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 ---
 
-## Phase 3 — Worker route
+## Phase 3 — Worker route (**complete**)
 
-- `POST /internal/jobs/run` (or under `/api/internal/...`, hidden from OpenAPI).
-- Verify OIDC / secret → `execute_job(job_id)` → 2xx/5xx for Tasks retries.
+- [x] `POST /api/internal/jobs/run` — body `{"job_id": "..."}`, `include_in_schema=False`.
+- [x] `job_worker_auth.verify_internal_job_caller` — `X-Internal-Job-Secret` **or** Bearer OIDC (`CLOUD_TASKS_OIDC_AUDIENCE` / worker URL).
+- [x] `job_runner.execute_job` — claim job, run kind-specific work, `complete_job_success` / `complete_job_failure`; avoid re-raising after recording failure (limits Cloud Tasks retry storms).
 
 ---
 
-## Phase 4 — Migrate `environmental_cog_replace`
+## Phase 4 — Migrate `environmental_cog_replace` (**complete**)
 
-- Extract pipeline from `replace_project_environmental_cogs` into a handler module.
-- Public route returns **202** + `job_id`; worker runs the same logic.
+- [x] `env_cog_replace_pipeline.replace_project_environmental_cogs_pipeline` — shared sync implementation.
+- [x] `POST .../environmental-cogs` — when `JOB_QUEUE_BACKEND` is **not** `disabled`/`off`/`none` **and** only `upload_session_id` (no multipart), **`create_job` + enqueue + 202** with `Location: /api/jobs/{id}`; otherwise synchronous pipeline. Multipart remains synchronous.
+- [x] `GET /api/jobs/{job_id}` (admin Bearer) for status polling.
+- [x] Default **`JOB_QUEUE_BACKEND=disabled`** in tests/local keeps today’s synchronous behavior.
 
 ---
 
 ## Phase 5 — Infrastructure (Terraform / gcloud)
 
 - Cloud Tasks queue(s); Tasks SA + `run.invoker`; API SA + task creator role.
-- Cloud Run timeout/env for worker path.
+- Cloud Run timeout/env for worker path (`JOB_WORKER_URL`, `CLOUD_TASKS_*`, secrets).
 
 ---
 

@@ -32,7 +32,9 @@ def test_validate_job_input_environmental_ok():
         JobKind.ENVIRONMENTAL_COG_REPLACE,
         {"project_id": "proj-1", "upload_session_id": "upload-1"},
     )
-    assert out == {"project_id": "proj-1", "upload_session_id": "upload-1"}
+    assert out["project_id"] == "proj-1"
+    assert out["upload_session_id"] == "upload-1"
+    assert out.get("environmental_band_definitions") is None
 
 
 def test_validate_job_input_environmental_rejects_empty():
@@ -167,7 +169,8 @@ def test_create_job_and_get_roundtrip():
         loaded = get_job(settings, job.id)
         assert loaded is not None
         assert loaded.kind == JobKind.ENVIRONMENTAL_COG_REPLACE
-        assert loaded.input == {"project_id": "p1", "upload_session_id": "u1"}
+        assert loaded.input["project_id"] == "p1"
+        assert loaded.input["upload_session_id"] == "u1"
         assert JOBS_COLLECTION_ID in fake._db
         assert job.id in fake._db[JOBS_COLLECTION_ID]
 

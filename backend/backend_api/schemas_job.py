@@ -36,6 +36,21 @@ class JobInputEnvironmentalCogReplace(BaseModel):
 
     project_id: str = Field(..., min_length=1)
     upload_session_id: str = Field(..., min_length=1)
+    environmental_band_definitions: str | None = Field(
+        default=None,
+        description="Optional JSON string of band definitions (same as multipart form field).",
+    )
+    infer_band_definitions: str | None = Field(
+        default=None,
+        description="Optional form flag for inferring band names (same as multipart form field).",
+    )
+
+
+class JobAcceptedResponse(BaseModel):
+    """Returned with **202** when a background job is enqueued (e.g. large env COG replace)."""
+
+    job_id: str
+    status: str = "queued"
 
 
 class Job(BaseModel):

@@ -239,16 +239,18 @@ def test_post_replace_environmental_cog_uses_upload_session(admin_client_proj):
     c = admin_client_proj
     with (
         patch(
-            "backend_api.routers.projects.download_upload_session_to_tempfile"
+            "backend_api.env_cog_replace_pipeline.download_upload_session_to_tempfile"
         ) as mock_download,
-        patch("backend_api.routers.projects.validate_cog_path_threaded") as mock_validate,
         patch(
-            "backend_api.routers.projects.write_project_explainability_background_parquet"
+            "backend_api.env_cog_replace_pipeline.validate_cog_path_threaded"
+        ) as mock_validate,
+        patch(
+            "backend_api.env_cog_replace_pipeline.write_project_explainability_background_parquet"
         ) as mock_bg,
         patch(
-            "backend_api.routers.projects.band_definitions_for_upload_path"
+            "backend_api.env_cog_replace_pipeline.band_definitions_for_upload_path"
         ) as mock_band_defs,
-        patch("backend_api.routers.projects.best_effort_mark") as mock_mark,
+        patch("backend_api.env_cog_replace_pipeline.best_effort_mark") as mock_mark,
     ):
         fake_upload = MagicMock(spec=Path)
         fake_upload.__str__.return_value = "/tmp/fake-upload.tif"
@@ -262,7 +264,7 @@ def test_post_replace_environmental_cog_uses_upload_session(admin_client_proj):
             [],
         )
         mock_mark.return_value = None
-        with patch("backend_api.routers.projects.os.path.getsize", return_value=123):
+        with patch("backend_api.env_cog_replace_pipeline.os.path.getsize", return_value=123):
             r = c.post(
                 "/api/projects/proj-1/environmental-cogs",
                 headers={"Authorization": "Bearer fake.token"},
