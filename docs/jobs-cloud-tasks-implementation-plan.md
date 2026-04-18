@@ -83,9 +83,10 @@ This document tracks the rollout of **generic background jobs** (decoupled from 
 
 ---
 
-## Phase 7 — Observability
+## Phase 7 — Observability (**partial** / ongoing)
 
-- Structured logs: `job_id`, `kind`, phase durations; alert on failure rate / retry storms.
+- [x] Worker logs: `execute_job start` / `succeeded` with **`duration_ms`**; HTTP and unexpected failures include **`duration_ms`** in log context.
+- [ ] Dashboard alerts on failure rate / retry storms (ops follow-up).
 
 ---
 

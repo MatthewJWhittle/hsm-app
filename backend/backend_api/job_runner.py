@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -70,8 +71,10 @@ async def execute_job(request: Request, job_id: str) -> None:
         return
 
     try:
+        t0 = time.perf_counter()
         if claimed.kind == JobKind.ENVIRONMENTAL_COG_REPLACE:
             inp = claimed.input
+            logger.info("execute_job start job_id=%s kind=%s", job_id, claimed.kind)
             await replace_project_environmental_cogs_pipeline(
                 request,
                 settings,
@@ -84,7 +87,13 @@ async def execute_job(request: Request, job_id: str) -> None:
                 inp.get("infer_band_definitions"),
             )
             complete_job_success(settings, job_id)
-            logger.info("execute_job succeeded job_id=%s kind=%s", job_id, claimed.kind)
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            logger.info(
+                "execute_job succeeded job_id=%s kind=%s duration_ms=%s",
+                job_id,
+                claimed.kind,
+                duration_ms,
+            )
         else:
             complete_job_failure(
                 settings,
@@ -95,15 +104,22 @@ async def execute_job(request: Request, job_id: str) -> None:
                 ),
             )
     except HTTPException as e:
+        duration_ms = int((time.perf_counter() - t0) * 1000)
         logger.warning(
-            "execute_job HTTP error job_id=%s status=%s detail=%s",
+            "execute_job HTTP error job_id=%s status=%s duration_ms=%s detail=%s",
             job_id,
             e.status_code,
+            duration_ms,
             e.detail,
         )
         complete_job_failure(settings, job_id, _job_error_from_http_exception(e))
     except Exception as e:
-        logger.exception("execute_job failed job_id=%s", job_id)
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        logger.exception(
+            "execute_job failed job_id=%s duration_ms=%s",
+            job_id,
+            duration_ms,
+        )
         complete_job_failure(
             settings,
             job_id,
