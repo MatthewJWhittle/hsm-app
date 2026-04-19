@@ -269,6 +269,20 @@ resource "google_storage_bucket_iam_member" "worker_prod_storage_admin" {
   member = "serviceAccount:${google_service_account.worker_prod.email}"
 }
 
+# Signed URLs on Cloud Run use the IAM signBlob API (no JSON key); the runtime SA must be
+# allowed to sign as GCS_SIGNED_URL_SERVICE_ACCOUNT (the worker SA itself).
+resource "google_service_account_iam_member" "worker_staging_token_creator_self" {
+  service_account_id = google_service_account.worker_staging.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.worker_staging.email}"
+}
+
+resource "google_service_account_iam_member" "worker_prod_token_creator_self" {
+  service_account_id = google_service_account.worker_prod.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.worker_prod.email}"
+}
+
 # GitHub Actions → Cloud Run: deploy identity must be able to actAs each service's runtime SA.
 resource "google_service_account_iam_member" "github_deploy_actas_worker_staging" {
   count              = var.github_deploy_service_account_email != null ? 1 : 0
