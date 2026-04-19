@@ -169,52 +169,55 @@ def test_patch_environmental_band_definition_labels_empty_body_422(admin_client_
 
 
 def test_post_explainability_background_sample_ok(admin_client_proj):
-    with patch(
-        "backend_api.routers.projects.write_project_explainability_background_parquet"
-    ) as mock_w:
+    with (
+        patch("backend_api.routers.projects.write_job") as mock_job,
+        patch("backend_api.routers.projects.firestore.Client", return_value=MagicMock()),
+        patch(
+            "backend_api.routers.projects.schedule_background_http_task"
+        ) as mock_sched,
+    ):
         c = admin_client_proj
         r = c.post(
             "/api/projects/proj-1/explainability-background-sample",
             headers={"Authorization": "Bearer fake.token"},
             json={"sample_rows": 128},
         )
-        assert r.status_code == 200, r.text
-        mock_w.assert_called_once()
-        assert mock_w.call_args[0][6] == 128
+        assert r.status_code == 202, r.text
         body = r.json()
-        assert body.get("explainability_background_path") is not None
-        assert body.get("explainability_background_sample_rows") == 128
-        assert body.get("explainability_background_generated_at")
+        assert body.get("job_id")
+        assert body.get("status") == "pending"
+        mock_job.assert_called_once()
+        assert mock_job.call_args[0][1].sample_rows == 128
+        mock_sched.assert_called_once()
 
 
 def test_post_explainability_background_sample_unknown_project_404(admin_client_proj):
-    with patch(
-        "backend_api.routers.projects.write_project_explainability_background_parquet"
-    ):
-        c = admin_client_proj
-        r = c.post(
-            "/api/projects/missing-id/explainability-background-sample",
-            headers={"Authorization": "Bearer fake.token"},
-            json={},
-        )
-        assert r.status_code == 404
+    c = admin_client_proj
+    r = c.post(
+        "/api/projects/missing-id/explainability-background-sample",
+        headers={"Authorization": "Bearer fake.token"},
+        json={},
+    )
+    assert r.status_code == 404
 
 
 def test_post_explainability_background_sample_default_rows(admin_client_proj):
-    with patch(
-        "backend_api.routers.projects.write_project_explainability_background_parquet"
-    ) as mock_w:
+    with (
+        patch("backend_api.routers.projects.write_job") as mock_job,
+        patch("backend_api.routers.projects.firestore.Client", return_value=MagicMock()),
+        patch("backend_api.routers.projects.schedule_background_http_task"),
+    ):
         c = admin_client_proj
         r = c.post(
             "/api/projects/proj-1/explainability-background-sample",
             headers={"Authorization": "Bearer fake.token"},
             json={},
         )
-        assert r.status_code == 200, r.text
-        assert mock_w.call_args[0][6] == 256
+        assert r.status_code == 202, r.text
+        assert mock_job.call_args[0][1].sample_rows == 256
         body = r.json()
-        assert body.get("explainability_background_sample_rows") == 256
-        assert body.get("explainability_background_generated_at")
+        assert body.get("job_id")
+        assert body.get("status") == "pending"
 
 
 def test_patch_project_metadata_only_does_not_run_upload_or_derivation(admin_client_proj):

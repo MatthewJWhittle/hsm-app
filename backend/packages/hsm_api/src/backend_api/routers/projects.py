@@ -13,6 +13,7 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Body,
     Depends,
     File,
@@ -22,6 +23,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from google.cloud import firestore
 from starlette.concurrency import run_in_threadpool
 
 from backend_api.auth_deps import optional_id_token_claims, require_admin_claims
@@ -35,6 +37,7 @@ from backend_api.env_background_sample import (
     sanitize_exception_for_client,
     write_project_explainability_background_parquet,
 )
+from backend_api.jobs.dispatch import schedule_background_http_task
 from backend_api.env_cog_bands import (
     apply_band_label_updates,
     band_definitions_for_upload_path,
@@ -58,6 +61,7 @@ from backend_api.routers.project_visibility_parse import (
     parse_visibility_optional,
 )
 from backend_api.project_manifest import resolve_env_cog_path_from_parts
+from backend_api.schemas_jobs import JobAcceptedResponse
 from backend_api.schemas_project import (
     BandLabelPatch,
     CatalogProject,
@@ -76,6 +80,7 @@ from backend_api.upload_session_ingest import (
     upload_session_gcs_uri,
     write_upload_file_to_tempfile,
 )
+from hsm_core.jobs import create_job_document, write_job
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -332,16 +337,19 @@ def _environmental_cog_readable_for_sampling(abs_path: str) -> bool:
 
 @router.post(
     "/projects/{project_id}/explainability-background-sample",
-    response_model=CatalogProject,
+    response_model=JobAcceptedResponse,
+    status_code=202,
     tags=["admin"],
-    responses=_ADMIN_RESPONSES,
+    responses={
+        **_ADMIN_RESPONSES,
+        202: {"description": "Background job enqueued; poll GET /api/admin/jobs/{job_id}"},
+    },
     summary="Regenerate SHAP explainability background Parquet from the environmental COG",
 )
 async def post_explainability_background_sample(
-    request: Request,
+    background_tasks: BackgroundTasks,
     settings: Annotated[Settings, Depends(get_settings)],
     _claims: Annotated[dict, Depends(require_admin_claims)],
-    storage: Annotated[ObjectStorage, Depends(get_object_storage)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
     project_id: str,
     body: Annotated[
@@ -350,11 +358,12 @@ async def post_explainability_background_sample(
     ] = RegenerateExplainabilityBackgroundBody(),
 ):
     """
-    Re-sample random pixels from the project's environmental COG into
+    Enqueue re-sampling of random pixels from the project's environmental COG into
     ``explainability_background.parquet`` (same path as on upload).
 
-    Does not require re-uploading the COG. Omit ``sample_rows`` to use
-    ``ENV_BACKGROUND_SAMPLE_ROWS``.
+    Returns **202** with ``job_id``; poll ``GET /api/admin/jobs/{job_id}`` until
+    ``status`` is ``succeeded`` or ``failed``. Does not require re-uploading the COG.
+    Omit ``sample_rows`` to use ``ENV_BACKGROUND_SAMPLE_ROWS``.
     """
     existing = catalog.get_project(project_id)
     if existing is None:
@@ -393,49 +402,25 @@ async def post_explainability_background_sample(
         else settings.env_background_sample_rows
     )
 
-    def _bg() -> None:
-        write_project_explainability_background_parquet(
-            storage,
-            settings,
-            project_id,
-            artifact_root,
-            cog_path,
-            band_defs,
-            n_samples,
-        )
-
-    try:
-        await run_in_threadpool(_bg)
-    except Exception as e:
-        raise HTTPException(
-            status_code=422,
-            detail=validation_error(
-                "EXPLAINABILITY_BACKGROUND_FAILED",
-                "could not build explainability background sample from COG",
-                context={"cause": sanitize_exception_for_client(e)},
-            ),
-        ) from e
-
-    now = datetime.now(UTC).isoformat()
-    project = existing.model_copy(
-        update={
-            "explainability_background_path": EXPLAINABILITY_BACKGROUND_FILENAME,
-            "explainability_background_sample_rows": n_samples,
-            "explainability_background_generated_at": now,
-            "updated_at": now,
-        }
+    uid = str(_claims.get("uid") or _claims.get("sub") or "")
+    job = create_job_document(
+        kind="explainability_background_sample",
+        project_id=project_id,
+        created_by_uid=uid or None,
+        sample_rows=n_samples,
     )
 
-    def _persist() -> None:
-        upsert_project(settings, project)
+    def _persist_job() -> None:
+        client = firestore.Client(project=settings.google_cloud_project)
+        write_job(client, job)
 
-    try:
-        await run_in_threadpool(_persist)
-    except Exception as e:
-        raise _proj_503("CATALOG_SAVE_FAILED", f"could not save catalog: {e}") from e
-
-    await reload_catalog_threaded(request)
-    return project
+    await run_in_threadpool(_persist_job)
+    schedule_background_http_task(
+        settings=settings,
+        background_tasks=background_tasks,
+        body={"job_id": job.job_id, "kind": job.kind},
+    )
+    return JobAcceptedResponse(job_id=job.job_id)
 
 
 @router.post(

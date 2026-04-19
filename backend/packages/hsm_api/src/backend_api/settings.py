@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import AliasChoices, Field
+from typing import Self
+
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -183,4 +185,70 @@ class Settings(BaseSettings):
         ge=5.0,
         le=300.0,
     )
+
+    app_env: str = Field(
+        default="local",
+        description="Deployment environment: local, staging, or production.",
+        validation_alias=AliasChoices("APP_ENV"),
+    )
+
+    use_cloud_tasks: bool = Field(
+        default=False,
+        description="If true, enqueue background work via Cloud Tasks (staging/production).",
+        validation_alias=AliasChoices("USE_CLOUD_TASKS"),
+    )
+
+    cloud_tasks_queue: str | None = Field(
+        default=None,
+        description="Cloud Tasks queue id (short name).",
+        validation_alias=AliasChoices("CLOUD_TASKS_QUEUE"),
+    )
+
+    cloud_tasks_location: str | None = Field(
+        default=None,
+        description="GCP region of the Cloud Tasks queue (e.g. us-central1).",
+        validation_alias=AliasChoices("CLOUD_TASKS_LOCATION"),
+    )
+
+    cloud_tasks_oidc_service_account: str | None = Field(
+        default=None,
+        description="Service account email for OIDC token on task HTTP targets.",
+        validation_alias=AliasChoices("CLOUD_TASKS_OIDC_SERVICE_ACCOUNT"),
+    )
+
+    worker_task_url: str | None = Field(
+        default=None,
+        description="Full HTTPS URL for the worker task handler (Cloud Tasks POST target).",
+        validation_alias=AliasChoices("WORKER_TASK_URL"),
+    )
+
+    worker_base_url: str | None = Field(
+        default=None,
+        description="Local dev worker origin (e.g. http://worker:8080) when USE_CLOUD_TASKS=false.",
+        validation_alias=AliasChoices("WORKER_BASE_URL"),
+    )
+
+    @model_validator(mode="after")
+    def _require_cloud_tasks_in_cloud(self) -> Self:
+        env = (self.app_env or "local").strip().lower()
+        if env in ("staging", "production", "prod") and not self.use_cloud_tasks:
+            raise ValueError(
+                "USE_CLOUD_TASKS must be true when APP_ENV is staging or production"
+            )
+        if env in ("staging", "production", "prod") and self.use_cloud_tasks:
+            missing = [
+                name
+                for name, val in (
+                    ("CLOUD_TASKS_QUEUE", self.cloud_tasks_queue),
+                    ("CLOUD_TASKS_LOCATION", self.cloud_tasks_location),
+                    ("CLOUD_TASKS_OIDC_SERVICE_ACCOUNT", self.cloud_tasks_oidc_service_account),
+                    ("WORKER_TASK_URL", self.worker_task_url),
+                )
+                if not val
+            ]
+            if missing:
+                raise ValueError(
+                    f"When USE_CLOUD_TASKS is true, required settings missing: {', '.join(missing)}"
+                )
+        return self
 

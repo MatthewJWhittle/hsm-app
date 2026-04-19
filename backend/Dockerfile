@@ -12,14 +12,11 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# Dependency metadata only — keeps build context tiny and layer cached.
-COPY pyproject.toml uv.lock /app/
+# Workspace: lockfile + all member packages (API default CMD; Cloud Run worker overrides command).
+COPY pyproject.toml uv.lock ./
+COPY packages ./packages
 
-# Runtime deps only (no dev/pytest); smallest image and .venv volume.
-RUN uv sync --frozen --no-dev
-
-# Application package only — do not COPY tests, scripts, or repo root clutter.
-COPY backend_api/ /app/backend_api/
+RUN uv sync --frozen --no-dev --all-packages
 
 EXPOSE 8000
 
