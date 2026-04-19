@@ -11,7 +11,13 @@ api_service_name_staging = "api-staging"
 api_service_name_prod    = "api-prod"
 titiler_service_name     = "titiler-shared"
 
-# Use immutable image tags (for example Git SHA tags) from Artifact Registry.
+# Container images (copy to terraform.tfvars — that file is gitignored as *.tfvars).
+#
+# These URIs are the bootstrap / replacement image for API and worker Cloud Run services.
+# CI/CD deploys new revisions outside Terraform; lifecycle ignore_changes on the container
+# image means routine applies do not fight CI. On first create or when a service is replaced
+# (e.g. tainted resource), Terraform still sends this image — keep it at a recent immutable
+# tag (Git SHA or digest) built from main so workers do not roll back to an obsolete image.
 api_container_image_staging = "us-central1-docker.pkg.dev/hsm-dashboard/hsm-app/backend:staging-sha"
 api_container_image_prod    = "us-central1-docker.pkg.dev/hsm-dashboard/hsm-app/backend:prod-sha"
 titiler_container_image     = "docker.io/developmentseed/titiler:latest"
