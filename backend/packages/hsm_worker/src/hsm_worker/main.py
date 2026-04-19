@@ -34,7 +34,7 @@ from hsm_core.jobs import (
     update_job_status,
 )
 from hsm_core.schemas_project import CatalogProject
-from hsm_core.settings import Settings
+from hsm_core.settings import WorkerSettings
 from hsm_core.storage import EXPLAINABILITY_BACKGROUND_FILENAME, build_object_storage
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ def _load_project(client: firestore.Client, project_id: str) -> CatalogProject |
     return CatalogProject.model_validate(snapshot_to_document_dict(snap))
 
 
-def _verify_worker_internal_secret(settings: Settings, header_value: str | None) -> None:
+def _verify_worker_internal_secret(settings: WorkerSettings, header_value: str | None) -> None:
     expected = settings.worker_internal_secret
     if not expected:
         return
@@ -68,7 +68,7 @@ def _verify_worker_internal_secret(settings: Settings, header_value: str | None)
 
 
 def _run_explainability_after_claim(
-    settings: Settings,
+    settings: WorkerSettings,
     client: firestore.Client,
     job: JobDocument,
 ) -> None:
@@ -152,14 +152,14 @@ def _run_explainability_after_claim(
     logger.info("worker_job_ok job_id=%s project_id=%s", job_id, project_id)
 
 
-WorkerJobHandler = Callable[[Settings, firestore.Client, JobDocument], None]
+WorkerJobHandler = Callable[[WorkerSettings, firestore.Client, JobDocument], None]
 
 JOB_HANDLERS: dict[str, WorkerJobHandler] = {
     "explainability_background_sample": _run_explainability_after_claim,
 }
 
 
-def _dispatch_after_claim(settings: Settings, job_id: str, body_kind: str | None) -> None:
+def _dispatch_after_claim(settings: WorkerSettings, job_id: str, body_kind: str | None) -> None:
     client = firestore.Client(project=settings.google_cloud_project)
     stale_after = (
         settings.worker_http_deadline_seconds + settings.worker_stale_running_grace_seconds
@@ -201,8 +201,8 @@ def _dispatch_after_claim(settings: Settings, job_id: str, body_kind: str | None
     handler(settings, client, claimed)
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    settings = settings or Settings()
+def create_app(settings: WorkerSettings | None = None) -> FastAPI:
+    settings = settings or WorkerSettings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -227,7 +227,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         payload: TaskPayload,
         x_hsm_worker_secret: str | None = Header(default=None, alias="X-HSM-Worker-Secret"),
     ):
-        s: Settings = request.app.state.settings
+        s: WorkerSettings = request.app.state.settings
         _verify_worker_internal_secret(s, x_hsm_worker_secret)
         try:
             await run_in_threadpool(_dispatch_after_claim, s, payload.job_id, payload.kind)

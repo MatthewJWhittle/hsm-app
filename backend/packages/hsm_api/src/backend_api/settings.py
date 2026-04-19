@@ -1,5 +1,5 @@
-"""Re-export settings from shared core (API and worker use the same config model)."""
+"""Re-export settings from shared core."""
 
-from hsm_core.settings import Settings
+from hsm_core.settings import ApiSettings, Settings, WorkerSettings
 
-__all__ = ["Settings"]
+__all__ = ["ApiSettings", "Settings", "WorkerSettings"]

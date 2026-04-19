@@ -8,12 +8,12 @@ import os
 import firebase_admin
 from firebase_admin import App
 
-from hsm_core.settings import Settings
+from hsm_core.settings import WorkerSettings
 
 logger = logging.getLogger(__name__)
 
 
-def init_firebase_admin(settings: Settings) -> App | None:
+def init_firebase_admin(settings: WorkerSettings) -> App | None:
     """Initialize the default app once. Uses Auth emulator when host is set."""
     if firebase_admin._apps:
         return firebase_admin.get_app()

@@ -18,7 +18,7 @@ from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from google.cloud import storage
 from google.cloud.exceptions import GoogleCloudError
 from hsm_core.schemas_project import EnvironmentalBandDefinition
-from hsm_core.settings import Settings
+from hsm_core.settings import WorkerSettings
 from hsm_core.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
 
 # Cap strata so very large n_samples does not imply tens of thousands of tiny windows.
@@ -66,7 +66,7 @@ def _stratum_quotas(n_samples: int, g: int) -> np.ndarray:
 
 def write_project_explainability_background_parquet(
     storage: ObjectStorage,
-    settings: Settings,
+    settings: WorkerSettings,
     project_id: str,
     artifact_root: str,
     cog_path: str,
@@ -102,7 +102,7 @@ def _looks_like_signing_capability_error(exc: Exception) -> bool:
     )
 
 
-def _mint_signed_read_url_for_gcs_uri(settings: Settings, gcs_uri: str) -> str:
+def _mint_signed_read_url_for_gcs_uri(settings: WorkerSettings, gcs_uri: str) -> str:
     """Create a short-lived GET signed URL for a ``gs://`` object URI."""
     if not gcs_uri.startswith("gs://"):
         raise ValueError("gcs_uri must start with gs://")
@@ -158,7 +158,7 @@ def _mint_signed_read_url_for_gcs_uri(settings: Settings, gcs_uri: str) -> str:
 
 
 def resolve_env_cog_uri_for_sampling(
-    settings: Settings, artifact_root: str, cog_rel: str
+    settings: WorkerSettings, artifact_root: str, cog_rel: str
 ) -> str:
     """
     Path or URI for rasterio to open the environmental COG.

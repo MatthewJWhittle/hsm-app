@@ -8,7 +8,7 @@ import shutil
 from pathlib import Path
 from typing import Protocol
 
-from hsm_core.settings import Settings
+from hsm_core.settings import WorkerSettings
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +309,7 @@ def _validate_artifact_relative_name(name: str) -> None:
         raise ValueError("artifact name contains invalid characters")
 
 
-def build_object_storage(settings: Settings) -> ObjectStorage:
+def build_object_storage(settings: WorkerSettings) -> ObjectStorage:
     backend = (settings.storage_backend or "local").strip().lower()
     if backend == "local":
         root = Path(settings.local_storage_root).expanduser().resolve()
