@@ -41,6 +41,8 @@ services:
       - LOCAL_STORAGE_ROOT=/data
       - APP_ENV=local
       - GOOGLE_CLOUD_PROJECT=hsm-dashboard
+      # Shared with backend so POST /internal/worker/run is not open to any container on the compose network.
+      - WORKER_INTERNAL_SECRET=dev-hsm-worker-internal-secret
     depends_on:
       firebase-emulators:
         condition: service_started
@@ -70,6 +72,7 @@ services:
       - APP_ENV=local
       - USE_CLOUD_TASKS=false
       - WORKER_BASE_URL=http://worker:8080
+      - WORKER_INTERNAL_SECRET=dev-hsm-worker-internal-secret
     depends_on:
       firebase-emulators:
         condition: service_started

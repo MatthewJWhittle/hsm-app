@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Header, Request
 from google.cloud import firestore
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -19,7 +21,7 @@ from hsm_core.env_background_sample import (
 )
 from hsm_core.env_cog_paths import resolve_env_cog_path_from_parts
 from hsm_core.firebase_admin_app import init_firebase_admin
-from hsm_core.jobs import get_job, try_claim_job_for_execution, update_job_status
+from hsm_core.jobs import JobDocument, get_job, try_claim_job_for_execution, update_job_status
 from hsm_core.schemas_project import CatalogProject
 from hsm_core.settings import Settings
 from hsm_core.storage import EXPLAINABILITY_BACKGROUND_FILENAME, build_object_storage
@@ -29,7 +31,10 @@ logger = logging.getLogger(__name__)
 
 class TaskPayload(BaseModel):
     job_id: str = Field(..., min_length=1)
-    kind: str = Field(..., min_length=1)
+    kind: str | None = Field(
+        default=None,
+        description="Optional echo of kind; routing uses Firestore job document after claim.",
+    )
 
 
 def _load_project(client: firestore.Client, project_id: str) -> CatalogProject | None:
@@ -47,40 +52,24 @@ def _environmental_cog_readable_for_sampling(abs_path: str) -> bool:
     return Path(abs_path).is_file()
 
 
-def _execute_explainability_job(settings: Settings, job_id: str) -> None:
-    client = firestore.Client(project=settings.google_cloud_project)
-    # Align with Cloud Tasks dispatch_deadline + Run timeout; grace default 0 so retries
-    # after timeout can reclaim a zombie "running" lease.
-    stale_after = (
-        settings.worker_http_deadline_seconds + settings.worker_stale_running_grace_seconds
-    )
-    claimed = try_claim_job_for_execution(
-        client, job_id, stale_running_after_seconds=stale_after
-    )
-    if claimed is None:
-        existing = get_job(client, job_id)
-        if existing and existing.status in ("succeeded", "failed"):
-            logger.info("worker_job_skip job_id=%s status=%s", job_id, existing.status)
-            return
-        if existing and existing.status == "running":
-            logger.info(
-                "worker_job_skip job_id=%s status=running (lease still fresh)",
-                job_id,
-            )
-            return
-        raise RuntimeError("job not found or could not be claimed")
-
-    job = claimed
-    if job.kind != "explainability_background_sample":
-        update_job_status(
-            client,
-            job_id,
-            status="failed",
-            error_code="UNKNOWN_KIND",
-            error_message="unsupported job kind",
-        )
+def _verify_worker_internal_secret(settings: Settings, header_value: str | None) -> None:
+    expected = settings.worker_internal_secret
+    if not expected:
         return
+    got = header_value or ""
+    if len(got) != len(expected) or not secrets.compare_digest(
+        got.encode("utf-8"),
+        expected.encode("utf-8"),
+    ):
+        raise HTTPException(status_code=403, detail="Forbidden")
 
+
+def _run_explainability_after_claim(
+    settings: Settings,
+    client: firestore.Client,
+    job: JobDocument,
+) -> None:
+    job_id = job.job_id
     project_id = job.project_id
     if not project_id:
         update_job_status(
@@ -170,8 +159,6 @@ def _execute_explainability_job(settings: Settings, job_id: str) -> None:
         )
         return
 
-    from datetime import UTC, datetime
-
     now = datetime.now(UTC).isoformat()
     updated = project.model_copy(
         update={
@@ -198,6 +185,49 @@ def _execute_explainability_job(settings: Settings, job_id: str) -> None:
     logger.info("worker_job_ok job_id=%s project_id=%s", job_id, project_id)
 
 
+def _dispatch_after_claim(settings: Settings, job_id: str, body_kind: str | None) -> None:
+    client = firestore.Client(project=settings.google_cloud_project)
+    stale_after = (
+        settings.worker_http_deadline_seconds + settings.worker_stale_running_grace_seconds
+    )
+    claimed = try_claim_job_for_execution(
+        client, job_id, stale_running_after_seconds=stale_after
+    )
+    if claimed is None:
+        existing = get_job(client, job_id)
+        if existing and existing.status in ("succeeded", "failed"):
+            logger.info("worker_job_skip job_id=%s status=%s", job_id, existing.status)
+            return
+        if existing and existing.status == "running":
+            logger.info(
+                "worker_job_skip job_id=%s status=running (lease still fresh)",
+                job_id,
+            )
+            return
+        raise RuntimeError("job not found or could not be claimed")
+
+    if body_kind is not None and body_kind != claimed.kind:
+        logger.warning(
+            "worker_task_kind_mismatch job_id=%s body_kind=%s doc_kind=%s",
+            job_id,
+            body_kind,
+            claimed.kind,
+        )
+
+    kind = claimed.kind
+    if kind == "explainability_background_sample":
+        _run_explainability_after_claim(settings, client, claimed)
+        return
+
+    update_job_status(
+        client,
+        job_id,
+        status="failed",
+        error_code="UNKNOWN_KIND",
+        error_message=f"unsupported job kind {kind!r}",
+    )
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
 
@@ -220,30 +250,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok"}
 
     @app.post("/internal/worker/run")
-    async def run_task(request: Request, payload: TaskPayload):
+    async def run_task(
+        request: Request,
+        payload: TaskPayload,
+        x_hsm_worker_secret: str | None = Header(default=None, alias="X-HSM-Worker-Secret"),
+    ):
         s: Settings = request.app.state.settings
+        _verify_worker_internal_secret(s, x_hsm_worker_secret)
         try:
-            await run_in_threadpool(_dispatch_kind, s, payload.job_id, payload.kind)
-        except Exception as e:
+            await run_in_threadpool(_dispatch_after_claim, s, payload.job_id, payload.kind)
+        except HTTPException:
+            raise
+        except Exception:
             logger.exception("worker_task_failed job_id=%s", payload.job_id)
-            raise HTTPException(status_code=500, detail=str(e)) from e
+            raise HTTPException(status_code=500, detail="worker task failed") from None
         return {"ok": True}
 
     return app
-
-
-def _dispatch_kind(settings: Settings, job_id: str, kind: str) -> None:
-    if kind == "explainability_background_sample":
-        _execute_explainability_job(settings, job_id)
-        return
-    client = firestore.Client(project=settings.google_cloud_project)
-    update_job_status(
-        client,
-        job_id,
-        status="failed",
-        error_code="UNKNOWN_KIND",
-        error_message=f"unsupported kind {kind!r}",
-    )
 
 
 app = create_app()

@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     request size limits in production.
     """
 
-    model_config = SettingsConfigDict(extra="ignore")
+    model_config = SettingsConfigDict(extra="ignore", populate_by_name=True)
 
     cors_origins: str = Field(
         default=(
@@ -224,6 +224,15 @@ class Settings(BaseSettings):
         default=None,
         description="Local dev worker origin (e.g. http://worker:8080) when USE_CLOUD_TASKS=false.",
         validation_alias=AliasChoices("WORKER_BASE_URL"),
+    )
+
+    worker_internal_secret: str | None = Field(
+        default=None,
+        description=(
+            "When set, worker requires header X-HSM-Worker-Secret on POST /internal/worker/run; "
+            "API local dispatch sends it. Omit in production Cloud Tasks (IAM); set in Docker Compose."
+        ),
+        validation_alias=AliasChoices("WORKER_INTERNAL_SECRET"),
     )
 
     worker_http_deadline_seconds: int = Field(

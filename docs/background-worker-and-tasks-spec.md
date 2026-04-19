@@ -46,7 +46,7 @@ This document is the canonical spec for moving **infrequent, CPU/memory/time-hea
 |-------|----------------|
 | **Cloud Tasks** | Durability, retry/backoff, dispatch rate, OIDC to private Run. |
 | **API** | Authz, create **one Firestore job doc**, `createTask`, return **202** + `job_id`; optional **GET** for status. |
-| **Worker** | Run the handler for `kind`, write GCS, update the same job doc. |
+| **Worker** | Claim job by `job_id`, read **`kind` from the Firestore job doc**, run the matching handler, write GCS, update the same job doc. (HTTP body `kind` is optional metadata; log if it disagrees with the doc.) |
 | **Firestore** | **State** for UX and idempotency (`pending` / `running` / terminal), not a replacement for Tasks. |
 
 **Defer until there is a concrete need:** admin queue UIs, job priority classes, cancellation APIs, multi-step workflows, fan-out orchestration, or per-tenant queue isolation. Use **Cloud Console** (Tasks + Run logs) and **log-based metrics** first.
@@ -221,7 +221,7 @@ Interactive routes (e.g. map **point inspect**) remain **synchronous** unless pr
 ### 10.1 Docker Compose (local)
 
 - Add a **`worker`** service (same image/build as backend, separate port, worker FastAPI app), shared **`./data`**, same **Firestore + Auth emulator** env as API where applicable.
-- **Security:** the local bypass POSTs to the worker **without OIDC**. Keep the worker port **internal** to Compose (or trusted networks) only; do not expose it publicly without an additional guard.
+- **Security:** the local bypass POSTs to the worker **without OIDC**. Set **`WORKER_INTERNAL_SECRET`** on API + worker and send header **`X-HSM-Worker-Secret`** (see settings). Keep the worker port **internal** to Compose (or trusted networks) only; omit the secret only in tests or isolated sandboxes.
 
 ### 10.2 Two dispatch modes — **one code path in routers**
 

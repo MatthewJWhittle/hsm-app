@@ -8,12 +8,15 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import BackgroundTasks
-from google.cloud import tasks_v2
+from google.cloud import firestore, tasks_v2
 from google.protobuf import duration_pb2
 
+from hsm_core.jobs import update_job_status
 from hsm_core.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+WORKER_INTERNAL_SECRET_HEADER = "X-HSM-Worker-Secret"
 
 
 def _oidc_audience(task_url: str) -> str:
@@ -57,11 +60,42 @@ def _enqueue_cloud_task(settings: Settings, body: dict) -> None:
     logger.info("cloud_tasks_enqueued job_id=%s kind=%s", body.get("job_id"), body.get("kind"))
 
 
-def _post_local_worker(url: str, body: dict) -> None:
+def _mark_job_local_dispatch_failed(settings: Settings, job_id: str, exc: Exception) -> None:
+    err_text = (str(exc).strip() or type(exc).__name__)[:2000]
+    fs_client = firestore.Client(project=settings.google_cloud_project)
+    update_job_status(
+        fs_client,
+        job_id,
+        status="failed",
+        error_code="LOCAL_WORKER_DISPATCH_FAILED",
+        error_message=err_text,
+    )
+
+
+def _post_local_worker(settings: Settings, url: str, body: dict) -> None:
+    job_id = body.get("job_id")
+    headers: dict[str, str] = {}
+    secret = settings.worker_internal_secret
+    if secret:
+        headers[WORKER_INTERNAL_SECRET_HEADER] = secret
+    deadline = float(settings.worker_http_deadline_seconds)
+    timeout = httpx.Timeout(deadline, connect=min(30.0, deadline))
     try:
-        httpx.post(url, json=body, timeout=httpx.Timeout(600.0, connect=30.0))
-    except Exception:
-        logger.exception("local_worker_post_failed url=%s job_id=%s", url, body.get("job_id"))
+        httpx.post(url, json=body, headers=headers, timeout=timeout)
+    except Exception as exc:
+        logger.exception(
+            "local_worker_post_failed url=%s job_id=%s",
+            url,
+            job_id,
+        )
+        if isinstance(job_id, str) and job_id:
+            try:
+                _mark_job_local_dispatch_failed(settings, job_id, exc)
+            except Exception:
+                logger.exception(
+                    "local_dispatch_failed_and_could_not_update_job job_id=%s",
+                    job_id,
+                )
 
 
 def schedule_background_http_task(
@@ -79,5 +113,5 @@ def schedule_background_http_task(
     if background_tasks is None:
         raise RuntimeError("BackgroundTasks required for local worker dispatch")
     url = f"{settings.worker_base_url.rstrip('/')}/internal/worker/run"
-    background_tasks.add_task(_post_local_worker, url, body)
+    background_tasks.add_task(_post_local_worker, settings, url, body)
     logger.info("local_worker_scheduled job_id=%s kind=%s", body.get("job_id"), body.get("kind"))
