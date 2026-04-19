@@ -37,6 +37,11 @@ terraform apply -var-file=terraform.tfvars
 
 ## Scope notes
 
+- **Worker Cloud Run deploys** need the GitHub Actions deploy service account to have
+  `roles/iam.serviceAccountUser` on **`hsm-worker-staging`** and **`hsm-worker-prod`** (same as already
+  done for the API runtime SAs). Set `github_deploy_service_account_email` in `terraform.tfvars` so
+  Terraform keeps this binding; without it, `Deploy staging API` fails on the worker step with
+  `Permission 'iam.serviceaccounts.actAs' denied`.
 - Keep image tags immutable (Git SHA or digest).
 - API image rollout is handled by GitHub Actions deploy workflows.
 - `api-staging` and `api-prod` ignore image drift in Terraform via `lifecycle.ignore_changes`.

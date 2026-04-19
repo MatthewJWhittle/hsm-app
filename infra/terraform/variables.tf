@@ -314,3 +314,13 @@ variable "cors_origin_regex_prod" {
   default     = ""
 }
 
+variable "github_deploy_service_account_email" {
+  description = <<-EOT
+    GitHub Actions deploy identity (workload identity federation SA). Needs roles/iam.serviceAccountUser
+    on each Cloud Run *runtime* service account so `gcloud run deploy` can attach that runtime SA
+    to new revisions. Set to the email of the SA used in deploy workflows (e.g. github-action-…@….iam.gserviceaccount.com).
+  EOT
+  type        = string
+  default     = null
+}
+

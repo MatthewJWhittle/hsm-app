@@ -31,6 +31,9 @@ create_firestore_database = false
 firebase_web_api_key_secret_name = "firebase-web-api-key"
 firebase_project_id              = "hsm-dashboard"
 
+# GitHub Actions (WIF) SA email — required for CI to deploy worker-staging / worker-prod revisions.
+# github_deploy_service_account_email = "github-action-997772871@hsm-dashboard.iam.gserviceaccount.com"
+
 # Budget alerts (recommended). Uses Cloud Billing budget notifications only.
 create_budget_alerts = true
 billing_account_id = "000000-000000-000000"

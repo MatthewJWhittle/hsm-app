@@ -269,6 +269,21 @@ resource "google_storage_bucket_iam_member" "worker_prod_storage_admin" {
   member = "serviceAccount:${google_service_account.worker_prod.email}"
 }
 
+# GitHub Actions → Cloud Run: deploy identity must be able to actAs each service's runtime SA.
+resource "google_service_account_iam_member" "github_deploy_actas_worker_staging" {
+  count              = var.github_deploy_service_account_email != null ? 1 : 0
+  service_account_id = google_service_account.worker_staging.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${var.github_deploy_service_account_email}"
+}
+
+resource "google_service_account_iam_member" "github_deploy_actas_worker_prod" {
+  count              = var.github_deploy_service_account_email != null ? 1 : 0
+  service_account_id = google_service_account.worker_prod.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${var.github_deploy_service_account_email}"
+}
+
 resource "google_cloud_tasks_queue" "background_staging" {
   name     = var.cloud_tasks_queue_staging_id
   location = var.region
