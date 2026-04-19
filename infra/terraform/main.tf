@@ -339,6 +339,9 @@ resource "google_service_account_iam_member" "tasks_oidc_prod_actas" {
   member             = "serviceAccount:${local.cloudtasks_sa_email}"
 }
 
+# Workers use the same ingress class as the API. Cloud Tasks invokes the service URL over
+# HTTPS; INGRESS_TRAFFIC_ALL is the standard pairing. Access control is IAM: only the Tasks
+# OIDC service accounts receive roles/run.invoker (see worker_*_tasks_invoker below).
 resource "google_cloud_run_v2_service" "worker_staging" {
   name     = var.worker_service_name_staging
   location = var.region
@@ -806,7 +809,7 @@ resource "google_cloud_run_v2_service" "titiler" {
 
   template {
     service_account = google_service_account.titiler.email
-    timeout         = "${var.api_timeout_seconds}s"
+    timeout         = "${var.titiler_timeout_seconds}s"
 
     scaling {
       min_instance_count = var.titiler_min_instance_count

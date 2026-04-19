@@ -63,6 +63,12 @@ variable "titiler_ingress" {
   default     = "INGRESS_TRAFFIC_ALL"
 }
 
+variable "titiler_timeout_seconds" {
+  description = "Cloud Run request timeout for TiTiler only (separate from API timeout)."
+  type        = number
+  default     = 60
+}
+
 variable "api_service_name_staging" {
   description = "Cloud Run service name for staging API."
   type        = string

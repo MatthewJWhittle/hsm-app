@@ -44,6 +44,7 @@ terraform apply -var-file=terraform.tfvars
 - If Firestore already exists, keep `create_firestore_database = false`.
 - `api_timeout_seconds` defaults to `120` to reduce timeout risk on rare admin raster replacement
   requests (`POST /api/projects/{project_id}/environmental-cogs`).
+- `titiler_timeout_seconds` defaults to `60` and is independent of the API timeout.
 
 ## MVP cost guardrails
 
