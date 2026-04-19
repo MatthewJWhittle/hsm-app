@@ -16,14 +16,11 @@ from google.cloud.firestore_v1 import DocumentSnapshot
 from pydantic import ValidationError
 
 from backend_api.schemas import Model
-from backend_api.schemas_project import CatalogProject
-from backend_api.settings import Settings
+from hsm_core.catalog_collections import MODELS_COLLECTION_ID, PROJECTS_COLLECTION_ID
+from hsm_core.schemas_project import CatalogProject
+from hsm_core.settings import Settings
 
 logger = logging.getLogger(__name__)
-
-# Single collection for Model documents (document id = Model.id).
-MODELS_COLLECTION_ID = "models"
-PROJECTS_COLLECTION_ID = "projects"
 
 CATALOG_VALIDATION_DETAIL = (
     "Catalog data does not match the Model schema; fix Firestore documents or see server logs."

@@ -11,7 +11,7 @@ from fastapi import BackgroundTasks
 from google.cloud import tasks_v2
 from google.protobuf import duration_pb2
 
-from backend_api.settings import Settings
+from hsm_core.settings import Settings
 
 logger = logging.getLogger(__name__)
 

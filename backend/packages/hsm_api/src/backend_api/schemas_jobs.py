@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from backend_api.schemas_project import CatalogProject
+from hsm_core.schemas_project import CatalogProject
 
 
 class JobAcceptedResponse(BaseModel):

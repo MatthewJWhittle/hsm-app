@@ -996,14 +996,30 @@ name = "hsm-core"
 version = "0.1.0"
 source = { editable = "packages/hsm_core" }
 dependencies = [
+    { name = "firebase-admin" },
+    { name = "google-auth" },
     { name = "google-cloud-firestore" },
+    { name = "google-cloud-storage" },
+    { name = "numpy" },
+    { name = "pandas", extra = ["parquet"] },
+    { name = "pyarrow" },
     { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "rasterio" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "firebase-admin", specifier = ">=6.9.0" },
+    { name = "google-auth", specifier = ">=2.0.0" },
     { name = "google-cloud-firestore", specifier = ">=2.19.0" },
+    { name = "google-cloud-storage", specifier = ">=2.18.0" },
+    { name = "numpy", specifier = ">=1.26.0" },
+    { name = "pandas", extras = ["parquet"], specifier = ">=2.0.0" },
+    { name = "pyarrow", specifier = ">=14.0.0" },
     { name = "pydantic", specifier = ">=2.11.5" },
+    { name = "pydantic-settings", specifier = ">=2.6.1" },
+    { name = "rasterio", specifier = ">=1.4.4" },
 ]
 
 [[package]]
@@ -1012,7 +1028,6 @@ version = "0.1.0"
 source = { editable = "packages/hsm_worker" }
 dependencies = [
     { name = "fastapi", extra = ["standard"] },
-    { name = "hsm-api" },
     { name = "hsm-core" },
     { name = "uvicorn" },
 ]
@@ -1020,7 +1035,6 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.12" },
-    { name = "hsm-api", editable = "packages/hsm_api" },
     { name = "hsm-core", editable = "packages/hsm_core" },
     { name = "uvicorn", specifier = ">=0.34.3" },
 ]

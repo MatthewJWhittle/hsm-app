@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from backend_api.catalog_service import MODELS_COLLECTION_ID, PROJECTS_COLLECTION_ID
+from hsm_core.catalog_collections import MODELS_COLLECTION_ID, PROJECTS_COLLECTION_ID
 
 
 def mock_firestore_client_for_documents(

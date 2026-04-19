@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException, Request
 
 from backend_api.catalog_service import CatalogService
 from backend_api.schemas import Model
-from backend_api.storage import ObjectStorage
+from hsm_core.storage import ObjectStorage
 
 
 def get_catalog_service(request: Request) -> CatalogService:

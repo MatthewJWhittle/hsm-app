@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from backend_api.catalog_service import MODELS_COLLECTION_ID, PROJECTS_COLLECTION_ID
+from hsm_core.catalog_collections import MODELS_COLLECTION_ID, PROJECTS_COLLECTION_ID
 from tests.helpers import mock_firestore_client_for_documents
 
 SAMPLE_PROJECT = {

@@ -11,6 +11,7 @@ from backend_api.feature_band_names import (
     resolve_feature_band_names_to_indices,
 )
 from backend_api.schemas import Model
+from hsm_core.env_cog_paths import resolve_env_cog_path_from_parts
 
 if TYPE_CHECKING:
     from backend_api.catalog_service import CatalogService
@@ -21,19 +22,6 @@ def resolve_project_env_cog_absolute_path(project) -> str | None:
     return resolve_env_cog_path_from_parts(
         project.driver_artifact_root, project.driver_cog_path
     )
-
-
-def resolve_env_cog_path_from_parts(
-    artifact_root: str | None, driver_cog_path: str | None
-) -> str | None:
-    """Absolute path from storage root + relative COG path."""
-    if not artifact_root or not driver_cog_path:
-        return None
-    root = artifact_root.rstrip("/")
-    rel = driver_cog_path.strip()
-    if rel.startswith("/"):
-        return rel
-    return f"{root}/{rel}"
 
 
 def validate_model_feature_bands_for_admin(model: Model, catalog: "CatalogService") -> None:

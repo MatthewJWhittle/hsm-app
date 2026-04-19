@@ -60,7 +60,7 @@ def admin_client_proj():
             return_value=claims,
         ),
         patch(
-            "backend_api.storage.build_object_storage",
+            "hsm_core.storage.build_object_storage",
             return_value=mock_storage,
         ),
         patch("backend_api.routers.projects.Path") as mock_path_cls,

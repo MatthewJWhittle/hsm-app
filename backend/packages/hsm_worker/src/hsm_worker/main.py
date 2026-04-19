@@ -10,17 +10,18 @@ from google.cloud import firestore
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
-from backend_api.catalog_service import PROJECTS_COLLECTION_ID
-from backend_api.catalog_write import upsert_project
-from backend_api.env_background_sample import (
+from hsm_core.catalog_collections import PROJECTS_COLLECTION_ID
+from hsm_core.catalog_write import upsert_project
+from hsm_core.env_background_sample import (
     sanitize_exception_for_client,
     write_project_explainability_background_parquet,
 )
-from backend_api.firebase_admin_app import init_firebase_admin
-from backend_api.schemas_project import CatalogProject
-from backend_api.settings import Settings
-from backend_api.storage import EXPLAINABILITY_BACKGROUND_FILENAME, build_object_storage
+from hsm_core.env_cog_paths import resolve_env_cog_path_from_parts
+from hsm_core.firebase_admin_app import init_firebase_admin
 from hsm_core.jobs import get_job, try_claim_pending_job, update_job_status
+from hsm_core.schemas_project import CatalogProject
+from hsm_core.settings import Settings
+from hsm_core.storage import EXPLAINABILITY_BACKGROUND_FILENAME, build_object_storage
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +111,6 @@ def _execute_explainability_job(settings: Settings, job_id: str) -> None:
             error_message="project has no environmental band definitions",
         )
         return
-
-    from backend_api.project_manifest import resolve_env_cog_path_from_parts
 
     abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
     if not abs_path:

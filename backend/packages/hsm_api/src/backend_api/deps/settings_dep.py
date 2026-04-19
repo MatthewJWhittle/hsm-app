@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from backend_api.settings import Settings
+from hsm_core.settings import Settings
 
 
 def get_settings(request: Request) -> Settings:

@@ -80,7 +80,7 @@ def _admin_client(
         ),
         patch("backend_api.routers.models.upsert_model"),
         patch(
-            "backend_api.storage.build_object_storage",
+            "hsm_core.storage.build_object_storage",
             return_value=mock_storage,
         ),
     ):
@@ -118,7 +118,7 @@ def test_post_models_requires_admin_claim():
             return_value={"uid": "u", "email": "u@example.com"},
         ),
         patch(
-            "backend_api.storage.build_object_storage",
+            "hsm_core.storage.build_object_storage",
             return_value=mock_storage,
         ),
     ):

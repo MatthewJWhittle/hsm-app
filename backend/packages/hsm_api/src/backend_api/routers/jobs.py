@@ -10,16 +10,15 @@ from google.cloud import firestore
 from backend_api.auth_deps import require_admin_claims
 from backend_api.deps.settings_dep import get_settings
 from backend_api.schemas_jobs import JobPollResponse
-from backend_api.schemas_project import CatalogProject
-from backend_api.settings import Settings
+from hsm_core.catalog_collections import PROJECTS_COLLECTION_ID
 from hsm_core.jobs import get_job
+from hsm_core.schemas_project import CatalogProject
+from hsm_core.settings import Settings
 
 router = APIRouter()
 
 
 def _load_project_from_firestore(settings: Settings, project_id: str) -> CatalogProject | None:
-    from backend_api.catalog_service import PROJECTS_COLLECTION_ID
-
     client = firestore.Client(project=settings.google_cloud_project)
     snap = client.collection(PROJECTS_COLLECTION_ID).document(project_id).get()
     if not snap.exists:
