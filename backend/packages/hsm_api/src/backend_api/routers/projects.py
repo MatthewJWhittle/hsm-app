@@ -82,6 +82,7 @@ from backend_api.upload_session_ingest import (
     upload_session_gcs_uri,
     write_upload_file_to_tempfile,
 )
+from hsm_core.env_cog_paths import environmental_cog_readable_for_sampling
 from hsm_core.explainability_job_preflight import (
     ExplainabilityJobPreflightError,
     validate_catalog_project_for_explainability_sample,
@@ -204,7 +205,7 @@ async def patch_environmental_band_definitions(
             "ENV_COG_REQUIRED",
             "cannot set band definitions without an environmental COG uploaded",
         )
-    if not Path(abs_path).is_file():
+    if not environmental_cog_readable_for_sampling(abs_path):
         raise _proj_422(
             "ENV_COG_NOT_ON_DISK",
             "environmental COG not found on server; upload the file first",
@@ -292,7 +293,7 @@ async def patch_environmental_band_definition_labels(
             "ENV_COG_REQUIRED",
             "cannot patch band labels without an environmental COG on the project",
         )
-    if not Path(abs_path).is_file():
+    if not environmental_cog_readable_for_sampling(abs_path):
         raise _proj_422(
             "ENV_COG_NOT_ON_DISK",
             "environmental COG not found on server; upload the file first",

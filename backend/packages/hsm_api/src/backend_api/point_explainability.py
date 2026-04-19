@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import pickle
 import threading
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -17,6 +17,7 @@ from backend_api.feature_band_names import FeatureBandNamesValidationError
 from backend_api.model_effective_config import get_effective_driver_config, get_feature_band_indices
 from backend_api.point_sampling import PointSamplingError
 from backend_api.schemas import DriverVariable, Model
+from hsm_core.env_cog_paths import artifact_uri_exists, resolve_artifact_uri, split_gs_uri
 
 if TYPE_CHECKING:
     from backend_api.catalog_service import CatalogService
@@ -56,25 +57,21 @@ def _background_storage_root(model: Model, dc: dict) -> str:
     return model.artifact_root
 
 
-def _resolve_artifact_file(artifact_root: str, rel: str) -> Path:
-    """Resolve path under ``artifact_root``; reject path traversal."""
-    rel = rel.strip()
-    if not rel:
-        raise ValueError("empty path")
-    if rel.startswith("/"):
-        p = Path(rel)
-    else:
-        parts = Path(rel).parts
-        if ".." in parts:
-            raise ValueError("path must not contain '..'")
-        p = (Path(artifact_root).resolve() / rel).resolve()
-    return p
+def _download_gs_uri_bytes(uri: str) -> bytes:
+    from google.cloud import storage
+
+    bucket_name, blob_name = split_gs_uri(uri)
+    return storage.Client().bucket(bucket_name).blob(blob_name).download_as_bytes()
 
 
-def _load_classifier_or_raise(model_path: Path) -> object:
+def _load_classifier_or_raise(model_path: str) -> object:
     try:
-        with open(model_path, "rb") as f:
-            return pickle.load(f)
+        if model_path.startswith("gs://"):
+            raw = _download_gs_uri_bytes(model_path)
+        else:
+            with open(model_path, "rb") as f:
+                raw = f.read()
+        return pickle.loads(raw)
     except ModuleNotFoundError as e:
         mod = getattr(e, "name", None) or str(e)
         logger.warning(
@@ -99,15 +96,18 @@ def _load_classifier_or_raise(model_path: Path) -> object:
 def _materialize_shap_explainer_bundle(
     model: Model,
     dc: dict,
-    model_path: Path,
-    bg_path: Path,
+    model_path: str,
+    bg_path: str,
     max_background_rows: int,
 ) -> ShapExplainerBundle:
     """Load pickle + capped background and build ``shap.Explainer`` (no query row yet)."""
     clf = _load_classifier_or_raise(model_path)
 
     try:
-        background = pd.read_parquet(bg_path)
+        if bg_path.startswith("gs://"):
+            background = pd.read_parquet(io.BytesIO(_download_gs_uri_bytes(bg_path)))
+        else:
+            background = pd.read_parquet(bg_path)
     except Exception:
         logger.exception("Failed to read explainability background")
         raise PointSamplingError("explainability background could not be read") from None
@@ -198,12 +198,12 @@ def compute_shap_driver_variables(
     if not isinstance(mp, str) or not isinstance(bp, str):
         return []
 
-    model_path = _resolve_artifact_file(model.artifact_root, mp)
-    bg_path = _resolve_artifact_file(_background_storage_root(model, dc), bp)
+    model_path = resolve_artifact_uri(model.artifact_root, mp)
+    bg_path = resolve_artifact_uri(_background_storage_root(model, dc), bp)
 
-    if not model_path.is_file():
+    if not artifact_uri_exists(model_path):
         raise PointSamplingError("explainability model file not found on server")
-    if not bg_path.is_file():
+    if not artifact_uri_exists(bg_path):
         raise PointSamplingError("explainability background file not found on server")
 
     acquired = _shap_compute_semaphore.acquire(blocking=False)
@@ -298,9 +298,9 @@ def warm_explainability_cache(
     bp = dc.get("explainability_background_path")
     if not isinstance(mp, str) or not isinstance(bp, str):
         return
-    model_path = _resolve_artifact_file(model.artifact_root, mp)
-    bg_path = _resolve_artifact_file(_background_storage_root(model, dc), bp)
-    if not model_path.is_file() or not bg_path.is_file():
+    model_path = resolve_artifact_uri(model.artifact_root, mp)
+    bg_path = resolve_artifact_uri(_background_storage_root(model, dc), bp)
+    if not artifact_uri_exists(model_path) or not artifact_uri_exists(bg_path):
         return
     try:
         get_or_build_shap_bundle(
@@ -343,9 +343,9 @@ def validate_explainability_artifacts_for_model(
     bp = dc.get("explainability_background_path")
     if not isinstance(mp, str) or not isinstance(bp, str):
         raise ValueError("serialized model path and explainability background path must be strings")
-    mpath = _resolve_artifact_file(model.artifact_root, mp)
-    bpath = _resolve_artifact_file(_background_storage_root(model, dc), bp)
-    if not mpath.is_file():
+    mpath = resolve_artifact_uri(model.artifact_root, mp)
+    bpath = resolve_artifact_uri(_background_storage_root(model, dc), bp)
+    if not artifact_uri_exists(mpath):
         raise ValueError(f"serialized model file not found at {mp!r}")
-    if not bpath.is_file():
+    if not artifact_uri_exists(bpath):
         raise ValueError(f"explainability background file not found at {bp!r}")

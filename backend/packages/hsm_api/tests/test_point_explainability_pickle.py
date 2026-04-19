@@ -1,6 +1,5 @@
 """Explainability pickle load errors (custom training modules missing on server)."""
 
-from pathlib import Path
 from unittest.mock import mock_open, patch
 
 import pandas as pd
@@ -40,12 +39,12 @@ def test_pickle_module_not_found_clear_error() -> None:
 
     with (
         patch(
-            "backend_api.point_explainability._resolve_artifact_file",
-            side_effect=[Path("/artifacts/model.pkl"), Path("/artifacts/bg.parquet")],
+            "backend_api.point_explainability.resolve_artifact_uri",
+            side_effect=["/artifacts/model.pkl", "/artifacts/bg.parquet"],
         ),
-        patch.object(Path, "is_file", return_value=True),
+        patch("backend_api.point_explainability.artifact_uri_exists", return_value=True),
         patch("builtins.open", mock_open(read_data=b"")),
-        patch("pickle.load", side_effect=e),
+        patch("pickle.loads", side_effect=e),
     ):
         with pytest.raises(PointSamplingError) as ei:
             compute_shap_driver_variables(model, feature_row, dc, max_background_rows=512)
