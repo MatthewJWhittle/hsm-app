@@ -354,6 +354,20 @@ resource "google_service_account_iam_member" "tasks_oidc_prod_actas" {
   member             = "serviceAccount:${local.cloudtasks_sa_email}"
 }
 
+# API runtime SAs create tasks with oidc_token.service_account_email = tasks OIDC SA; that
+# requires iam.serviceAccounts.actAs on the OIDC SA (roles/iam.serviceAccountUser).
+resource "google_service_account_iam_member" "api_staging_actas_tasks_oidc_staging" {
+  service_account_id = google_service_account.tasks_oidc_staging.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.api_staging.email}"
+}
+
+resource "google_service_account_iam_member" "api_prod_actas_tasks_oidc_prod" {
+  service_account_id = google_service_account.tasks_oidc_prod.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.api_prod.email}"
+}
+
 # Workers use the same ingress class as the API. Cloud Tasks invokes the service URL over
 # HTTPS; INGRESS_TRAFFIC_ALL is the standard pairing. Access control is IAM: only the Tasks
 # OIDC service accounts receive roles/run.invoker (see worker_*_tasks_invoker below).
