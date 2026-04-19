@@ -428,6 +428,10 @@ resource "google_cloud_run_v2_service" "worker_staging" {
         name  = "FIREBASE_PROJECT_ID"
         value = var.firebase_project_id
       }
+      env {
+        name  = "WORKER_HTTP_DEADLINE_SECONDS"
+        value = tostring(var.worker_timeout_seconds_staging)
+      }
     }
   }
 
@@ -526,6 +530,10 @@ resource "google_cloud_run_v2_service" "worker_prod" {
       env {
         name  = "FIREBASE_PROJECT_ID"
         value = var.firebase_project_id
+      }
+      env {
+        name  = "WORKER_HTTP_DEADLINE_SECONDS"
+        value = tostring(var.worker_timeout_seconds_prod)
       }
     }
   }
@@ -667,6 +675,10 @@ resource "google_cloud_run_v2_service" "api_staging" {
         name  = "WORKER_TASK_URL"
         value = "${google_cloud_run_v2_service.worker_staging.uri}/internal/worker/run"
       }
+      env {
+        name  = "WORKER_HTTP_DEADLINE_SECONDS"
+        value = tostring(var.worker_timeout_seconds_staging)
+      }
     }
   }
 
@@ -791,6 +803,10 @@ resource "google_cloud_run_v2_service" "api_prod" {
       env {
         name  = "WORKER_TASK_URL"
         value = "${google_cloud_run_v2_service.worker_prod.uri}/internal/worker/run"
+      }
+      env {
+        name  = "WORKER_HTTP_DEADLINE_SECONDS"
+        value = tostring(var.worker_timeout_seconds_prod)
       }
     }
   }

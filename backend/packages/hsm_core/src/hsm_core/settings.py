@@ -226,6 +226,28 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("WORKER_BASE_URL"),
     )
 
+    worker_http_deadline_seconds: int = Field(
+        default=1800,
+        description=(
+            "Cloud Tasks HTTP dispatch_deadline (max 1800) and the expected single-attempt "
+            "wall time; align with the worker Cloud Run request timeout."
+        ),
+        validation_alias=AliasChoices("WORKER_HTTP_DEADLINE_SECONDS"),
+        ge=60,
+        le=1800,
+    )
+
+    worker_stale_running_grace_seconds: int = Field(
+        default=300,
+        description=(
+            "Seconds beyond worker_http_deadline_seconds with no lease refresh before a "
+            "running job may be reclaimed by another task delivery."
+        ),
+        validation_alias=AliasChoices("WORKER_STALE_RUNNING_GRACE_SECONDS"),
+        ge=0,
+        le=3600,
+    )
+
     @model_validator(mode="after")
     def _require_cloud_tasks_in_cloud(self) -> Self:
         env = (self.app_env or "local").strip().lower()

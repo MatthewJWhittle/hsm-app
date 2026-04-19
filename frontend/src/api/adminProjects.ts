@@ -12,7 +12,8 @@ import { isRecord } from './jsonGuards'
 import { parseProject } from './projects'
 
 const ADMIN_JOB_POLL_MS = 500
-const ADMIN_JOB_MAX_WAIT_MS = 6 * 60 * 1000
+/** Align with cloud worker Cloud Run timeout default (30m / 1800s) plus a small buffer for jitter. */
+const ADMIN_JOB_MAX_WAIT_MS = 32 * 60 * 1000
 
 export type AdminJobPollResponse = {
   job_id: string

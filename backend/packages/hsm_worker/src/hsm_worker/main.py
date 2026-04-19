@@ -19,7 +19,7 @@ from hsm_core.env_background_sample import (
 )
 from hsm_core.env_cog_paths import resolve_env_cog_path_from_parts
 from hsm_core.firebase_admin_app import init_firebase_admin
-from hsm_core.jobs import get_job, try_claim_pending_job, update_job_status
+from hsm_core.jobs import get_job, try_claim_job_for_execution, update_job_status
 from hsm_core.schemas_project import CatalogProject
 from hsm_core.settings import Settings
 from hsm_core.storage import EXPLAINABILITY_BACKGROUND_FILENAME, build_object_storage
@@ -49,11 +49,22 @@ def _environmental_cog_readable_for_sampling(abs_path: str) -> bool:
 
 def _execute_explainability_job(settings: Settings, job_id: str) -> None:
     client = firestore.Client(project=settings.google_cloud_project)
-    claimed = try_claim_pending_job(client, job_id)
+    stale_after = (
+        settings.worker_http_deadline_seconds + settings.worker_stale_running_grace_seconds
+    )
+    claimed = try_claim_job_for_execution(
+        client, job_id, stale_running_after_seconds=stale_after
+    )
     if claimed is None:
         existing = get_job(client, job_id)
-        if existing and existing.status in ("succeeded", "failed", "running"):
+        if existing and existing.status in ("succeeded", "failed"):
             logger.info("worker_job_skip job_id=%s status=%s", job_id, existing.status)
+            return
+        if existing and existing.status == "running":
+            logger.info(
+                "worker_job_skip job_id=%s status=running (lease still fresh)",
+                job_id,
+            )
             return
         raise RuntimeError("job not found or could not be claimed")
 

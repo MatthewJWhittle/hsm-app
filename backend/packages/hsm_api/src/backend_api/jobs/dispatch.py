@@ -39,6 +39,7 @@ def _enqueue_cloud_task(settings: Settings, body: dict) -> None:
         settings.cloud_tasks_queue,
     )
     payload = json.dumps(body).encode()
+    deadline_sec = settings.worker_http_deadline_seconds
     task: dict = {
         "http_request": {
             "http_method": tasks_v2.HttpMethod.POST,
@@ -50,7 +51,7 @@ def _enqueue_cloud_task(settings: Settings, body: dict) -> None:
                 "audience": _oidc_audience(settings.worker_task_url),
             },
         },
-        "dispatch_deadline": duration_pb2.Duration(seconds=900),
+        "dispatch_deadline": duration_pb2.Duration(seconds=deadline_sec),
     }
     client.create_task(tasks_v2.CreateTaskRequest(parent=parent, task=task))
     logger.info("cloud_tasks_enqueued job_id=%s kind=%s", body.get("job_id"), body.get("kind"))

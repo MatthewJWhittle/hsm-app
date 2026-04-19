@@ -86,6 +86,40 @@ def get_job(client: firestore.Client, job_id: str) -> JobDocument | None:
     return job_from_firestore(snap.to_dict() or {}, job_id)
 
 
+def _parse_firestore_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        try:
+            s = str(value).replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s)
+        except (ValueError, TypeError):
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt
+
+
+def running_lease_is_stale(
+    updated_at_raw: Any,
+    *,
+    stale_after_seconds: int,
+    now: datetime | None = None,
+) -> bool:
+    """True if ``updated_at`` is missing, unparseable, or older than ``stale_after_seconds``."""
+    if stale_after_seconds <= 0:
+        return True
+    started = _parse_firestore_datetime(updated_at_raw)
+    if started is None:
+        return True
+    now_dt = now if now is not None else datetime.now(UTC)
+    if now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=UTC)
+    return (now_dt - started).total_seconds() >= stale_after_seconds
+
+
 def update_job_status(
     client: firestore.Client,
     job_id: str,
@@ -109,30 +143,72 @@ def update_job_status(
     ref.update(payload)
 
 
+# Running jobs are never reclaimed through this helper (only pending -> running).
+_PENDING_ONLY_STALE_SECONDS = 10**9
+
+
+def try_claim_job_for_execution(
+    client: firestore.Client,
+    job_id: str,
+    *,
+    stale_running_after_seconds: int,
+) -> JobDocument | None:
+    """Claim a job for execution (pending -> running, or reclaim stale running).
+
+    Cloud Tasks retries may arrive while status is still ``running`` if the worker
+    died after the claim. When ``updated_at`` is older than ``stale_running_after_seconds``,
+    refresh the lease (``updated_at``) and return the document so work can run again.
+
+    Returns ``None`` if the job is missing, terminal (succeeded/failed), or ``running``
+    with a fresh lease.
+    """
+    ref = client.collection(JOBS_COLLECTION_ID).document(job_id)
+
+    @firestore.transactional
+    def _claim(
+        transaction: firestore.Transaction,
+        doc_ref: firestore.DocumentReference,
+    ) -> JobDocument | None:
+        snap = doc_ref.get(transaction=transaction)
+        if not snap.exists:
+            return None
+        data = snap.to_dict() or {}
+        status = data.get("status")
+        now = _now_iso()
+        if status in ("succeeded", "failed"):
+            return None
+        if status == "pending":
+            transaction.update(
+                doc_ref,
+                {
+                    "status": "running",
+                    "updated_at": now,
+                },
+            )
+            data["status"] = "running"
+            data["updated_at"] = now
+            return job_from_firestore(data, job_id)
+        if status == "running":
+            if not running_lease_is_stale(
+                data.get("updated_at"),
+                stale_after_seconds=stale_running_after_seconds,
+            ):
+                return None
+            transaction.update(doc_ref, {"updated_at": now})
+            data["updated_at"] = now
+            return job_from_firestore(data, job_id)
+        return None
+
+    return _claim(client.transaction(), ref)
+
+
 def try_claim_pending_job(
     client: firestore.Client,
     job_id: str,
 ) -> JobDocument | None:
     """Atomically transition pending -> running. Returns doc if claim won."""
-    ref = client.collection(JOBS_COLLECTION_ID).document(job_id)
-
-    @firestore.transactional
-    def _claim(transaction: firestore.Transaction, doc_ref: firestore.DocumentReference) -> JobDocument | None:
-        snap = doc_ref.get(transaction=transaction)
-        if not snap.exists:
-            return None
-        data = snap.to_dict() or {}
-        if data.get("status") != "pending":
-            return None
-        transaction.update(
-            doc_ref,
-            {
-                "status": "running",
-                "updated_at": _now_iso(),
-            },
-        )
-        data["status"] = "running"
-        data["updated_at"] = _now_iso()
-        return job_from_firestore(data, job_id)
-
-    return _claim(client.transaction(), ref)
+    return try_claim_job_for_execution(
+        client,
+        job_id,
+        stale_running_after_seconds=_PENDING_ONLY_STALE_SECONDS,
+    )

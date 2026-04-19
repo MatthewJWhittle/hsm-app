@@ -160,7 +160,7 @@ Example fields (names may align with existing collections):
 ### State transitions
 
 - API creates **`pending`** then enqueues.
-- Worker moves **`pending` → `running`** in a **transaction** so **only one** execution “wins”; duplicate deliveries **observe** terminal state and **exit 2xx** without redoing work (or perform no-op completion).
+- Worker claims work in a **transaction**: **`pending` → `running`**, or reclaims **`running`** with a **fresh `updated_at`** when the lease is **stale** (e.g. process died after claim and Cloud Tasks retries). Staleness uses **`WORKER_HTTP_DEADLINE_SECONDS`** (aligned with the worker Cloud Run timeout) plus **`WORKER_STALE_RUNNING_GRACE_SECONDS`**. While **`running`** with a **fresh** lease, duplicate deliveries **exit 2xx** without redoing work; terminal **`succeeded` / `failed`** ditto.
 - Worker sets **`succeeded`** or **`failed`** once, with consistent artifact pointers.
 
 ---
@@ -183,7 +183,7 @@ Interactive routes (e.g. map **point inspect**) remain **synchronous** unless pr
 | **Worker Cloud Run request timeout** | Up to **1 hour** for services, but Tasks **waits at most 30 minutes** per HTTP attempt — **effective ceiling** for a single task delivery is **30 minutes** unless the pattern changes. |
 | **Longer work** | If a single unit of work can exceed that, use **Cloud Run jobs**, **chunked tasks**, or **multi-stage** jobs ([Cloud Run — executing asynchronous tasks](https://cloud.google.com/run/docs/triggering/using-tasks)). |
 
-**Implementation rule:** Set **`dispatchDeadline`** slightly **above** the worker’s **Cloud Run request timeout** only within the allowed interval; align both so a slow handler is not cut off by Tasks before Run times out (or vice versa).
+**Implementation rule:** Set **`dispatch_deadline`** from **`WORKER_HTTP_DEADLINE_SECONDS`** (same value Terraform uses for the worker Cloud Run request timeout, capped at **1800s**, Cloud Tasks’ per-attempt maximum). The worker uses that value plus **`WORKER_STALE_RUNNING_GRACE_SECONDS`** to detect **stale** `running` leases after crashes so retries can resume work.
 
 ---
 
@@ -221,6 +221,7 @@ Interactive routes (e.g. map **point inspect**) remain **synchronous** unless pr
 ### 10.1 Docker Compose (local)
 
 - Add a **`worker`** service (same image/build as backend, separate port, worker FastAPI app), shared **`./data`**, same **Firestore + Auth emulator** env as API where applicable.
+- **Security:** the local bypass POSTs to the worker **without OIDC**. Keep the worker port **internal** to Compose (or trusted networks) only; do not expose it publicly without an additional guard.
 
 ### 10.2 Two dispatch modes — **one code path in routers**
 
@@ -249,7 +250,7 @@ Interactive routes (e.g. map **point inspect**) remain **synchronous** unless pr
 The following are **explicit requirements**, not optional hardening:
 
 1. **Worker authorization:** OIDC alone is insufficient. Worker **loads `job_id` from Firestore** and **re-validates** that the job is allowed to run (status, kind, ownership/admin).
-2. **Transactional claim:** **`pending` → `running`** must be **atomic** so duplicate Tasks deliveries do not double-process.
+2. **Transactional claim:** **`pending` → `running`** (and **stale `running`** lease refresh) must be **atomic** so duplicate Tasks deliveries do not double-process active work.
 3. **Idempotent completion:** Retries must not **corrupt** artifacts or flip terminal state incorrectly.
 4. **Job reads:** **`GET /jobs/{id}`** must **authorize** on every request; use **unguessable** job ids.
 5. **Firestore:** Job writes from clients **denied**; server SDK only for job collection (MVP).
