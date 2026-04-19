@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from hsm_core.job_error_codes import JobErrorCode
 
 from backend_api.schemas_upload import UploadSession
 from tests.helpers import mock_firestore_client_for_documents
@@ -55,6 +56,7 @@ def admin_client_proj():
             clear=False,
         ),
         patch("backend_api.catalog_service.firestore.Client", return_value=mock_client),
+        patch("backend_api.deps.firestore_dep.firestore.Client", return_value=mock_client),
         patch(
             "backend_api.auth_deps.auth.verify_id_token",
             return_value=claims,
@@ -173,7 +175,7 @@ def test_patch_environmental_band_definition_labels_empty_body_422(admin_client_
 def test_post_explainability_background_sample_ok(admin_client_proj):
     with (
         patch("backend_api.routers.projects.write_job") as mock_job,
-        patch("backend_api.routers.projects.firestore.Client", return_value=MagicMock()),
+        patch("backend_api.deps.firestore_dep.firestore.Client", return_value=MagicMock()),
         patch(
             "backend_api.routers.projects.schedule_background_http_task"
         ) as mock_sched,
@@ -204,8 +206,8 @@ def test_post_explainability_background_sample_enqueue_failure_marks_job_failed(
 
     with (
         patch("backend_api.routers.projects.write_job", side_effect=_capture_write),
-        patch("backend_api.routers.projects.update_job_status") as mock_update,
-        patch("backend_api.routers.projects.firestore.Client", return_value=MagicMock()),
+        patch("backend_api.routers.projects.fail_job") as mock_fail,
+        patch("backend_api.deps.firestore_dep.firestore.Client", return_value=MagicMock()),
         patch(
             "backend_api.routers.projects.schedule_background_http_task",
             side_effect=RuntimeError("cloud tasks unavailable"),
@@ -221,12 +223,11 @@ def test_post_explainability_background_sample_enqueue_failure_marks_job_failed(
     detail = r.json()["detail"]
     assert detail["code"] == "ENQUEUE_FAILED"
     assert detail["context"]["job_id"] == job_doc.job_id
-    mock_update.assert_called_once()
-    assert mock_update.call_args[0][1] == job_doc.job_id
-    kw = mock_update.call_args[1]
-    assert kw["status"] == "failed"
-    assert kw["error_code"] == "ENQUEUE_FAILED"
-    assert "cloud tasks unavailable" in (kw["error_message"] or "")
+    mock_fail.assert_called_once()
+    assert mock_fail.call_args[0][1] == job_doc.job_id
+    kw = mock_fail.call_args[1]
+    assert kw["code"] == JobErrorCode.ENQUEUE_FAILED
+    assert "cloud tasks unavailable" in (kw["message"] or "")
 
 
 def test_post_explainability_background_sample_unknown_project_404(admin_client_proj):
@@ -242,7 +243,7 @@ def test_post_explainability_background_sample_unknown_project_404(admin_client_
 def test_post_explainability_background_sample_default_rows(admin_client_proj):
     with (
         patch("backend_api.routers.projects.write_job") as mock_job,
-        patch("backend_api.routers.projects.firestore.Client", return_value=MagicMock()),
+        patch("backend_api.deps.firestore_dep.firestore.Client", return_value=MagicMock()),
         patch("backend_api.routers.projects.schedule_background_http_task"),
     ):
         c = admin_client_proj

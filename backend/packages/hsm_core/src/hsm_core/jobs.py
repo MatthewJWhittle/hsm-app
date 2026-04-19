@@ -13,6 +13,8 @@ from typing import Any, Literal
 from google.cloud import firestore
 from pydantic import BaseModel, Field
 
+from hsm_core.job_error_codes import JobErrorCode, job_error_code_str
+
 JOBS_COLLECTION_ID = "jobs"
 
 JobStatus = Literal["pending", "running", "succeeded", "failed"]
@@ -32,6 +34,8 @@ class JobDocument(BaseModel):
     error_message: str | None = None
     # Snapshot for explainability_background_sample
     sample_rows: int | None = None
+    # Kind-specific parameters (prefer this for new fields; legacy top-level keys stay for compat)
+    params: dict[str, Any] | None = None
 
 
 def _now_iso() -> str:
@@ -50,6 +54,9 @@ def create_job_document(
     sample_rows: int | None = None,
 ) -> JobDocument:
     now = _now_iso()
+    params: dict[str, Any] | None = (
+        {"sample_rows": sample_rows} if sample_rows is not None else None
+    )
     return JobDocument(
         job_id=new_job_id(),
         status="pending",
@@ -59,7 +66,19 @@ def create_job_document(
         created_at=now,
         updated_at=now,
         sample_rows=sample_rows,
+        params=params,
     )
+
+
+def explainability_sample_rows_for_job(job: JobDocument, *, settings_default: int) -> int:
+    """Resolve row count for explainability sampling (``params`` then legacy ``sample_rows``)."""
+    if job.params:
+        raw = job.params.get("sample_rows")
+        if isinstance(raw, int):
+            return raw
+    if job.sample_rows is not None:
+        return job.sample_rows
+    return settings_default
 
 
 def job_to_firestore(doc: JobDocument) -> dict[str, Any]:
@@ -120,20 +139,21 @@ def try_abandon_stale_pending_job(
         if data.get("status") != "pending":
             return job_from_firestore(data, job.job_id)
         now = _now_iso()
+        _pending_abandon_msg = (
+            "job remained pending longer than the configured maximum window"
+        )
         transaction.update(
             doc_ref,
             {
                 "status": "failed",
-                "error_code": "NEVER_DISPATCHED",
-                "error_message": "job remained pending longer than the configured maximum window",
+                "error_code": JobErrorCode.NEVER_DISPATCHED,
+                "error_message": _pending_abandon_msg,
                 "updated_at": now,
             },
         )
         data["status"] = "failed"
-        data["error_code"] = "NEVER_DISPATCHED"
-        data["error_message"] = (
-            "job remained pending longer than the configured maximum window"
-        )
+        data["error_code"] = JobErrorCode.NEVER_DISPATCHED
+        data["error_message"] = _pending_abandon_msg
         data["updated_at"] = now
         return job_from_firestore(data, job.job_id)
 
@@ -197,8 +217,18 @@ def update_job_status(
     ref.update(payload)
 
 
-# Running jobs are never reclaimed through this helper (only pending -> running).
-_PENDING_ONLY_STALE_SECONDS = 10**9
+def fail_job(
+    client: firestore.Client,
+    job_id: str,
+    *,
+    code: JobErrorCode | str,
+    message: str,
+    max_message_len: int = 2000,
+) -> None:
+    """Set job to ``failed`` with a truncated, user-safe message."""
+    c = job_error_code_str(code)
+    msg = (message.strip() or c)[:max_message_len]
+    update_job_status(client, job_id, status="failed", error_code=c, error_message=msg)
 
 
 def try_claim_job_for_execution(
@@ -256,15 +286,3 @@ def try_claim_job_for_execution(
         return None
 
     return _claim(client.transaction(), ref)
-
-
-def try_claim_pending_job(
-    client: firestore.Client,
-    job_id: str,
-) -> JobDocument | None:
-    """Atomically transition pending -> running. Returns doc if claim won."""
-    return try_claim_job_for_execution(
-        client,
-        job_id,
-        stale_running_after_seconds=_PENDING_ONLY_STALE_SECONDS,
-    )

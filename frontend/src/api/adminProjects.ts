@@ -64,27 +64,43 @@ async function fetchAdminJob(params: { token: string; jobId: string }): Promise<
   return parseAdminJobPoll(raw)
 }
 
-async function pollAdminJobUntilExplainabilityDone(params: {
+/** Poll until the job reaches a terminal state; map success payload to ``T``. */
+export async function pollAdminJobUntilTerminal<T>(params: {
   token: string
   jobId: string
-}): Promise<CatalogProject> {
+  mapSucceeded: (job: AdminJobPollResponse) => T
+  timeoutMessage?: string
+}): Promise<T> {
   const deadline = Date.now() + ADMIN_JOB_MAX_WAIT_MS
   let pollDelay = ADMIN_JOB_POLL_MS
   while (Date.now() < deadline) {
-    const job = await fetchAdminJob(params)
+    const job = await fetchAdminJob({ token: params.token, jobId: params.jobId })
     if (job.status === 'failed') {
       const msg = (job.error_message && job.error_message.trim()) || job.error_code || 'Background job failed'
       throw new Error(msg)
     }
     if (job.status === 'succeeded') {
-      const p = job.project != null ? parseProject(job.project) : null
-      if (p === null) throw new Error('Job finished but project data was missing')
-      return p
+      return params.mapSucceeded(job)
     }
     await sleep(pollDelay)
     pollDelay = Math.min(ADMIN_JOB_POLL_MAX_MS, Math.floor(pollDelay * 1.5))
   }
-  throw new Error('Timed out waiting for explainability background job')
+  throw new Error(params.timeoutMessage ?? 'Timed out waiting for background job')
+}
+
+async function pollAdminJobUntilExplainabilityDone(params: {
+  token: string
+  jobId: string
+}): Promise<CatalogProject> {
+  return pollAdminJobUntilTerminal({
+    ...params,
+    mapSucceeded: (job) => {
+      const p = job.project != null ? parseProject(job.project) : null
+      if (p === null) throw new Error('Job finished but project data was missing')
+      return p
+    },
+    timeoutMessage: 'Timed out waiting for explainability background job',
+  })
 }
 
 export async function createProject(params: {

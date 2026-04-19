@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 import httpx
 
+from hsm_core.job_error_codes import JobErrorCode
+
 from backend_api.jobs.dispatch import WORKER_INTERNAL_SECRET_HEADER, _post_local_worker
 from backend_api.settings import Settings
 
@@ -17,7 +19,7 @@ def test_post_local_worker_marks_job_failed_when_http_raises():
     with (
         patch("backend_api.jobs.dispatch.httpx.post") as mock_post,
         patch("backend_api.jobs.dispatch.firestore.Client") as mock_fs,
-        patch("backend_api.jobs.dispatch.update_job_status") as mock_update,
+        patch("backend_api.jobs.dispatch.fail_job") as mock_fail,
     ):
         mock_post.side_effect = httpx.ConnectError("connection refused")
         mock_fs.return_value = object()
@@ -26,10 +28,10 @@ def test_post_local_worker_marks_job_failed_when_http_raises():
             "http://worker/run",
             {"job_id": "jid-1", "kind": "explainability_background_sample"},
         )
-    mock_update.assert_called_once()
-    assert mock_update.call_args[0][1] == "jid-1"
-    assert mock_update.call_args[1]["status"] == "failed"
-    assert mock_update.call_args[1]["error_code"] == "LOCAL_WORKER_DISPATCH_FAILED"
+    mock_fail.assert_called_once()
+    assert mock_fail.call_args[0][1] == "jid-1"
+    assert mock_fail.call_args[1]["code"] == JobErrorCode.LOCAL_WORKER_DISPATCH_FAILED
+    assert "connection refused" in (mock_fail.call_args[1]["message"] or "")
 
 
 def test_post_local_worker_sends_secret_and_read_timeout():

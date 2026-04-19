@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import secrets
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
@@ -19,11 +20,19 @@ from hsm_core.env_background_sample import (
     sanitize_exception_for_client,
     write_project_explainability_background_parquet,
 )
-from hsm_core.env_cog_paths import (
-    environmental_cog_readable_for_sampling,
-    resolve_env_cog_path_from_parts,
+from hsm_core.explainability_job_preflight import (
+    ExplainabilityJobPreflightError,
+    validate_catalog_project_for_explainability_sample,
 )
-from hsm_core.jobs import JobDocument, get_job, try_claim_job_for_execution, update_job_status
+from hsm_core.job_error_codes import JobErrorCode
+from hsm_core.jobs import (
+    JobDocument,
+    explainability_sample_rows_for_job,
+    fail_job,
+    get_job,
+    try_claim_job_for_execution,
+    update_job_status,
+)
 from hsm_core.schemas_project import CatalogProject
 from hsm_core.settings import Settings
 from hsm_core.storage import EXPLAINABILITY_BACKGROUND_FILENAME, build_object_storage
@@ -66,70 +75,36 @@ def _run_explainability_after_claim(
     job_id = job.job_id
     project_id = job.project_id
     if not project_id:
-        update_job_status(
+        fail_job(
             client,
             job_id,
-            status="failed",
-            error_code="MISSING_PROJECT",
-            error_message="job has no project_id",
+            code=JobErrorCode.MISSING_PROJECT,
+            message="job has no project_id",
         )
         return
 
     project = _load_project(client, project_id)
     if project is None:
-        update_job_status(
+        fail_job(
             client,
             job_id,
-            status="failed",
-            error_code="PROJECT_NOT_FOUND",
-            error_message="project not found in Firestore",
+            code=JobErrorCode.PROJECT_NOT_FOUND,
+            message="project not found in Firestore",
         )
+        return
+
+    try:
+        validate_catalog_project_for_explainability_sample(project)
+    except ExplainabilityJobPreflightError as e:
+        fail_job(client, job_id, code=e.code, message=e.message)
         return
 
     artifact_root = project.driver_artifact_root
     cog_path = project.driver_cog_path
     band_defs = project.environmental_band_definitions
-
-    if not artifact_root or not cog_path:
-        update_job_status(
-            client,
-            job_id,
-            status="failed",
-            error_code="ENV_COG_REQUIRED",
-            error_message="project has no environmental COG",
-        )
-        return
-    if not band_defs:
-        update_job_status(
-            client,
-            job_id,
-            status="failed",
-            error_code="BAND_DEFINITIONS_MISSING",
-            error_message="project has no environmental band definitions",
-        )
-        return
-
-    abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
-    if not abs_path:
-        update_job_status(
-            client,
-            job_id,
-            status="failed",
-            error_code="ENV_COG_PATH_INVALID",
-            error_message="cannot resolve environmental COG path",
-        )
-        return
-    if not environmental_cog_readable_for_sampling(abs_path):
-        update_job_status(
-            client,
-            job_id,
-            status="failed",
-            error_code="ENV_COG_NOT_READABLE",
-            error_message="environmental COG not readable",
-        )
-        return
-
-    n_samples = job.sample_rows if job.sample_rows is not None else settings.env_background_sample_rows
+    n_samples = explainability_sample_rows_for_job(
+        job, settings_default=settings.env_background_sample_rows
+    )
     storage = build_object_storage(settings)
 
     try:
@@ -144,12 +119,11 @@ def _run_explainability_after_claim(
         )
     except Exception as e:
         logger.exception("explainability_background_failed job_id=%s", job_id)
-        update_job_status(
+        fail_job(
             client,
             job_id,
-            status="failed",
-            error_code="EXPLAINABILITY_BACKGROUND_FAILED",
-            error_message=sanitize_exception_for_client(e),
+            code=JobErrorCode.EXPLAINABILITY_BACKGROUND_FAILED,
+            message=sanitize_exception_for_client(e),
         )
         return
 
@@ -166,17 +140,23 @@ def _run_explainability_after_claim(
         upsert_project(settings, updated)
     except Exception as e:
         logger.exception("catalog_save_failed job_id=%s", job_id)
-        update_job_status(
+        fail_job(
             client,
             job_id,
-            status="failed",
-            error_code="CATALOG_SAVE_FAILED",
-            error_message=sanitize_exception_for_client(e),
+            code=JobErrorCode.CATALOG_SAVE_FAILED,
+            message=sanitize_exception_for_client(e),
         )
         return
 
     update_job_status(client, job_id, status="succeeded")
     logger.info("worker_job_ok job_id=%s project_id=%s", job_id, project_id)
+
+
+WorkerJobHandler = Callable[[Settings, firestore.Client, JobDocument], None]
+
+JOB_HANDLERS: dict[str, WorkerJobHandler] = {
+    "explainability_background_sample": _run_explainability_after_claim,
+}
 
 
 def _dispatch_after_claim(settings: Settings, job_id: str, body_kind: str | None) -> None:
@@ -209,17 +189,16 @@ def _dispatch_after_claim(settings: Settings, job_id: str, body_kind: str | None
         )
 
     kind = claimed.kind
-    if kind == "explainability_background_sample":
-        _run_explainability_after_claim(settings, client, claimed)
+    handler = JOB_HANDLERS.get(kind)
+    if handler is None:
+        fail_job(
+            client,
+            job_id,
+            code=JobErrorCode.UNKNOWN_KIND,
+            message=f"unsupported job kind {kind!r}",
+        )
         return
-
-    update_job_status(
-        client,
-        job_id,
-        status="failed",
-        error_code="UNKNOWN_KIND",
-        error_message=f"unsupported job kind {kind!r}",
-    )
+    handler(settings, client, claimed)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

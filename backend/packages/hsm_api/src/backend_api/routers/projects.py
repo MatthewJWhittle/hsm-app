@@ -33,6 +33,7 @@ from backend_api.catalog_write import upsert_project
 from backend_api.api_errors import validation_error
 from backend_api.cog_validation import CogValidationError
 from backend_api.deps.catalog import get_object_storage, require_catalog_ready
+from backend_api.deps.firestore_dep import get_firestore_client
 from backend_api.env_background_sample import (
     resolve_env_cog_uri_for_sampling,
     sanitize_exception_for_client,
@@ -81,8 +82,12 @@ from backend_api.upload_session_ingest import (
     upload_session_gcs_uri,
     write_upload_file_to_tempfile,
 )
-from hsm_core.env_cog_paths import environmental_cog_readable_for_sampling
-from hsm_core.jobs import create_job_document, update_job_status, write_job
+from hsm_core.explainability_job_preflight import (
+    ExplainabilityJobPreflightError,
+    validate_catalog_project_for_explainability_sample,
+)
+from hsm_core.job_error_codes import JobErrorCode
+from hsm_core.jobs import create_job_document, fail_job, write_job
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -344,6 +349,7 @@ async def patch_environmental_band_definition_labels(
 async def post_explainability_background_sample(
     background_tasks: BackgroundTasks,
     settings: Annotated[Settings, Depends(get_settings)],
+    fs_client: Annotated[firestore.Client, Depends(get_firestore_client)],
     _claims: Annotated[dict, Depends(require_admin_claims)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
     project_id: str,
@@ -364,32 +370,10 @@ async def post_explainability_background_sample(
     if existing is None:
         raise HTTPException(status_code=404, detail="project not found")
 
-    artifact_root = existing.driver_artifact_root
-    cog_path = existing.driver_cog_path
-    band_defs = existing.environmental_band_definitions
-
-    if not artifact_root or not cog_path:
-        raise _proj_422(
-            "ENV_COG_REQUIRED",
-            "project has no environmental COG; upload one first",
-        )
-    if not band_defs:
-        raise _proj_422(
-            "BAND_DEFINITIONS_MISSING",
-            "project has no environmental band definitions; save band names first",
-        )
-
-    abs_path = resolve_env_cog_path_from_parts(artifact_root, cog_path)
-    if not abs_path:
-        raise _proj_422(
-            "ENV_COG_PATH_INVALID",
-            "cannot resolve environmental COG path",
-        )
-    if not environmental_cog_readable_for_sampling(abs_path):
-        raise _proj_422(
-            "ENV_COG_NOT_ON_DISK",
-            "environmental COG not found on server",
-        )
+    try:
+        validate_catalog_project_for_explainability_sample(existing)
+    except ExplainabilityJobPreflightError as e:
+        raise _proj_422(e.code, e.message) from e
 
     n_samples = (
         body.sample_rows
@@ -405,8 +389,7 @@ async def post_explainability_background_sample(
     )
 
     def _persist_job() -> None:
-        client = firestore.Client(project=settings.google_cloud_project)
-        write_job(client, job)
+        write_job(fs_client, job)
 
     await run_in_threadpool(_persist_job)
     try:
@@ -419,13 +402,11 @@ async def post_explainability_background_sample(
         err_text = (str(exc).strip() or type(exc).__name__)[:2000]
 
         def _mark_enqueue_failed() -> None:
-            client = firestore.Client(project=settings.google_cloud_project)
-            update_job_status(
-                client,
+            fail_job(
+                fs_client,
                 job.job_id,
-                status="failed",
-                error_code="ENQUEUE_FAILED",
-                error_message=err_text,
+                code=JobErrorCode.ENQUEUE_FAILED,
+                message=err_text,
             )
 
         try:
