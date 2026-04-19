@@ -5,18 +5,18 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Protocol
+from typing import Protocol
 
 # Firestore emulator often accepts connections a few seconds after the process starts.
 _FIRESTORE_EMULATOR_READ_RETRIES = 15
 _FIRESTORE_EMULATOR_READ_DELAY_SEC = 0.5
 
 from google.cloud import firestore
-from google.cloud.firestore_v1 import DocumentSnapshot
 from pydantic import ValidationError
 
 from backend_api.schemas import Model
 from hsm_core.catalog_collections import MODELS_COLLECTION_ID, PROJECTS_COLLECTION_ID
+from hsm_core.firestore_io import snapshot_to_document_dict
 from hsm_core.schemas_project import CatalogProject
 from hsm_core.settings import Settings
 
@@ -93,7 +93,7 @@ class FirestoreCatalogService:
                 projects = []
                 for doc in proj_coll.stream():
                     try:
-                        payload = _snapshot_to_model_dict(doc)
+                        payload = snapshot_to_document_dict(doc)
                         projects.append(CatalogProject.model_validate(payload))
                     except ValidationError:
                         logger.exception(
@@ -108,7 +108,7 @@ class FirestoreCatalogService:
                         return
                 for doc in coll.stream():
                     try:
-                        payload = _snapshot_to_model_dict(doc)
+                        payload = snapshot_to_document_dict(doc)
                         models.append(Model.model_validate(payload))
                     except ValidationError:
                         logger.exception(
@@ -157,31 +157,6 @@ class FirestoreCatalogService:
 
     def get_project(self, project_id: str) -> CatalogProject | None:
         return self._projects_by_id.get(project_id)
-
-
-def _snapshot_to_model_dict(doc: DocumentSnapshot) -> dict[str, Any]:
-    """Merge Firestore document data with document id (Model.id)."""
-    data = doc.to_dict()
-    if not data:
-        payload: dict[str, Any] = {"id": doc.id}
-    else:
-        payload = {k: _sanitize_firestore_value(v) for k, v in data.items()}
-        payload["id"] = doc.id
-    return payload
-
-
-def _sanitize_firestore_value(value: Any) -> Any:
-    """Avoid passing Firestore-only types into Pydantic where possible."""
-    if hasattr(value, "isoformat") and callable(value.isoformat):
-        try:
-            return value.isoformat()
-        except (TypeError, ValueError):
-            return str(value)
-    if isinstance(value, dict):
-        return {k: _sanitize_firestore_value(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_sanitize_firestore_value(v) for v in value]
-    return value
 
 
 def build_catalog_service(settings: Settings) -> CatalogService:

@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from hsm_core.catalog_collections import PROJECTS_COLLECTION_ID
 from hsm_core.catalog_write import upsert_project
+from hsm_core.firestore_io import snapshot_to_document_dict
 from hsm_core.env_background_sample import (
     sanitize_exception_for_client,
     write_project_explainability_background_parquet,
@@ -35,7 +36,7 @@ def _load_project(client: firestore.Client, project_id: str) -> CatalogProject |
     snap = client.collection(PROJECTS_COLLECTION_ID).document(project_id).get()
     if not snap.exists:
         return None
-    return CatalogProject.model_validate(snap.to_dict())
+    return CatalogProject.model_validate(snapshot_to_document_dict(snap))
 
 
 def _environmental_cog_readable_for_sampling(abs_path: str) -> bool:

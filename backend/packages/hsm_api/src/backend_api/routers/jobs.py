@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from google.cloud import firestore
+from pydantic import ValidationError
 
 from backend_api.auth_deps import require_admin_claims
 from backend_api.deps.settings_dep import get_settings
 from backend_api.schemas_jobs import JobPollResponse
 from hsm_core.catalog_collections import PROJECTS_COLLECTION_ID
+from hsm_core.firestore_io import snapshot_to_document_dict
 from hsm_core.jobs import get_job
 from hsm_core.schemas_project import CatalogProject
 from hsm_core.settings import Settings
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 def _load_project_from_firestore(settings: Settings, project_id: str) -> CatalogProject | None:
@@ -23,7 +28,11 @@ def _load_project_from_firestore(settings: Settings, project_id: str) -> Catalog
     snap = client.collection(PROJECTS_COLLECTION_ID).document(project_id).get()
     if not snap.exists:
         return None
-    return CatalogProject.model_validate(snap.to_dict())
+    try:
+        return CatalogProject.model_validate(snapshot_to_document_dict(snap))
+    except ValidationError:
+        logger.exception("invalid CatalogProject in Firestore for job poll project_id=%s", project_id)
+        return None
 
 
 @router.get(
