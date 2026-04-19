@@ -24,7 +24,7 @@ This document is the canonical spec for moving **infrequent, CPU/memory/time-hea
 - **One container image**, **four Cloud Run deploy targets** in GCP: **`api-staging`**, **`api-prod`**, **`worker-staging`**, **`worker-prod`** (names align with existing API naming; exact IDs follow Terraform/vars). Same image; **worker** services use a **worker** entrypoint (command/args).
 - **Strict environment separation:** the **staging** API enqueues only to the **staging** queue and **staging** worker URL; **prod** API only to **prod** queue and **prod** worker URL. **No** shared worker across envs.
 - **Staging worker** may use **lower** `cpu`, `memory`, `timeout`, and **`max_instances`** than **prod** worker; queue **rate limits** may also be looser or tighter per env as needed.
-- **Shared Python code** under `backend_api` (services for raster, Parquet, ingest, etc.).
+- **Backend layout:** **three Python packages** — **shared library**, **API app**, **worker app** — under `backend/` with **one** lockfile and **one** container image (see §4.4). *(Today’s monolithic `backend_api` may be split incrementally.)*
 - **Regional** co-location: each env’s **queue** and **worker** (and API) in the same region (e.g. **`us-central1`**).
 
 ### Non-goals (MVP)
@@ -101,6 +101,30 @@ Browser → Firebase Hosting (/api) → API (per env: api-staging | api-prod, li
 - **Queue** per environment (e.g. `background-staging`, `background-prod`).
 - **Task:** HTTP **POST**, **OIDC** token; payload per §4.2.
 - **Queue configuration:** [retry](https://cloud.google.com/tasks/docs/configuring-queues#retry) and [rate limits](https://cloud.google.com/tasks/docs/configuring-queues#rate) to protect worker, GCS, and Firestore.
+
+### 4.4 Backend code layout (Python)
+
+**Goal:** Separate **API**, **worker**, and **shared** code so boundaries are obvious, without multiple repos or multiple Dockerfiles.
+
+**Import rule:** The **shared** package **must not** import the API or worker. **API** and **worker** import **shared** only. Enforce with structure and review (Python does not enforce this at runtime).
+
+**Packaging — preferred (`uv` native):** A **[uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)** under `backend/`: a workspace **root** plus **members** (e.g. `packages/hsm_core`, `packages/hsm_api`, `packages/hsm_worker` — **exact names TBD**), each with its own `pyproject.toml`, and **one `uv.lock`** at the workspace root. Dependencies between members use `workspace = true` in `[tool.uv.sources]`. This matches Astral’s documented pattern (FastAPI application + libraries in one repository).
+
+**Packaging — alternative:** A **single** `pyproject.toml` with **multiple** import packages (e.g. Hatch `[tool.hatch.build.targets.wheel] packages = [...]`) and one lockfile — fewer files; slightly less aligned with uv’s first-class workspace workflow.
+
+| Package (example name) | Contents |
+|------------------------|----------|
+| **`hsm_core`** (shared) | Domain logic: storage, raster/Parquet/ingest **services**, shared schemas/types, job payload models. **No** public API routers. |
+| **`hsm_api`** | FastAPI **public** app: `main`, lifespan, routers, deps, **job dispatcher** implementation (§10.2). |
+| **`hsm_worker`** | Small FastAPI app: HTTP handler(s) for Cloud Tasks; calls into **`hsm_core`**. |
+
+**Docker / Cloud Run:** **One image** from `backend/`; `uv sync` installs all members needed at runtime. Per service, override **[container `command` / `args`](https://cloud.google.com/run/docs/configuring/services/containers)** — e.g. `uvicorn hsm_api.main:app` vs `uvicorn hsm_worker.main:app` (exact module paths follow chosen package names).
+
+**When API and worker share the same heavy deps** (rasterio, ML today), **one** resolved dependency tree is appropriate. If the API later must **omit** large stacks, consider **`[project.optional-dependencies]`** (extras) for a slimmer API install, or **split images** — uv notes **workspaces are a poor fit** when members have **fundamentally conflicting** requirements; then **path dependencies** or separate resolution may be needed ([When (not) to use workspaces](https://docs.astral.sh/uv/concepts/projects/workspaces/)).
+
+**Local dev:** Same Compose **bind mount** over `backend/` and `uv sync`; **two** services differ only by **command** (API vs worker) and port.
+
+**Migration:** Evolve from the current single **`backend_api`** tree in **incremental** PRs (introduce shared package, add worker app, narrow API) — exact steps are implementation, not blocking this spec.
 
 ---
 
@@ -241,16 +265,23 @@ The following are **explicit requirements**, not optional hardening:
 ## 13. Rollout phases (suggested)
 
 1. Infra: **two** queues, **two** worker services, IAM, env vars, deploy pipeline; production guardrails for task bypass.
-2. Worker app + **one** `kind` end-to-end (enqueue, process, GCS write, Firestore terminal state, authorized job GET).
+2. Backend: align repo with §4.4 (**uv** workspace or single multi-package project); worker app + **one** `kind` end-to-end (enqueue, process, GCS write, Firestore terminal state, authorized job GET).
 3. Frontend: poll job status for that flow.
 4. Add further `kind` values reusing the same envelope, state machine, and security checks.
 
 ---
 
-## 14. References (Google Cloud)
+## 14. References
+
+**Google Cloud**
 
 - [Executing asynchronous tasks (Cloud Run + Cloud Tasks)](https://cloud.google.com/run/docs/triggering/using-tasks)
 - [Authenticating service-to-service (Cloud Run)](https://cloud.google.com/run/docs/authenticating/service-to-service)
+- [Configure containers for services (command / args)](https://cloud.google.com/run/docs/configuring/services/containers)
 - [Create HTTP target tasks (authentication)](https://cloud.google.com/tasks/docs/creating-http-target-tasks)
 - [Configure Cloud Tasks queues](https://cloud.google.com/tasks/docs/configuring-queues)
 - [Task resource (`dispatchDeadline`)](https://cloud.google.com/tasks/docs/reference/rest/v2/projects.locations.queues.tasks#Task)
+
+**Python / tooling**
+
+- [Using workspaces | uv](https://docs.astral.sh/uv/concepts/projects/workspaces/)
