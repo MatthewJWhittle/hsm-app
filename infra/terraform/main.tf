@@ -2,12 +2,16 @@ locals {
   required_services = toset([
     "artifactregistry.googleapis.com",
     "billingbudgets.googleapis.com",
+    "cloudtasks.googleapis.com",
     "firestore.googleapis.com",
     "iamcredentials.googleapis.com",
     "run.googleapis.com",
     "secretmanager.googleapis.com",
     "storage.googleapis.com",
   ])
+
+  # Cloud Tasks service agent (needs serviceAccountUser on OIDC SAs for task HTTP auth).
+  cloudtasks_sa_email = "service-${data.google_project.current.number}@gcp-sa-cloudtasks.iam.gserviceaccount.com"
 
   common_env = {
     GOOGLE_CLOUD_PROJECT = var.project_id
@@ -204,6 +208,363 @@ resource "google_secret_manager_secret_iam_member" "api_prod_secret_accessor" {
   member    = "serviceAccount:${google_service_account.api_prod.email}"
 }
 
+# --- Background worker (Cloud Tasks targets) ---------------------------------
+
+resource "google_service_account" "worker_staging" {
+  project      = var.project_id
+  account_id   = "hsm-worker-staging"
+  display_name = "HSM background worker staging"
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_service_account" "worker_prod" {
+  project      = var.project_id
+  account_id   = "hsm-worker-prod"
+  display_name = "HSM background worker production"
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_service_account" "tasks_oidc_staging" {
+  project      = var.project_id
+  account_id   = "hsm-tasks-oidc-staging"
+  display_name = "Cloud Tasks OIDC to staging worker"
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_service_account" "tasks_oidc_prod" {
+  project      = var.project_id
+  account_id   = "hsm-tasks-oidc-prod"
+  display_name = "Cloud Tasks OIDC to production worker"
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_project_iam_member" "worker_staging_firestore_user" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.worker_staging.email}"
+}
+
+resource "google_project_iam_member" "worker_prod_firestore_user" {
+  project = var.project_id
+  role    = "roles/datastore.user"
+  member  = "serviceAccount:${google_service_account.worker_prod.email}"
+}
+
+resource "google_storage_bucket_iam_member" "worker_staging_storage_admin" {
+  count  = var.create_gcs_bucket ? 1 : 0
+  bucket = google_storage_bucket.model_artifacts[0].name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.worker_staging.email}"
+}
+
+resource "google_storage_bucket_iam_member" "worker_prod_storage_admin" {
+  count  = var.create_gcs_bucket ? 1 : 0
+  bucket = google_storage_bucket.model_artifacts[0].name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.worker_prod.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "worker_staging_secret_accessor" {
+  project   = var.project_id
+  secret_id = var.firebase_web_api_key_secret_name
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.worker_staging.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "worker_prod_secret_accessor" {
+  project   = var.project_id
+  secret_id = var.firebase_web_api_key_secret_name
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.worker_prod.email}"
+}
+
+resource "google_cloud_tasks_queue" "background_staging" {
+  name     = var.cloud_tasks_queue_staging_id
+  location = var.region
+  project  = var.project_id
+
+  retry_config {
+    max_attempts       = 5
+    max_retry_duration = "3600s"
+    min_backoff        = "10s"
+    max_backoff        = "300s"
+    max_doublings      = 4
+  }
+
+  rate_limits {
+    max_dispatches_per_second = 5
+    max_concurrent_dispatches = 2
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_cloud_tasks_queue" "background_prod" {
+  name     = var.cloud_tasks_queue_prod_id
+  location = var.region
+  project  = var.project_id
+
+  retry_config {
+    max_attempts       = 5
+    max_retry_duration = "3600s"
+    min_backoff        = "10s"
+    max_backoff        = "300s"
+    max_doublings      = 4
+  }
+
+  rate_limits {
+    max_dispatches_per_second = 10
+    max_concurrent_dispatches = 3
+  }
+
+  depends_on = [google_project_service.required]
+}
+
+resource "google_cloud_tasks_queue_iam_member" "api_staging_enqueuer" {
+  project  = var.project_id
+  location = google_cloud_tasks_queue.background_staging.location
+  name     = google_cloud_tasks_queue.background_staging.name
+  role     = "roles/cloudtasks.enqueuer"
+  member   = "serviceAccount:${google_service_account.api_staging.email}"
+}
+
+resource "google_cloud_tasks_queue_iam_member" "api_prod_enqueuer" {
+  project  = var.project_id
+  location = google_cloud_tasks_queue.background_prod.location
+  name     = google_cloud_tasks_queue.background_prod.name
+  role     = "roles/cloudtasks.enqueuer"
+  member   = "serviceAccount:${google_service_account.api_prod.email}"
+}
+
+resource "google_service_account_iam_member" "tasks_oidc_staging_actas" {
+  service_account_id = google_service_account.tasks_oidc_staging.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${local.cloudtasks_sa_email}"
+}
+
+resource "google_service_account_iam_member" "tasks_oidc_prod_actas" {
+  service_account_id = google_service_account.tasks_oidc_prod.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${local.cloudtasks_sa_email}"
+}
+
+resource "google_cloud_run_v2_service" "worker_staging" {
+  name     = var.worker_service_name_staging
+  location = var.region
+  ingress  = var.api_ingress
+
+  template {
+    service_account = google_service_account.worker_staging.email
+    timeout         = "${var.worker_timeout_seconds_staging}s"
+
+    scaling {
+      min_instance_count = 0
+      max_instance_count = var.worker_max_instances_staging
+    }
+
+    containers {
+      image = var.api_container_image_staging
+
+      ports {
+        container_port = var.worker_container_port
+      }
+
+      command = ["uv"]
+      args = [
+        "run", "uvicorn", "hsm_worker.main:app",
+        "--host", "0.0.0.0",
+        "--port", format("%d", var.worker_container_port),
+      ]
+
+      resources {
+        limits = {
+          cpu    = var.worker_cpu_staging
+          memory = var.worker_memory_staging
+        }
+      }
+
+      env {
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = local.common_env.GOOGLE_CLOUD_PROJECT
+      }
+      env {
+        name  = "STORAGE_BACKEND"
+        value = local.common_env.STORAGE_BACKEND
+      }
+      env {
+        name  = "GCS_BUCKET"
+        value = local.gcs_bucket_name
+      }
+      env {
+        name  = "GCS_OBJECT_PREFIX"
+        value = local.common_env.GCS_OBJECT_PREFIX
+      }
+      env {
+        name  = "GCS_SIGNED_URL_SERVICE_ACCOUNT"
+        value = google_service_account.worker_staging.email
+      }
+      env {
+        name  = "OPENAPI_ENABLED"
+        value = "false"
+      }
+      env {
+        name  = "APP_ENV"
+        value = "staging"
+      }
+      env {
+        name = "FIREBASE_WEB_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = var.firebase_web_api_key_secret_name
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name  = "FIREBASE_PROJECT_ID"
+        value = var.firebase_project_id
+      }
+    }
+  }
+
+  traffic {
+    percent = 100
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+  }
+
+  lifecycle {
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].containers[0].image,
+    ]
+  }
+
+  depends_on = [
+    google_project_service.required,
+    google_project_iam_member.worker_staging_firestore_user,
+    google_secret_manager_secret_iam_member.worker_staging_secret_accessor,
+  ]
+}
+
+resource "google_cloud_run_v2_service" "worker_prod" {
+  name     = var.worker_service_name_prod
+  location = var.region
+  ingress  = var.api_ingress
+
+  template {
+    service_account = google_service_account.worker_prod.email
+    timeout         = "${var.worker_timeout_seconds_prod}s"
+
+    scaling {
+      min_instance_count = 0
+      max_instance_count = var.worker_max_instances_prod
+    }
+
+    containers {
+      image = var.api_container_image_prod
+
+      ports {
+        container_port = var.worker_container_port
+      }
+
+      command = ["uv"]
+      args = [
+        "run", "uvicorn", "hsm_worker.main:app",
+        "--host", "0.0.0.0",
+        "--port", format("%d", var.worker_container_port),
+      ]
+
+      resources {
+        limits = {
+          cpu    = var.worker_cpu_prod
+          memory = var.worker_memory_prod
+        }
+      }
+
+      env {
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = local.common_env.GOOGLE_CLOUD_PROJECT
+      }
+      env {
+        name  = "STORAGE_BACKEND"
+        value = local.common_env.STORAGE_BACKEND
+      }
+      env {
+        name  = "GCS_BUCKET"
+        value = local.gcs_bucket_name
+      }
+      env {
+        name  = "GCS_OBJECT_PREFIX"
+        value = local.common_env.GCS_OBJECT_PREFIX
+      }
+      env {
+        name  = "GCS_SIGNED_URL_SERVICE_ACCOUNT"
+        value = google_service_account.worker_prod.email
+      }
+      env {
+        name  = "OPENAPI_ENABLED"
+        value = "false"
+      }
+      env {
+        name  = "APP_ENV"
+        value = "production"
+      }
+      env {
+        name = "FIREBASE_WEB_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = var.firebase_web_api_key_secret_name
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name  = "FIREBASE_PROJECT_ID"
+        value = var.firebase_project_id
+      }
+    }
+  }
+
+  traffic {
+    percent = 100
+    type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
+  }
+
+  lifecycle {
+    ignore_changes = [
+      client,
+      client_version,
+      template[0].containers[0].image,
+    ]
+  }
+
+  depends_on = [
+    google_project_service.required,
+    google_project_iam_member.worker_prod_firestore_user,
+    google_secret_manager_secret_iam_member.worker_prod_secret_accessor,
+  ]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "worker_staging_tasks_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.worker_staging.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.tasks_oidc_staging.email}"
+}
+
+resource "google_cloud_run_v2_service_iam_member" "worker_prod_tasks_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.worker_prod.name
+  role     = "roles/run.invoker"
+  member   = "serviceAccount:${google_service_account.tasks_oidc_prod.email}"
+}
 
 resource "google_cloud_run_v2_service" "api_staging" {
   name     = var.api_service_name_staging
@@ -282,6 +643,30 @@ resource "google_cloud_run_v2_service" "api_staging" {
         name  = "FIREBASE_PROJECT_ID"
         value = var.firebase_project_id
       }
+      env {
+        name  = "USE_CLOUD_TASKS"
+        value = "true"
+      }
+      env {
+        name  = "APP_ENV"
+        value = "staging"
+      }
+      env {
+        name  = "CLOUD_TASKS_QUEUE"
+        value = var.cloud_tasks_queue_staging_id
+      }
+      env {
+        name  = "CLOUD_TASKS_LOCATION"
+        value = var.region
+      }
+      env {
+        name  = "CLOUD_TASKS_OIDC_SERVICE_ACCOUNT"
+        value = google_service_account.tasks_oidc_staging.email
+      }
+      env {
+        name  = "WORKER_TASK_URL"
+        value = "${google_cloud_run_v2_service.worker_staging.uri}/internal/worker/run"
+      }
     }
   }
 
@@ -302,6 +687,7 @@ resource "google_cloud_run_v2_service" "api_staging" {
   depends_on = [
     google_project_service.required,
     google_project_iam_member.api_staging_firestore_user,
+    google_cloud_run_v2_service.worker_staging,
   ]
 }
 
@@ -382,6 +768,30 @@ resource "google_cloud_run_v2_service" "api_prod" {
         name  = "FIREBASE_PROJECT_ID"
         value = var.firebase_project_id
       }
+      env {
+        name  = "USE_CLOUD_TASKS"
+        value = "true"
+      }
+      env {
+        name  = "APP_ENV"
+        value = "production"
+      }
+      env {
+        name  = "CLOUD_TASKS_QUEUE"
+        value = var.cloud_tasks_queue_prod_id
+      }
+      env {
+        name  = "CLOUD_TASKS_LOCATION"
+        value = var.region
+      }
+      env {
+        name  = "CLOUD_TASKS_OIDC_SERVICE_ACCOUNT"
+        value = google_service_account.tasks_oidc_prod.email
+      }
+      env {
+        name  = "WORKER_TASK_URL"
+        value = "${google_cloud_run_v2_service.worker_prod.uri}/internal/worker/run"
+      }
     }
   }
 
@@ -402,6 +812,7 @@ resource "google_cloud_run_v2_service" "api_prod" {
   depends_on = [
     google_project_service.required,
     google_project_iam_member.api_prod_firestore_user,
+    google_cloud_run_v2_service.worker_prod,
   ]
 }
 
