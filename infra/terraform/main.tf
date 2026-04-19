@@ -254,6 +254,7 @@ resource "google_project_iam_member" "worker_prod_firestore_user" {
   member  = "serviceAccount:${google_service_account.worker_prod.email}"
 }
 
+# Bucket-scoped objectAdmin (not roles/storage.admin on the whole project).
 resource "google_storage_bucket_iam_member" "worker_staging_storage_admin" {
   count  = var.create_gcs_bucket ? 1 : 0
   bucket = google_storage_bucket.model_artifacts[0].name
@@ -266,20 +267,6 @@ resource "google_storage_bucket_iam_member" "worker_prod_storage_admin" {
   bucket = google_storage_bucket.model_artifacts[0].name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.worker_prod.email}"
-}
-
-resource "google_secret_manager_secret_iam_member" "worker_staging_secret_accessor" {
-  project   = var.project_id
-  secret_id = var.firebase_web_api_key_secret_name
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.worker_staging.email}"
-}
-
-resource "google_secret_manager_secret_iam_member" "worker_prod_secret_accessor" {
-  project   = var.project_id
-  secret_id = var.firebase_web_api_key_secret_name
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.worker_prod.email}"
 }
 
 resource "google_cloud_tasks_queue" "background_staging" {
@@ -416,15 +403,6 @@ resource "google_cloud_run_v2_service" "worker_staging" {
         value = "staging"
       }
       env {
-        name = "FIREBASE_WEB_API_KEY"
-        value_source {
-          secret_key_ref {
-            secret  = var.firebase_web_api_key_secret_name
-            version = "latest"
-          }
-        }
-      }
-      env {
         name  = "FIREBASE_PROJECT_ID"
         value = var.firebase_project_id
       }
@@ -451,7 +429,6 @@ resource "google_cloud_run_v2_service" "worker_staging" {
   depends_on = [
     google_project_service.required,
     google_project_iam_member.worker_staging_firestore_user,
-    google_secret_manager_secret_iam_member.worker_staging_secret_accessor,
   ]
 }
 
@@ -519,15 +496,6 @@ resource "google_cloud_run_v2_service" "worker_prod" {
         value = "production"
       }
       env {
-        name = "FIREBASE_WEB_API_KEY"
-        value_source {
-          secret_key_ref {
-            secret  = var.firebase_web_api_key_secret_name
-            version = "latest"
-          }
-        }
-      }
-      env {
         name  = "FIREBASE_PROJECT_ID"
         value = var.firebase_project_id
       }
@@ -554,7 +522,6 @@ resource "google_cloud_run_v2_service" "worker_prod" {
   depends_on = [
     google_project_service.required,
     google_project_iam_member.worker_prod_firestore_user,
-    google_secret_manager_secret_iam_member.worker_prod_secret_accessor,
   ]
 }
 

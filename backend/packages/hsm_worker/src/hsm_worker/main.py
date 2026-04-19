@@ -19,8 +19,10 @@ from hsm_core.env_background_sample import (
     sanitize_exception_for_client,
     write_project_explainability_background_parquet,
 )
-from hsm_core.env_cog_paths import resolve_env_cog_path_from_parts
-from hsm_core.firebase_admin_app import init_firebase_admin
+from hsm_core.env_cog_paths import (
+    environmental_cog_readable_for_sampling,
+    resolve_env_cog_path_from_parts,
+)
 from hsm_core.jobs import JobDocument, get_job, try_claim_job_for_execution, update_job_status
 from hsm_core.schemas_project import CatalogProject
 from hsm_core.settings import Settings
@@ -42,14 +44,6 @@ def _load_project(client: firestore.Client, project_id: str) -> CatalogProject |
     if not snap.exists:
         return None
     return CatalogProject.model_validate(snapshot_to_document_dict(snap))
-
-
-def _environmental_cog_readable_for_sampling(abs_path: str) -> bool:
-    if abs_path.startswith("gs://"):
-        return True
-    from pathlib import Path
-
-    return Path(abs_path).is_file()
 
 
 def _verify_worker_internal_secret(settings: Settings, header_value: str | None) -> None:
@@ -125,7 +119,7 @@ def _run_explainability_after_claim(
             error_message="cannot resolve environmental COG path",
         )
         return
-    if not _environmental_cog_readable_for_sampling(abs_path):
+    if not environmental_cog_readable_for_sampling(abs_path):
         update_job_status(
             client,
             job_id,
@@ -234,7 +228,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.settings = settings
-        init_firebase_admin(settings)
         yield
 
     app = FastAPI(

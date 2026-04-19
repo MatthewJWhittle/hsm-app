@@ -1,8 +1,7 @@
 """Firestore-backed background job documents (API + worker).
 
-Writes are performed only from trusted server code. Client-facing
-``firestore.rules`` should be tightened for ``jobs/*`` when convenient
-(GitHub #67 follow-up).
+Writes are performed only from trusted server code. ``firestore.rules`` deny
+client access to ``jobs/*``; API/worker use the Admin SDK.
 """
 
 from __future__ import annotations
@@ -84,6 +83,61 @@ def get_job(client: firestore.Client, job_id: str) -> JobDocument | None:
     if not snap.exists:
         return None
     return job_from_firestore(snap.to_dict() or {}, job_id)
+
+
+def try_abandon_stale_pending_job(
+    client: firestore.Client,
+    job: JobDocument,
+    *,
+    abandon_after_seconds: int | None,
+) -> JobDocument:
+    """If ``pending`` longer than ``abandon_after_seconds``, mark ``failed`` (NEVER_DISPATCHED).
+
+    Uses a transaction so only one writer wins. Disabled when ``abandon_after_seconds`` is
+    None or non-positive.
+    """
+    if not abandon_after_seconds or abandon_after_seconds <= 0:
+        return job
+    if job.status != "pending":
+        return job
+    created = _parse_firestore_datetime(job.created_at)
+    if created is None:
+        return job
+    if (datetime.now(UTC) - created).total_seconds() < abandon_after_seconds:
+        return job
+
+    ref = client.collection(JOBS_COLLECTION_ID).document(job.job_id)
+
+    @firestore.transactional
+    def _abandon(
+        transaction: firestore.Transaction,
+        doc_ref: firestore.DocumentReference,
+    ) -> JobDocument:
+        snap = doc_ref.get(transaction=transaction)
+        if not snap.exists:
+            return job
+        data = snap.to_dict() or {}
+        if data.get("status") != "pending":
+            return job_from_firestore(data, job.job_id)
+        now = _now_iso()
+        transaction.update(
+            doc_ref,
+            {
+                "status": "failed",
+                "error_code": "NEVER_DISPATCHED",
+                "error_message": "job remained pending longer than the configured maximum window",
+                "updated_at": now,
+            },
+        )
+        data["status"] = "failed"
+        data["error_code"] = "NEVER_DISPATCHED"
+        data["error_message"] = (
+            "job remained pending longer than the configured maximum window"
+        )
+        data["updated_at"] = now
+        return job_from_firestore(data, job.job_id)
+
+    return _abandon(client.transaction(), ref)
 
 
 def _parse_firestore_datetime(value: Any) -> datetime | None:

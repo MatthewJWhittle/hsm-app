@@ -259,6 +259,17 @@ class Settings(BaseSettings):
         le=300,
     )
 
+    job_pending_abandon_after_seconds: int = Field(
+        default=86_400,
+        description=(
+            "GET job poll may mark pending jobs older than this (seconds) as failed "
+            "(NEVER_DISPATCHED). Use 0 to disable."
+        ),
+        validation_alias=AliasChoices("JOB_PENDING_ABANDON_AFTER_SECONDS"),
+        ge=0,
+        le=604_800,
+    )
+
     @model_validator(mode="after")
     def _require_cloud_tasks_in_cloud(self) -> Self:
         env = (self.app_env or "local").strip().lower()

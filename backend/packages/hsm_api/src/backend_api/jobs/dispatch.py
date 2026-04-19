@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from functools import lru_cache
 from urllib.parse import urlparse
 
 import httpx
@@ -17,6 +18,11 @@ from hsm_core.settings import Settings
 logger = logging.getLogger(__name__)
 
 WORKER_INTERNAL_SECRET_HEADER = "X-HSM-Worker-Secret"
+
+
+@lru_cache(maxsize=1)
+def _cloud_tasks_client() -> tasks_v2.CloudTasksClient:
+    return tasks_v2.CloudTasksClient()
 
 
 def _oidc_audience(task_url: str) -> str:
@@ -35,7 +41,7 @@ def _enqueue_cloud_task(settings: Settings, body: dict) -> None:
     ):
         raise RuntimeError("Cloud Tasks settings incomplete")
 
-    client = tasks_v2.CloudTasksClient()
+    client = _cloud_tasks_client()
     parent = client.queue_path(
         settings.google_cloud_project,
         settings.cloud_tasks_location,

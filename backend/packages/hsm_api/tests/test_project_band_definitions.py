@@ -64,6 +64,7 @@ def admin_client_proj():
             return_value=mock_storage,
         ),
         patch("backend_api.routers.projects.Path") as mock_path_cls,
+        patch("hsm_core.env_cog_paths.Path") as mock_path_env_cog,
         patch("backend_api.routers.projects.count_bands_in_path", return_value=2),
         patch(
             "backend_api.routers.projects.reload_catalog_threaded",
@@ -71,6 +72,7 @@ def admin_client_proj():
         ),
     ):
         mock_path_cls.return_value.is_file.return_value = True
+        mock_path_env_cog.return_value.is_file.return_value = True
         import backend_api.main as main
 
         importlib.reload(main)

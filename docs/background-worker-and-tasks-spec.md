@@ -155,13 +155,14 @@ Example fields (names may align with existing collections):
 
 ### Firestore rules
 
-- **Client writes** to `jobs/*` should be **denied** for MVP; only **Admin SDK** on API/worker may write. (If rules allow client access, clients could **forge** terminal states.)
+- **Client reads/writes** to `jobs/*` are **denied** in `firestore.rules`; only **Admin SDK** on API/worker may access (rules do not apply to the Admin SDK). Other collections may still use a temporary open policy until tightened.
 
 ### State transitions
 
 - API creates **`pending`** then enqueues.
 - Worker claims work in a **transaction**: **`pending` → `running`**, or reclaims **`running`** with a **fresh `updated_at`** when the lease is **stale** (e.g. process died after claim and Cloud Tasks retries). Staleness is **`WORKER_HTTP_DEADLINE_SECONDS`** (aligned with the worker Cloud Run timeout and Cloud Tasks `dispatch_deadline`) plus optional **`WORKER_STALE_RUNNING_GRACE_SECONDS`** (default **0** so the first retry after a timeout can reclaim; keep grace small). While **`running`** with a **fresh** lease, duplicate deliveries **exit 2xx** without redoing work; terminal **`succeeded` / `failed`** ditto.
 - Worker sets **`succeeded`** or **`failed`** once, with consistent artifact pointers.
+- **Stale `pending`:** admin **GET** job poll may mark jobs stuck in **`pending`** longer than **`JOB_PENDING_ABANDON_AFTER_SECONDS`** (default 24h) as **`failed`** with **`NEVER_DISPATCHED`** (transactional), e.g. if enqueue never succeeded and no worker ran.
 
 ---
 

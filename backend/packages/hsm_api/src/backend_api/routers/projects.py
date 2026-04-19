@@ -26,6 +26,7 @@ from fastapi import (
 from google.cloud import firestore
 from starlette.concurrency import run_in_threadpool
 
+from backend_api.auth_claims import subject_uid_from_claims
 from backend_api.auth_deps import optional_id_token_claims, require_admin_claims
 from backend_api.catalog_service import CatalogService
 from backend_api.catalog_write import upsert_project
@@ -80,6 +81,7 @@ from backend_api.upload_session_ingest import (
     upload_session_gcs_uri,
     write_upload_file_to_tempfile,
 )
+from hsm_core.env_cog_paths import environmental_cog_readable_for_sampling
 from hsm_core.jobs import create_job_document, update_job_status, write_job
 
 router = APIRouter()
@@ -328,13 +330,6 @@ async def patch_environmental_band_definition_labels(
     return project
 
 
-def _environmental_cog_readable_for_sampling(abs_path: str) -> bool:
-    """Local files must exist on disk; ``gs://`` URIs are assumed present after upload."""
-    if abs_path.startswith("gs://"):
-        return True
-    return Path(abs_path).is_file()
-
-
 @router.post(
     "/projects/{project_id}/explainability-background-sample",
     response_model=JobAcceptedResponse,
@@ -390,7 +385,7 @@ async def post_explainability_background_sample(
             "ENV_COG_PATH_INVALID",
             "cannot resolve environmental COG path",
         )
-    if not _environmental_cog_readable_for_sampling(abs_path):
+    if not environmental_cog_readable_for_sampling(abs_path):
         raise _proj_422(
             "ENV_COG_NOT_ON_DISK",
             "environmental COG not found on server",
@@ -402,11 +397,10 @@ async def post_explainability_background_sample(
         else settings.env_background_sample_rows
     )
 
-    uid = str(_claims.get("uid") or _claims.get("sub") or "")
     job = create_job_document(
         kind="explainability_background_sample",
         project_id=project_id,
-        created_by_uid=uid or None,
+        created_by_uid=subject_uid_from_claims(_claims),
         sample_rows=n_samples,
     )
 

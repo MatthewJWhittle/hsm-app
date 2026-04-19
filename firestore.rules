@@ -2,9 +2,19 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      // Starter template: open read/write until the date below. Replace with
-      // production rules before relying on this in a public app.
+    // Client SDK must not read or write job documents; API/worker use Admin SDK (bypasses rules).
+    match /jobs/{jobId} {
+      allow read, write: if false;
+    }
+
+    // Legacy open policy for catalog + uploads (replace with auth-aware rules before production).
+    match /models/{modelId} {
+      allow read, write: if request.time < timestamp.date(2027, 12, 31);
+    }
+    match /projects/{projectId} {
+      allow read, write: if request.time < timestamp.date(2027, 12, 31);
+    }
+    match /upload_sessions/{sessionId} {
       allow read, write: if request.time < timestamp.date(2027, 12, 31);
     }
   }

@@ -36,7 +36,6 @@ services:
       - ./data:/data:rw
     environment:
       - FIRESTORE_EMULATOR_HOST=firebase-emulators:8085
-      - FIREBASE_AUTH_EMULATOR_HOST=firebase-emulators:9099
       - STORAGE_BACKEND=local
       - LOCAL_STORAGE_ROOT=/data
       - APP_ENV=local

@@ -1,17 +1,19 @@
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 
+import { apiBase } from '../utils/apiBase'
+import { readFetchErrorDetail } from './errors'
+import { isRecord } from './jsonGuards'
+import { parseProject } from './projects'
+
 /** Partial label update for PATCH …/environmental-band-definitions/labels (``name`` aliases display label). */
 export type BandLabelPatch = {
   label?: string | null
   description?: string | null
   name?: string | null
 }
-import { apiBase } from '../utils/apiBase'
-import { readFetchErrorDetail } from './errors'
-import { isRecord } from './jsonGuards'
-import { parseProject } from './projects'
 
 const ADMIN_JOB_POLL_MS = 500
+const ADMIN_JOB_POLL_MAX_MS = 8000
 /** Align with cloud worker Cloud Run timeout default (30m / 1800s) plus a small buffer for jitter. */
 const ADMIN_JOB_MAX_WAIT_MS = 32 * 60 * 1000
 
@@ -67,6 +69,7 @@ async function pollAdminJobUntilExplainabilityDone(params: {
   jobId: string
 }): Promise<CatalogProject> {
   const deadline = Date.now() + ADMIN_JOB_MAX_WAIT_MS
+  let pollDelay = ADMIN_JOB_POLL_MS
   while (Date.now() < deadline) {
     const job = await fetchAdminJob(params)
     if (job.status === 'failed') {
@@ -78,7 +81,8 @@ async function pollAdminJobUntilExplainabilityDone(params: {
       if (p === null) throw new Error('Job finished but project data was missing')
       return p
     }
-    await sleep(ADMIN_JOB_POLL_MS)
+    await sleep(pollDelay)
+    pollDelay = Math.min(ADMIN_JOB_POLL_MAX_MS, Math.floor(pollDelay * 1.5))
   }
   throw new Error('Timed out waiting for explainability background job')
 }

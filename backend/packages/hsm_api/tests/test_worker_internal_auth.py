@@ -13,10 +13,9 @@ def test_worker_requires_secret_when_configured():
         google_cloud_project="p",
         worker_internal_secret="test-secret-32-bytes-long!!!!",
     )
-    with patch("hsm_worker.main.init_firebase_admin"):
-        app = create_app(settings)
-        with TestClient(app) as client:
-            r = client.post("/internal/worker/run", json={"job_id": "j1"})
+    app = create_app(settings)
+    with TestClient(app) as client:
+        r = client.post("/internal/worker/run", json={"job_id": "j1"})
     assert r.status_code == 403
 
 
@@ -26,10 +25,7 @@ def test_worker_accepts_matching_secret():
         google_cloud_project="p",
         worker_internal_secret=secret,
     )
-    with (
-        patch("hsm_worker.main.init_firebase_admin"),
-        patch("hsm_worker.main._dispatch_after_claim") as mock_dispatch,
-    ):
+    with patch("hsm_worker.main._dispatch_after_claim") as mock_dispatch:
         app = create_app(settings)
         with TestClient(app) as client:
             r = client.post(
