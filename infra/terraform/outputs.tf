@@ -37,3 +37,23 @@ output "gcs_bucket_name" {
   description = "Model artifacts bucket name."
   value       = local.gcs_bucket_name
 }
+
+output "worker_staging_uri" {
+  description = "Cloud Run URI for staging background worker."
+  value       = google_cloud_run_v2_service.worker_staging.uri
+}
+
+output "worker_prod_uri" {
+  description = "Cloud Run URI for production background worker."
+  value       = google_cloud_run_v2_service.worker_prod.uri
+}
+
+output "tasks_oidc_staging_email" {
+  description = "Service account email for Cloud Tasks OIDC to staging worker."
+  value       = google_service_account.tasks_oidc_staging.email
+}
+
+output "tasks_oidc_prod_email" {
+  description = "Service account email for Cloud Tasks OIDC to production worker."
+  value       = google_service_account.tasks_oidc_prod.email
+}

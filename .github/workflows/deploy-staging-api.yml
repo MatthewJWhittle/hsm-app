@@ -25,6 +25,7 @@ jobs:
       ARTIFACT_REPOSITORY: ${{ vars.ARTIFACT_REPOSITORY }}
       BACKEND_IMAGE_NAME: ${{ vars.BACKEND_IMAGE_NAME }}
       STAGING_SERVICE_NAME: ${{ vars.BACKEND_STAGING_SERVICE_NAME }}
+      WORKER_STAGING_SERVICE_NAME: ${{ vars.BACKEND_WORKER_STAGING_SERVICE_NAME || 'worker-staging' }}
       IMAGE_TAG: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       IMAGE_BASE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPOSITORY }}/${{ vars.BACKEND_IMAGE_NAME }}
     steps:
@@ -66,9 +67,20 @@ jobs:
           image: ${{ env.IMAGE_BASE }}@${{ steps.build.outputs.digest }}
           skip_default_labels: true
 
+      - id: deploy_worker
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
+        with:
+          service: ${{ env.WORKER_STAGING_SERVICE_NAME }}
+          region: ${{ env.GCP_REGION }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          image: ${{ env.IMAGE_BASE }}@${{ steps.build.outputs.digest }}
+          skip_default_labels: true
+
       - name: Show deployment image
         run: |
           echo "Deployed staging image:"
           echo "${IMAGE_BASE}@${{ steps.build.outputs.digest }}"
           echo "Service URL:"
           echo "${{ steps.deploy.outputs.url }}"
+          echo "Worker URL:"
+          echo "${{ steps.deploy_worker.outputs.url }}"

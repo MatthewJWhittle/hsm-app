@@ -127,6 +127,84 @@ variable "api_timeout_seconds" {
   default     = 120
 }
 
+variable "worker_service_name_staging" {
+  description = "Cloud Run service name for staging background worker."
+  type        = string
+  default     = "worker-staging"
+}
+
+variable "worker_service_name_prod" {
+  description = "Cloud Run service name for production background worker."
+  type        = string
+  default     = "worker-prod"
+}
+
+variable "worker_container_port" {
+  description = "Container port for worker (uvicorn)."
+  type        = number
+  default     = 8080
+}
+
+variable "worker_cpu_staging" {
+  description = "Cloud Run CPU limit for staging worker."
+  type        = string
+  default     = "1"
+}
+
+variable "worker_memory_staging" {
+  description = "Cloud Run memory limit for staging worker."
+  type        = string
+  default     = "2Gi"
+}
+
+variable "worker_timeout_seconds_staging" {
+  description = "Cloud Run request timeout for staging worker (long jobs)."
+  type        = number
+  default     = 900
+}
+
+variable "worker_max_instances_staging" {
+  description = "Max instances for staging worker."
+  type        = number
+  default     = 1
+}
+
+variable "worker_cpu_prod" {
+  description = "Cloud Run CPU limit for production worker."
+  type        = string
+  default     = "2"
+}
+
+variable "worker_memory_prod" {
+  description = "Cloud Run memory limit for production worker."
+  type        = string
+  default     = "4Gi"
+}
+
+variable "worker_timeout_seconds_prod" {
+  description = "Cloud Run request timeout for production worker."
+  type        = number
+  default     = 1800
+}
+
+variable "worker_max_instances_prod" {
+  description = "Max instances for production worker."
+  type        = number
+  default     = 1
+}
+
+variable "cloud_tasks_queue_staging_id" {
+  description = "Cloud Tasks queue id for staging background jobs."
+  type        = string
+  default     = "background-staging"
+}
+
+variable "cloud_tasks_queue_prod_id" {
+  description = "Cloud Tasks queue id for production background jobs."
+  type        = string
+  default     = "background-prod"
+}
+
 variable "allow_unauthenticated_api" {
   description = "Whether to allow unauthenticated invocation for API services."
   type        = bool

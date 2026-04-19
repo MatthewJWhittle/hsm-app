@@ -9,7 +9,7 @@ When implementing catalog upload, point inspection, driver rasters, or explanati
 
 ## Backend guidance (FastAPI)
 
-The backend is a FastAPI application deployed to Cloud Run. It serves the API behind `/api` and integrates with Firestore, Firebase Auth, and object storage. Keep backend code small, explicit, and easy to reason about.
+The backend is a **uv workspace** under `backend/`: shared **`hsm_core`**, HTTP app **`hsm_api`** (`backend_api`), and **`hsm_worker`** (same container image; separate Cloud Run service for the worker). It serves `/api` and integrates with Firestore, Firebase Auth, and object storage. Keep code small, explicit, and easy to reason about.
 
 ### Core principles
 
@@ -68,8 +68,9 @@ The backend is a FastAPI application deployed to Cloud Run. It serves the API be
 - Use `async` routes when the work is naturally async.
 - If work is blocking or CPU-heavy, do not pretend it is async. Use the correct boundary and keep the event loop unblocked.
 - Do not perform long-running CPU-heavy raster/model work inline in a request unless the response is expected to wait for it and the cost is acceptable.
-- Treat FastAPI `BackgroundTasks` as suitable only for small, non-critical follow-up work. Do not use them for important jobs that need durability, retries, progress tracking, or guaranteed completion.
-- Prefer simple request/response flows for MVP work. Introduce a proper job pattern only when needed by real latency or reliability constraints.
+- **Background jobs:** In **staging/production**, durable work uses **Firestore job docs** + **Cloud Tasks** → **worker Cloud Run** (see `docs/background-worker-and-tasks-spec.md`). **`BackgroundTasks` + HTTP** to the worker is **local dev only** (`USE_CLOUD_TASKS=false`), not a substitute for Tasks in cloud.
+- Treat FastAPI `BackgroundTasks` as suitable only for small, non-critical follow-up work when you are **not** relying on them for durability.
+- Prefer simple request/response flows for synchronous endpoints; use the job pattern when latency or CPU cost requires async processing.
 
 ### Auth and security
 
@@ -103,7 +104,7 @@ The backend is a FastAPI application deployed to Cloud Run. It serves the API be
 - Do not add repository-wide base classes unless there is a strong repeated need.
 - Do not introduce a service layer, repository layer, adapter layer, manager layer, and factory layer all for one feature.
 - Do not duplicate schema definitions with slightly different names unless there is a clear boundary.
-- Do not add asynchronous complexity, queues, caching, or extra infrastructure "for later".
+- Do not add caching or extra infrastructure "for later" beyond the documented **Cloud Tasks + worker** pattern when the feature needs it.
 - Do not silently broaden scope while making a backend change.
 
 ### Preferred change pattern for agents

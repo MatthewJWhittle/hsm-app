@@ -6,6 +6,7 @@ env/
 
 # Tests and tooling — not needed to run the API
 tests/
+packages/hsm_api/tests/
 .pytest_cache/
 .ruff_cache/
 __pycache__/

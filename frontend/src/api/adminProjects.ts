@@ -1,14 +1,107 @@
 import type { CatalogProject, EnvironmentalBandDefinition } from '../types/project'
 
+import { apiBase } from '../utils/apiBase'
+import { readFetchErrorDetail } from './errors'
+import { isRecord } from './jsonGuards'
+import { parseProject } from './projects'
+
 /** Partial label update for PATCH …/environmental-band-definitions/labels (``name`` aliases display label). */
 export type BandLabelPatch = {
   label?: string | null
   description?: string | null
   name?: string | null
 }
-import { apiBase } from '../utils/apiBase'
-import { readFetchErrorDetail } from './errors'
-import { parseProject } from './projects'
+
+const ADMIN_JOB_POLL_MS = 500
+const ADMIN_JOB_POLL_MAX_MS = 8000
+/** Align with cloud worker Cloud Run timeout default (30m / 1800s) plus a small buffer for jitter. */
+const ADMIN_JOB_MAX_WAIT_MS = 32 * 60 * 1000
+
+export type AdminJobPollResponse = {
+  job_id: string
+  status: string
+  kind: string
+  project_id?: string | null
+  error_code?: string | null
+  error_message?: string | null
+  project?: unknown
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function optionalStringOrNull(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  if (typeof value === 'string') return value
+  return undefined
+}
+
+function parseAdminJobPoll(raw: unknown): AdminJobPollResponse {
+  if (!isRecord(raw)) throw new Error('Invalid job response')
+  const { job_id, status, kind, project_id, error_code, error_message, project } = raw
+  if (typeof job_id !== 'string' || typeof status !== 'string' || typeof kind !== 'string') {
+    throw new Error('Invalid job response')
+  }
+  return {
+    job_id,
+    status,
+    kind,
+    project_id: optionalStringOrNull(project_id),
+    error_code: optionalStringOrNull(error_code),
+    error_message: optionalStringOrNull(error_message),
+    project,
+  }
+}
+
+async function fetchAdminJob(params: { token: string; jobId: string }): Promise<AdminJobPollResponse> {
+  const r = await fetch(`${apiBase()}/admin/jobs/${encodeURIComponent(params.jobId)}`, {
+    headers: { Authorization: `Bearer ${params.token}` },
+  })
+  if (!r.ok) throw new Error(await readFetchErrorDetail(r))
+  const raw: unknown = await r.json()
+  return parseAdminJobPoll(raw)
+}
+
+/** Poll until the job reaches a terminal state; map success payload to ``T``. */
+export async function pollAdminJobUntilTerminal<T>(params: {
+  token: string
+  jobId: string
+  mapSucceeded: (job: AdminJobPollResponse) => T
+  timeoutMessage?: string
+}): Promise<T> {
+  const deadline = Date.now() + ADMIN_JOB_MAX_WAIT_MS
+  let pollDelay = ADMIN_JOB_POLL_MS
+  while (Date.now() < deadline) {
+    const job = await fetchAdminJob({ token: params.token, jobId: params.jobId })
+    if (job.status === 'failed') {
+      const msg = (job.error_message && job.error_message.trim()) || job.error_code || 'Background job failed'
+      throw new Error(msg)
+    }
+    if (job.status === 'succeeded') {
+      return params.mapSucceeded(job)
+    }
+    await sleep(pollDelay)
+    pollDelay = Math.min(ADMIN_JOB_POLL_MAX_MS, Math.floor(pollDelay * 1.5))
+  }
+  throw new Error(params.timeoutMessage ?? 'Timed out waiting for background job')
+}
+
+async function pollAdminJobUntilExplainabilityDone(params: {
+  token: string
+  jobId: string
+}): Promise<CatalogProject> {
+  return pollAdminJobUntilTerminal({
+    ...params,
+    mapSucceeded: (job) => {
+      const p = job.project != null ? parseProject(job.project) : null
+      if (p === null) throw new Error('Job finished but project data was missing')
+      return p
+    },
+    timeoutMessage: 'Timed out waiting for explainability background job',
+  })
+}
 
 export async function createProject(params: {
   token: string
@@ -248,8 +341,15 @@ export async function postRegenerateExplainabilityBackgroundSample(params: {
     },
   )
   if (!r.ok) throw new Error(await readFetchErrorDetail(r))
-  const raw: unknown = await r.json()
-  const p = parseProject(raw)
-  if (p === null) throw new Error('Invalid explainability-background-sample response')
-  return p
+  if (r.status !== 202) {
+    throw new Error(`Expected job enqueue (HTTP 202), got ${r.status}`)
+  }
+  const acceptRaw: unknown = await r.json()
+  if (!isRecord(acceptRaw) || typeof acceptRaw.job_id !== 'string') {
+    throw new Error('Invalid explainability-background-sample response')
+  }
+  return pollAdminJobUntilExplainabilityDone({
+    token: params.token,
+    jobId: acceptRaw.job_id,
+  })
 }

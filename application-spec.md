@@ -58,6 +58,8 @@ Recommended for solo-dev cost control: **Firebase Hosting + Cloud Run + Firestor
 
 ### 4. Architecture
 
+* **Background jobs (spec):** Long-running or high-memory **admin** work (e.g. raster-derived batch artifacts) may be moved off the main API onto a **second Cloud Run service** with **Cloud Tasks** as the queue; the API returns **202** + `job_id` and clients poll job status. See **[Background worker and Cloud Tasks](docs/background-worker-and-tasks-spec.md)** for the full contract, IAM, limits, and security requirements.
+
 * **API Endpoints** (FastAPI). Resource-oriented; align with [Solution architecture](docs/solution-architecture.md) and [Data models](docs/data-models.md).
 
   * `GET /models` → list all models (id, species, activity, artifact_root, suitability_cog_path, metadata?). One round-trip for catalog and tile URL construction; no separate “get URL” call.
