@@ -206,6 +206,14 @@ Interactive routes (e.g. map **point inspect**) remain **synchronous** unless pr
 - Monitor **queue depth**, **task failure rate**, worker **5xx**, jobs **stuck in `running`** beyond a threshold.
 - **Audit** fields: `created_by`, `created_at`, optional **correlation id** in job doc and logs.
 
+### 9.4 Cost expectations (light / MVP traffic)
+
+- **Cloud Run workers:** With **`min_instances = 0`**, no standing cost when idle; spend is **CPU/memory-seconds** and **requests** while jobs run. A **lighter staging** worker reduces cost per second of work vs prod.
+- **Cloud Tasks:** Charged per **operations** (enqueue, delivery attempts, etc.); volume is tiny for rare admin jobs — see [Cloud Tasks pricing](https://cloud.google.com/tasks/pricing). Typically **small** relative to Run for this use case.
+- **Firestore:** Extra job writes are minor unless enqueue volume is high.
+- **Egress:** Keep queue, Run, GCS, and Firestore in the **same region** where possible to avoid cross-region egress surprises.
+- **Risk:** **Retry storms** or **accidental tight loops** enqueueing tasks — mitigate with queue **rate limits**, **app-level 429**, and **idempotent** workers.
+
 ---
 
 ## 10. Development environment and dispatch abstraction
@@ -254,7 +262,7 @@ The following are **explicit requirements**, not optional hardening:
 
 ## 12. Infrastructure (Terraform / CI)
 
-- Enable **`cloudtasks.googleapis.com`**.
+- Enable **`cloudtasks.googleapis.com`** on the GCP project **before** first `createTask` (e.g. `gcloud services enable cloudtasks.googleapis.com --project=PROJECT_ID` or Terraform `google_project_service`). **Verify** in console or `gcloud services list --enabled` — this API is easy to forget and failures are opaque until enqueue.
 - **Two queues** (e.g. `background-staging`, `background-prod`), each with **retry** and **rate** configuration appropriate to that env.
 - **Invoker service account(s)** per env (or shared where IAM allows); **`google_cloud_run_v2_service_iam_member`** granting **run.invoker** on **`worker-staging`** and **`worker-prod`** respectively (staging Tasks SA → staging worker only, prod → prod).
 - **Two worker services:** **`worker-staging`** (typically **lighter** CPU/memory/timeout/`max_instances`) and **`worker-prod`** (heavier as required). Both share the **same** image as their env’s API; **different** container **command/args** for the worker entrypoint.
@@ -269,6 +277,17 @@ The following are **explicit requirements**, not optional hardening:
 3. Frontend: poll job status for that flow.
 4. Add further `kind` values reusing the same envelope, state machine, and security checks.
 
+### 13.1 Candidate `kind` values (order TBD)
+
+Pick **one** vertical first; expand after the pattern is stable.
+
+| Candidate | Notes |
+|-----------|--------|
+| **Explainability background sample** (e.g. existing `POST …/explainability-background-sample`) | Often **one** cohesive pipeline (raster → Parquet → GCS); fewer interaction points with **upload session** state — **smaller** first slice for Tasks + worker + poll UX. |
+| **Replace environmental COG** (today: `POST …/environmental-cogs` with `upload_session_id`) | **High value** (long-running, many stages: ingest URI → validate COG → **promote** to `driver_cog_path` → derive **band definitions** → **upsert_project** → **reload catalog**; clears explainability background fields). **Larger** lift: many failure paths, **upload session** stage updates (`best_effort_mark` / `best_effort_fail`), must be **idempotent** under Tasks retries (especially around **promote** and catalog writes). Product may still choose this first if admin timeout is the main pain. |
+
+**Current env COG flow (sync, API):** See `replace_project_environmental_cogs` in `backend_api/routers/projects.py` — worker extraction should **reuse** the same core helpers where possible and treat the job doc + Firestore as the authority after enqueue.
+
 ---
 
 ## 14. References
@@ -280,6 +299,7 @@ The following are **explicit requirements**, not optional hardening:
 - [Configure containers for services (command / args)](https://cloud.google.com/run/docs/configuring/services/containers)
 - [Create HTTP target tasks (authentication)](https://cloud.google.com/tasks/docs/creating-http-target-tasks)
 - [Configure Cloud Tasks queues](https://cloud.google.com/tasks/docs/configuring-queues)
+- [Cloud Tasks pricing](https://cloud.google.com/tasks/pricing)
 - [Task resource (`dispatchDeadline`)](https://cloud.google.com/tasks/docs/reference/rest/v2/projects.locations.queues.tasks#Task)
 
 **Python / tooling**
