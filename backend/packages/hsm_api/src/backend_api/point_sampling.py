@@ -23,6 +23,7 @@ from backend_api.schemas import (
     PointInspectionCapabilities,
     RawEnvironmentalValue,
 )
+from hsm_core.env_cog_paths import raster_storage_uri_readable
 
 if TYPE_CHECKING:
     from backend_api.catalog_service import CatalogService
@@ -94,8 +95,8 @@ def resolve_environmental_cog_path_for_model(
 
 def validate_driver_band_indices_for_model(model: Model, catalog: "CatalogService") -> None:
     """
-    If the model lists ``feature_band_names`` and an environmental COG path resolves and exists,
-    ensure resolved indices are in range for that file (0-based band index < band count).
+    If the model lists ``feature_band_names`` and an environmental COG path resolves and is
+    readable (local file or ``gs://``), ensure resolved indices are in range for that raster.
 
     Raises:
         ValueError: names cannot be resolved or indices out of range (use for HTTP 422 on admin save).
@@ -111,18 +112,24 @@ def validate_driver_band_indices_for_model(model: Model, catalog: "CatalogServic
     path = resolve_environmental_cog_path_for_model(model, catalog)
     if not path:
         return
-    p = Path(path)
-    if not p.is_file():
+    if not raster_storage_uri_readable(path):
         return
     mx = max(indices)
     if min(indices) < 0:
         raise ValueError("resolved environmental band indices must be non-negative")
-    with rasterio.open(p) as src:
-        if mx >= src.count:
-            raise ValueError(
-                f"resolved band index {mx} is out of range for "
-                f"environmental raster with {src.count} band(s) (0-based indices)"
-            )
+    try:
+        with rasterio.open(path) as src:
+            if mx >= src.count:
+                raise ValueError(
+                    f"resolved band index {mx} is out of range for "
+                    f"environmental raster with {src.count} band(s) (0-based indices)"
+                )
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(
+            f"could not open environmental COG at {path!r} for band index validation: {e}"
+        ) from e
 
 
 def _rowcol_window_for_wgs84_point(
@@ -168,11 +175,10 @@ def sample_suitability(cog_path: str, lng: float, lat: float) -> float:
         PointSamplingError: out of bounds, nodata, wrong CRS, unreadable pixel.
         RasterNotFoundError: path does not exist.
     """
-    path = Path(cog_path)
-    if not path.is_file():
+    if not raster_storage_uri_readable(cog_path):
         raise RasterNotFoundError("suitability raster not found on server")
 
-    with rasterio.open(path) as src:
+    with rasterio.open(cog_path) as src:
         _row_i, _col_i, window = _rowcol_window_for_wgs84_point(
             src,
             lng,
@@ -212,12 +218,11 @@ def sample_environmental_bands_at_point(
         PointSamplingError: CRS, extent, nodata, or index out of range.
         RasterNotFoundError: file missing.
     """
-    path = Path(cog_path)
-    if not path.is_file():
+    if not raster_storage_uri_readable(cog_path):
         raise RasterNotFoundError("environmental raster not found on server")
 
     out: list[float] = []
-    with rasterio.open(path) as src:
+    with rasterio.open(cog_path) as src:
         _row_i, _col_i, window = _rowcol_window_for_wgs84_point(
             src,
             lng,
