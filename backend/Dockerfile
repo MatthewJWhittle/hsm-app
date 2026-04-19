@@ -16,7 +16,9 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY packages ./packages
 
-RUN uv sync --frozen --no-dev --all-packages
+# Non-editable installs: Cloud Run must resolve imports from site-packages only (editable .pth
+# paths have proven fragile across some deploy/cache paths).
+RUN uv sync --frozen --no-dev --all-packages --no-editable
 
 EXPOSE 8000
 
