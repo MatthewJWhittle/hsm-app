@@ -27,6 +27,7 @@ jobs:
       ARTIFACT_REPOSITORY: ${{ vars.ARTIFACT_REPOSITORY }}
       BACKEND_IMAGE_NAME: ${{ vars.BACKEND_IMAGE_NAME }}
       PROD_SERVICE_NAME: ${{ vars.BACKEND_PROD_SERVICE_NAME }}
+      WORKER_PROD_SERVICE_NAME: ${{ vars.BACKEND_WORKER_PROD_SERVICE_NAME || 'worker-prod' }}
       IMAGE_BASE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPOSITORY }}/${{ vars.BACKEND_IMAGE_NAME }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -68,11 +69,22 @@ jobs:
           image: ${{ env.IMAGE_BASE }}@${{ steps.build.outputs.digest }}
           skip_default_labels: true
 
+      - id: deploy_worker
+        name: Deploy Cloud Run (worker-prod)
+        uses: google-github-actions/deploy-cloudrun@2028e2d7d30a78c6910e0632e48dd561b064884d # v3.0.1
+        with:
+          service: ${{ env.WORKER_PROD_SERVICE_NAME }}
+          region: ${{ env.GCP_REGION }}
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          image: ${{ env.IMAGE_BASE }}@${{ steps.build.outputs.digest }}
+          skip_default_labels: true
+
       - name: Log deployed image
         run: |
           echo "Release tag: ${RELEASE_TAG}"
           echo "Image: ${IMAGE_BASE}@${{ steps.build.outputs.digest }}"
           echo "Service URL: ${{ steps.deploy_api.outputs.url }}"
+          echo "Worker URL: ${{ steps.deploy_worker.outputs.url }}"
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
