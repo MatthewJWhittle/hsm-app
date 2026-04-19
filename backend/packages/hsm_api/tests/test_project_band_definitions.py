@@ -191,6 +191,42 @@ def test_post_explainability_background_sample_ok(admin_client_proj):
         mock_sched.assert_called_once()
 
 
+def test_post_explainability_background_sample_enqueue_failure_marks_job_failed(
+    admin_client_proj,
+):
+    job_doc = None
+
+    def _capture_write(_client, doc):
+        nonlocal job_doc
+        job_doc = doc
+
+    with (
+        patch("backend_api.routers.projects.write_job", side_effect=_capture_write),
+        patch("backend_api.routers.projects.update_job_status") as mock_update,
+        patch("backend_api.routers.projects.firestore.Client", return_value=MagicMock()),
+        patch(
+            "backend_api.routers.projects.schedule_background_http_task",
+            side_effect=RuntimeError("cloud tasks unavailable"),
+        ),
+    ):
+        c = admin_client_proj
+        r = c.post(
+            "/api/projects/proj-1/explainability-background-sample",
+            headers={"Authorization": "Bearer fake.token"},
+            json={},
+        )
+    assert r.status_code == 503, r.text
+    detail = r.json()["detail"]
+    assert detail["code"] == "ENQUEUE_FAILED"
+    assert detail["context"]["job_id"] == job_doc.job_id
+    mock_update.assert_called_once()
+    assert mock_update.call_args[0][1] == job_doc.job_id
+    kw = mock_update.call_args[1]
+    assert kw["status"] == "failed"
+    assert kw["error_code"] == "ENQUEUE_FAILED"
+    assert "cloud tasks unavailable" in (kw["error_message"] or "")
+
+
 def test_post_explainability_background_sample_unknown_project_404(admin_client_proj):
     c = admin_client_proj
     r = c.post(

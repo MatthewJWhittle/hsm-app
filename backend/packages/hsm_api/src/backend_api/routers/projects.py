@@ -80,7 +80,7 @@ from backend_api.upload_session_ingest import (
     upload_session_gcs_uri,
     write_upload_file_to_tempfile,
 )
-from hsm_core.jobs import create_job_document, write_job
+from hsm_core.jobs import create_job_document, update_job_status, write_job
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -415,11 +415,47 @@ async def post_explainability_background_sample(
         write_job(client, job)
 
     await run_in_threadpool(_persist_job)
-    schedule_background_http_task(
-        settings=settings,
-        background_tasks=background_tasks,
-        body={"job_id": job.job_id, "kind": job.kind},
-    )
+    try:
+        schedule_background_http_task(
+            settings=settings,
+            background_tasks=background_tasks,
+            body={"job_id": job.job_id, "kind": job.kind},
+        )
+    except Exception as exc:
+        err_text = (str(exc).strip() or type(exc).__name__)[:2000]
+
+        def _mark_enqueue_failed() -> None:
+            client = firestore.Client(project=settings.google_cloud_project)
+            update_job_status(
+                client,
+                job.job_id,
+                status="failed",
+                error_code="ENQUEUE_FAILED",
+                error_message=err_text,
+            )
+
+        try:
+            await run_in_threadpool(_mark_enqueue_failed)
+        except Exception:
+            logger.exception(
+                "enqueue_failed_and_could_not_update_job job_id=%s",
+                job.job_id,
+            )
+        else:
+            logger.warning(
+                "enqueue_failed_marked_job_failed job_id=%s error=%s",
+                job.job_id,
+                err_text,
+            )
+        raise HTTPException(
+            status_code=503,
+            detail=validation_error(
+                "ENQUEUE_FAILED",
+                "could not enqueue background worker task",
+                context={"job_id": job.job_id},
+            ),
+        ) from exc
+
     return JobAcceptedResponse(job_id=job.job_id)
 
 
