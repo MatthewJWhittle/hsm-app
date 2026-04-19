@@ -160,7 +160,7 @@ Example fields (names may align with existing collections):
 ### State transitions
 
 - API creates **`pending`** then enqueues.
-- Worker claims work in a **transaction**: **`pending` → `running`**, or reclaims **`running`** with a **fresh `updated_at`** when the lease is **stale** (e.g. process died after claim and Cloud Tasks retries). Staleness uses **`WORKER_HTTP_DEADLINE_SECONDS`** (aligned with the worker Cloud Run timeout) plus **`WORKER_STALE_RUNNING_GRACE_SECONDS`**. While **`running`** with a **fresh** lease, duplicate deliveries **exit 2xx** without redoing work; terminal **`succeeded` / `failed`** ditto.
+- Worker claims work in a **transaction**: **`pending` → `running`**, or reclaims **`running`** with a **fresh `updated_at`** when the lease is **stale** (e.g. process died after claim and Cloud Tasks retries). Staleness is **`WORKER_HTTP_DEADLINE_SECONDS`** (aligned with the worker Cloud Run timeout and Cloud Tasks `dispatch_deadline`) plus optional **`WORKER_STALE_RUNNING_GRACE_SECONDS`** (default **0** so the first retry after a timeout can reclaim; keep grace small). While **`running`** with a **fresh** lease, duplicate deliveries **exit 2xx** without redoing work; terminal **`succeeded` / `failed`** ditto.
 - Worker sets **`succeeded`** or **`failed`** once, with consistent artifact pointers.
 
 ---
@@ -183,7 +183,7 @@ Interactive routes (e.g. map **point inspect**) remain **synchronous** unless pr
 | **Worker Cloud Run request timeout** | Up to **1 hour** for services, but Tasks **waits at most 30 minutes** per HTTP attempt — **effective ceiling** for a single task delivery is **30 minutes** unless the pattern changes. |
 | **Longer work** | If a single unit of work can exceed that, use **Cloud Run jobs**, **chunked tasks**, or **multi-stage** jobs ([Cloud Run — executing asynchronous tasks](https://cloud.google.com/run/docs/triggering/using-tasks)). |
 
-**Implementation rule:** Set **`dispatch_deadline`** from **`WORKER_HTTP_DEADLINE_SECONDS`** (same value Terraform uses for the worker Cloud Run request timeout, capped at **1800s**, Cloud Tasks’ per-attempt maximum). The worker uses that value plus **`WORKER_STALE_RUNNING_GRACE_SECONDS`** to detect **stale** `running` leases after crashes so retries can resume work.
+**Implementation rule:** Set **`dispatch_deadline`** from **`WORKER_HTTP_DEADLINE_SECONDS`** (same value Terraform uses for the worker Cloud Run request timeout, capped at **1800s**, Cloud Tasks’ per-attempt maximum). The worker treats a **`running`** lease as stale when **`updated_at`** is at least that many seconds old (plus optional small **`WORKER_STALE_RUNNING_GRACE_SECONDS`**, default **0**) so a **retry soon after** an attempt timeout can reclaim instead of skipping as “fresh.”
 
 ---
 

@@ -158,6 +158,8 @@ def try_claim_job_for_execution(
     Cloud Tasks retries may arrive while status is still ``running`` if the worker
     died after the claim. When ``updated_at`` is older than ``stale_running_after_seconds``,
     refresh the lease (``updated_at``) and return the document so work can run again.
+    Pass ``stale_running_after_seconds`` equal to ``WORKER_HTTP_DEADLINE_SECONDS`` (plus a
+    small optional grace, often **0**) so the first retry after an HTTP timeout can reclaim.
 
     Returns ``None`` if the job is missing, terminal (succeeded/failed), or ``running``
     with a fresh lease.

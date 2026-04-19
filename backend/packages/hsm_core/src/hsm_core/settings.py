@@ -238,14 +238,16 @@ class Settings(BaseSettings):
     )
 
     worker_stale_running_grace_seconds: int = Field(
-        default=300,
+        default=0,
         description=(
-            "Seconds beyond worker_http_deadline_seconds with no lease refresh before a "
-            "running job may be reclaimed by another task delivery."
+            "Optional extra seconds added to worker_http_deadline_seconds when deciding if a "
+            "running lease is stale (default 0). Keep small so Cloud Tasks retries shortly after "
+            "a timeout can reclaim a zombie running job; use a few tens of seconds only if you "
+            "need clock/skew slack."
         ),
         validation_alias=AliasChoices("WORKER_STALE_RUNNING_GRACE_SECONDS"),
         ge=0,
-        le=3600,
+        le=300,
     )
 
     @model_validator(mode="after")

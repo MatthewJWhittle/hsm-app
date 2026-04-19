@@ -49,6 +49,8 @@ def _environmental_cog_readable_for_sampling(abs_path: str) -> bool:
 
 def _execute_explainability_job(settings: Settings, job_id: str) -> None:
     client = firestore.Client(project=settings.google_cloud_project)
+    # Align with Cloud Tasks dispatch_deadline + Run timeout; grace default 0 so retries
+    # after timeout can reclaim a zombie "running" lease.
     stale_after = (
         settings.worker_http_deadline_seconds + settings.worker_stale_running_grace_seconds
     )
