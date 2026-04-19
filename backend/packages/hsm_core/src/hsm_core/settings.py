@@ -1,4 +1,10 @@
-"""Application settings (env / .env)."""
+"""Application settings (env / .env).
+
+``WorkerSettings`` — shared by the background worker and core libraries (storage, Firestore, …).
+
+``ApiSettings`` — FastAPI API process only; adds Cloud Tasks enqueue / local worker dispatch
+and validates that staging/production includes a complete dispatcher configuration.
+"""
 
 from __future__ import annotations
 
@@ -8,37 +14,8 @@ from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
-    """App configuration.
-
-    **Firestore:** set ``GOOGLE_CLOUD_PROJECT`` (or ``GCLOUD_PROJECT``).
-    For the emulator, set ``FIRESTORE_EMULATOR_HOST`` (e.g. ``127.0.0.1:8085``).
-    From Docker Desktop, use ``host.docker.internal:8085`` when emulators run on the
-    host.
-
-    **Auth (Admin SDK):** set ``FIREBASE_AUTH_EMULATOR_HOST`` in dev (e.g.
-    ``firebase-emulators:9099`` from Docker) so ``verify_id_token`` uses the Auth
-    emulator. Omit in production (use Application Default Credentials). Use
-    ``FIREBASE_PROJECT_ID`` when Firebase Auth lives in a different project than
-    ``GOOGLE_CLOUD_PROJECT`` (Firestore/storage project).
-
-    **CORS:** ``CORS_ORIGINS`` is a comma-separated list of allowed browser origins.
-    Defaults include local dev and Firebase Hosting URLs for this project.
-
-    Catalog documents use collection ids in ``hsm_core.catalog_collections``.
-
-    **Storage (admin uploads):** ``STORAGE_BACKEND`` is ``local`` (default) or ``gcs``.
-    Local writes use ``LOCAL_STORAGE_ROOT``. GCS uses ``GCS_BUCKET`` and optional
-    ``GCS_OBJECT_PREFIX``.
-
-    **OpenAPI / docs:** set ``OPENAPI_ENABLED=false`` in production to disable ``/api/docs``,
-    ``/api/redoc``, and ``/api/openapi.json``.
-
-    **Uploads:** ``MAX_UPLOAD_BYTES`` caps admin suitability COG uploads (default ~100 MB).
-    ``MAX_ENVIRONMENTAL_UPLOAD_BYTES`` caps project environmental (driver) COG uploads
-    (default 1 GiB). Enforce in-process; also configure a reverse proxy or Cloud Run
-    request size limits in production.
-    """
+class WorkerSettings(BaseSettings):
+    """Configuration for the worker and for shared ``hsm_core`` helpers."""
 
     model_config = SettingsConfigDict(extra="ignore", populate_by_name=True)
 
@@ -61,7 +38,7 @@ class Settings(BaseSettings):
 
     google_cloud_project: str = Field(
         default="hsm-dashboard",
-        description="GCP / Firebase project id used by the Firestore client.",
+        description="GCP / Firebase project id used for the Firestore client.",
         validation_alias=AliasChoices("GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT"),
     )
 
@@ -190,42 +167,6 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("APP_ENV"),
     )
 
-    use_cloud_tasks: bool = Field(
-        default=False,
-        description="If true, enqueue background work via Cloud Tasks (staging/production).",
-        validation_alias=AliasChoices("USE_CLOUD_TASKS"),
-    )
-
-    cloud_tasks_queue: str | None = Field(
-        default=None,
-        description="Cloud Tasks queue id (short name).",
-        validation_alias=AliasChoices("CLOUD_TASKS_QUEUE"),
-    )
-
-    cloud_tasks_location: str | None = Field(
-        default=None,
-        description="GCP region of the Cloud Tasks queue (e.g. us-central1).",
-        validation_alias=AliasChoices("CLOUD_TASKS_LOCATION"),
-    )
-
-    cloud_tasks_oidc_service_account: str | None = Field(
-        default=None,
-        description="Service account email for OIDC token on task HTTP targets.",
-        validation_alias=AliasChoices("CLOUD_TASKS_OIDC_SERVICE_ACCOUNT"),
-    )
-
-    worker_task_url: str | None = Field(
-        default=None,
-        description="Full HTTPS URL for the worker task handler (Cloud Tasks POST target).",
-        validation_alias=AliasChoices("WORKER_TASK_URL"),
-    )
-
-    worker_base_url: str | None = Field(
-        default=None,
-        description="Local dev worker origin (e.g. http://worker:8080) when USE_CLOUD_TASKS=false.",
-        validation_alias=AliasChoices("WORKER_BASE_URL"),
-    )
-
     worker_internal_secret: str | None = Field(
         default=None,
         description=(
@@ -270,6 +211,46 @@ class Settings(BaseSettings):
         le=604_800,
     )
 
+
+class ApiSettings(WorkerSettings):
+    """FastAPI API process: worker settings plus Cloud Tasks / local dispatch."""
+
+    use_cloud_tasks: bool = Field(
+        default=False,
+        description="If true, enqueue background work via Cloud Tasks (staging/production).",
+        validation_alias=AliasChoices("USE_CLOUD_TASKS"),
+    )
+
+    cloud_tasks_queue: str | None = Field(
+        default=None,
+        description="Cloud Tasks queue id (short name).",
+        validation_alias=AliasChoices("CLOUD_TASKS_QUEUE"),
+    )
+
+    cloud_tasks_location: str | None = Field(
+        default=None,
+        description="GCP region of the Cloud Tasks queue (e.g. us-central1).",
+        validation_alias=AliasChoices("CLOUD_TASKS_LOCATION"),
+    )
+
+    cloud_tasks_oidc_service_account: str | None = Field(
+        default=None,
+        description="Service account email for OIDC token on task HTTP targets.",
+        validation_alias=AliasChoices("CLOUD_TASKS_OIDC_SERVICE_ACCOUNT"),
+    )
+
+    worker_task_url: str | None = Field(
+        default=None,
+        description="Full HTTPS URL for the worker task handler (Cloud Tasks POST target).",
+        validation_alias=AliasChoices("WORKER_TASK_URL"),
+    )
+
+    worker_base_url: str | None = Field(
+        default=None,
+        description="Local dev worker origin (e.g. http://worker:8080) when USE_CLOUD_TASKS=false.",
+        validation_alias=AliasChoices("WORKER_BASE_URL"),
+    )
+
     @model_validator(mode="after")
     def _require_cloud_tasks_in_cloud(self) -> Self:
         env = (self.app_env or "local").strip().lower()
@@ -293,3 +274,7 @@ class Settings(BaseSettings):
                     f"When USE_CLOUD_TASKS is true, required settings missing: {', '.join(missing)}"
                 )
         return self
+
+
+# Alias for call sites that load full API configuration (FastAPI, tests, scripts).
+Settings = ApiSettings
