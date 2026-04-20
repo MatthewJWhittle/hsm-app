@@ -28,6 +28,7 @@ jobs:
           VITE_FIREBASE_AUTH_DOMAIN: hsm-dashboard.firebaseapp.com
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
           VITE_API_BASE: ${{ vars.PREVIEW_API_BASE_URL }}
+          VITE_TITILER_URL: https://titiler-shared-t566ee45iq-uc.a.run.app
         run: npm ci && npm run build
       - name: Use preview-safe Firebase Hosting config
         run: |

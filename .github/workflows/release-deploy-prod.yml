@@ -99,6 +99,7 @@ jobs:
           VITE_FIREBASE_PROJECT_ID: hsm-dashboard
           VITE_FIREBASE_AUTH_DOMAIN: hsm-dashboard.firebaseapp.com
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_TITILER_URL: https://titiler-shared-t566ee45iq-uc.a.run.app
         run: npm ci && npm run build
 
       - name: Deploy Firebase Hosting (prod -> api-prod)
