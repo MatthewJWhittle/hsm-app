@@ -569,7 +569,16 @@ export function InspectionHud({
       {inspection &&
         !error &&
         sortedDrivers.length > 0 && (
-          <Box sx={{ mt: 0.75 }}>
+          <Box
+            sx={{
+              mt: 0.75,
+              maxHeight: 320,
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              pr: 0.5,
+              mr: -0.5,
+            }}
+          >
             {sortedDrivers.map((d) => (
               <InfluenceDriverRow
                 key={d.name}
