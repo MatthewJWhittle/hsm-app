@@ -29,8 +29,8 @@ jobs:
           VITE_FIREBASE_PROJECT_ID: hsm-dashboard
           VITE_FIREBASE_AUTH_DOMAIN: hsm-dashboard.firebaseapp.com
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          # Shared Cloud Run TiTiler (see infra/terraform); required for map tiles in hosted dev.
-          VITE_TITILER_URL: https://titiler-shared-t566ee45iq-uc.a.run.app
+          # TiTiler Cloud Run URL: repo variable TITILER_PUBLIC_URL (see .env.example); fallback matches terraform output.
+          VITE_TITILER_URL: ${{ vars.TITILER_PUBLIC_URL || 'https://titiler-shared-t566ee45iq-uc.a.run.app' }}
         run: npm ci && npm run build
       - name: Deploy Hosting (dev -> api-staging)
         uses: FirebaseExtended/action-hosting-deploy@73212fc153444869d3e433816aab02624792fcef # v0.10.0
