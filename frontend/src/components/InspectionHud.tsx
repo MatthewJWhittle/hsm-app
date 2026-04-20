@@ -1,6 +1,6 @@
 import { Box, IconButton, Paper, Tooltip, Typography } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type {
   DriverVariable,
   PointInspection as PointInspectionData,
@@ -98,6 +98,17 @@ function normEnvKey(s: string): string {
  * (see `build_raw_environmental_values` in the backend), so the strings differ even for
  * the same variable. We match on `name`, then on `display_name` ↔ raw label.
  */
+/** Alphabetical by label so the same variable stays in the same row when moving the click. */
+function sortDriversForCompare(drivers: DriverVariable[]): DriverVariable[] {
+  return [...drivers].sort((a, b) => {
+    const la = (a.display_name?.trim() || a.name).toLowerCase()
+    const lb = (b.display_name?.trim() || b.name).toLowerCase()
+    const c = la.localeCompare(lb, undefined, { sensitivity: 'base' })
+    if (c !== 0) return c
+    return a.name.localeCompare(b.name)
+  })
+}
+
 function rawValueForDriver(
   raw: RawEnvironmentalValue[] | null | undefined,
   d: DriverVariable,
@@ -157,15 +168,18 @@ function DriverTooltipBody({
 
 function InfluenceDriverRow({
   d,
-  maxAbs,
+  scaleMaxAbs,
   rawEnv,
+  loading,
 }: {
   d: DriverVariable
-  maxAbs: number
+  /** Shared across clicks (grows with strongest |influence| seen while panel is open). */
+  scaleMaxAbs: number
   rawEnv: RawEnvironmentalValue[] | null | undefined
+  loading: boolean
 }) {
   const signed = signedDriverContribution(d)
-  const frac = maxAbs > 0 ? Math.min(1, Math.abs(signed) / maxAbs) : 0
+  const frac = scaleMaxAbs > 0 ? Math.min(1, Math.abs(signed) / scaleMaxAbs) : 0
   const halfPct = frac * 50
   const title = d.display_name?.trim() ? d.display_name : d.name
   const raw = rawValueForDriver(rawEnv, d)
@@ -205,7 +219,13 @@ function InfluenceDriverRow({
       title={<DriverTooltipBody d={d} raw={raw} />}
     >
       <Box
-        sx={{ mb: 1, cursor: 'default' }}
+        sx={{
+          mb: 1,
+          cursor: 'default',
+          opacity: loading ? 0.55 : 1,
+          transition: (theme) =>
+            theme.transitions.create('opacity', { duration: theme.transitions.duration.shorter }),
+        }}
         aria-label={
           [
             title,
@@ -226,9 +246,9 @@ function InfluenceDriverRow({
           role="img"
           aria-label={
             isPos
-              ? `Positive contribution, about ${halfPct.toFixed(0)} percent of the strongest driver at this point`
+              ? `Positive contribution, about ${halfPct.toFixed(0)} percent along the comparison scale for this panel`
               : isNeg
-                ? `Negative contribution, about ${halfPct.toFixed(0)} percent of the strongest driver at this point`
+                ? `Negative contribution, about ${halfPct.toFixed(0)} percent along the comparison scale for this panel`
                 : 'Neutral or negligible contribution'
           }
           sx={{
@@ -263,7 +283,8 @@ function InfluenceDriverRow({
                 width: `${halfPct}%`,
                 bgcolor: barColor,
                 borderRadius: '0 1px 1px 0',
-                transition: 'width 0.2s ease',
+                transition: (theme) =>
+                  theme.transitions.create('width', { duration: theme.transitions.duration.short }),
               }}
             />
           ) : null}
@@ -279,7 +300,10 @@ function InfluenceDriverRow({
                 width: `${halfPct}%`,
                 bgcolor: barColor,
                 borderRadius: '1px 0 0 1px',
-                transition: 'width 0.2s ease, left 0.2s ease',
+                transition: (theme) =>
+                  theme.transitions.create(['width', 'left'], {
+                    duration: theme.transitions.duration.short,
+                  }),
               }}
             />
           ) : null}
@@ -304,6 +328,27 @@ export function InspectionHud({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
   const dragStartRef = useRef({ clientX: 0, clientY: 0, offX: 0, offY: 0 })
+  const maxInfluenceAbsThisPoint = useMemo(() => {
+    const list = inspection?.drivers ?? []
+    if (!list.length) return 1e-9
+    return Math.max(
+      ...list.map((d) => Math.abs(signedDriverContribution(d))),
+      1e-9,
+    )
+  }, [inspection])
+
+  /** Session peak while panel is open; bars don’t shrink when a weaker point loads. */
+  const [sessionPeakInfluenceAbs, setSessionPeakInfluenceAbs] = useState(1e-9)
+
+  useEffect(() => {
+    if (!inspection) {
+      setSessionPeakInfluenceAbs(1e-9)
+      return
+    }
+    setSessionPeakInfluenceAbs((prev) => Math.max(prev, maxInfluenceAbsThisPoint))
+  }, [inspection, maxInfluenceAbsThisPoint])
+
+  const compareScaleMax = Math.max(sessionPeakInfluenceAbs, maxInfluenceAbsThisPoint)
 
   useEffect(() => {
     // Dismiss on Escape. Skip when focus is inside an input/textarea/contenteditable
@@ -410,6 +455,12 @@ export function InspectionHud({
     })
   }, [])
 
+  const sortedDrivers = useMemo(() => {
+    const list = inspection?.drivers
+    if (!list?.length) return []
+    return sortDriversForCompare(list)
+  }, [inspection?.drivers])
+
   const onDragPointerUp = useCallback((e: React.PointerEvent) => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
     setDragging(false)
@@ -515,29 +566,21 @@ export function InspectionHud({
         </Typography>
       )}
 
-      {!loading &&
+      {inspection &&
         !error &&
-        inspection &&
-        (() => {
-          const drivers = inspection.drivers ?? []
-          if (drivers.length === 0) return null
-          const maxAbs = Math.max(
-            ...drivers.map((d) => Math.abs(signedDriverContribution(d))),
-            1e-9,
-          )
-          return (
-            <Box sx={{ mt: 0.75 }}>
-              {drivers.map((d, i) => (
-                <InfluenceDriverRow
-                  key={`${d.name}-${i}`}
-                  d={d}
-                  maxAbs={maxAbs}
-                  rawEnv={inspection.raw_environmental_values}
-                />
-              ))}
-            </Box>
-          )
-        })()}
+        sortedDrivers.length > 0 && (
+          <Box sx={{ mt: 0.75 }}>
+            {sortedDrivers.map((d) => (
+              <InfluenceDriverRow
+                key={d.name}
+                d={d}
+                scaleMaxAbs={compareScaleMax}
+                rawEnv={inspection.raw_environmental_values}
+                loading={loading}
+              />
+            ))}
+          </Box>
+        )}
     </Paper>
   )
 }
