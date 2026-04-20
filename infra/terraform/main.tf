@@ -885,6 +885,16 @@ resource "google_cloud_run_v2_service" "titiler" {
         name  = "GDAL_DISABLE_READDIR_ON_OPEN"
         value = "FALSE"
       }
+      # GDAL /vsigs/: Cloud Run has no GCE boot logs; force GCE detection so ADC uses
+      # the attached service account (metadata) for gs:// reads. See GDAL CPL_MACHINE_IS_GCE.
+      env {
+        name  = "CPL_MACHINE_IS_GCE"
+        value = "YES"
+      }
+      env {
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = var.project_id
+      }
     }
   }
 
