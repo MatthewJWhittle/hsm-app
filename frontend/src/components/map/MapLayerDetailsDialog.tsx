@@ -16,7 +16,7 @@ import {
 } from '../../copy/interpretation'
 import type { Model } from '../../types/model'
 import { layerDisplayName } from '../../utils/layerDisplay'
-import type { ProjectSummary } from './MapControlPanel'
+import type { ProjectSummary } from '../../types/project'
 
 export interface MapLayerDetailsDialogProps {
   open: boolean

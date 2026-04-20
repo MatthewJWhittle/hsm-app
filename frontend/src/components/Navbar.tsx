@@ -48,7 +48,7 @@ export function Navbar() {
               outlineOffset: 2,
             },
           }}
-          aria-label="Habitat suitability — home"
+          aria-label="HSM Explorer — home"
         >
           <BrandMark />
           <Box component="span" sx={{ minWidth: 0 }}>
@@ -62,7 +62,7 @@ export function Navbar() {
                 display: 'block',
               }}
             >
-              Habitat suitability
+              HSM Explorer
             </Typography>
           </Box>
         </ButtonBase>

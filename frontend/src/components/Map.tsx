@@ -9,6 +9,8 @@ import { titilerBase } from '../utils/apiBase'
 interface MapComponentProps {
   model: Model | null
   opacity?: number
+  /** When false, the raster source is not rendered (no tile fetches). */
+  visible?: boolean
   /** When set, map clicks sample suitability at the clicked (lng, lat). */
   onInspect?: (lng: number, lat: number) => void
 }
@@ -16,6 +18,7 @@ interface MapComponentProps {
 function MapComponent({
   opacity = 0.5,
   model = null,
+  visible = true,
   onInspect,
 }: MapComponentProps) {
   const mapRef = useRef(null)
@@ -56,7 +59,7 @@ function MapComponent({
         onInspect?.(lng, lat)
       }}
     >
-      {model && tileUrl && (
+      {model && tileUrl && visible && (
         <Source
           id="hsm-source"
           type="raster"

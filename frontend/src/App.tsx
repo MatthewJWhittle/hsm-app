@@ -1,17 +1,15 @@
 import './App.css'
 import MapComponent from './components/Map'
-import { Box } from '@mui/material'
+import { Alert, Box, Button } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { FloatingMapInterpretation } from './components/map/FloatingMapInterpretation'
-import { FloatingMapTools } from './components/map/FloatingMapTools'
-import { MapControlPanel, type ProjectSummary } from './components/map/MapControlPanel'
+import { MapFloatingControls } from './components/map/MapFloatingControls'
 import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
 import { SuitabilityLegend } from './components/map/SuitabilityLegend'
 import { InspectionHud } from './components/InspectionHud'
 import { type Model, getFeatureBandNames } from './types/model'
-import type { CatalogProject } from './types/project'
+import type { CatalogProject, ProjectSummary } from './types/project'
 import type { PointInspection } from './types/pointInspection'
 import { fetchModelCatalog } from './api/catalog'
 import { fetchProjectCatalog } from './api/projects'
@@ -57,6 +55,7 @@ function App() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedModelId, setSelectedModelId] = useState('')
   const [opacity, setOpacity] = useState(70)
+  const [layerVisible, setLayerVisible] = useState(true)
   const [inspectCoords, setInspectCoords] = useState<{ lng: number; lat: number } | null>(
     null,
   )
@@ -66,8 +65,39 @@ function App() {
   const [hudOpen, setHudOpen] = useState(false)
   const inspectAbortRef = useRef<AbortController | null>(null)
   const [catalogReady, setCatalogReady] = useState(false)
+  const [reloadNonce, setReloadNonce] = useState(0)
   const [mapInfoOpen, setMapInfoOpen] = useState(false)
   const [layerDetailsOpen, setLayerDetailsOpen] = useState(false)
+
+  const retryLoadCatalog = useCallback(() => {
+    setReloadNonce((n) => n + 1)
+  }, [])
+
+  const toggleLayerVisible = useCallback(() => {
+    setLayerVisible((v) => !v)
+  }, [])
+
+  useEffect(() => {
+    // Keyboard shortcut: "V" toggles the active layer's visibility while
+    // focus is not in an input, textarea, or contenteditable surface. Matches
+    // the quick-compare workflow (flick raster on/off vs. the basemap).
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'v' && e.key !== 'V') return
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      setLayerVisible((v) => !v)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -97,7 +127,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [user, getIdToken])
+  }, [user, getIdToken, reloadNonce])
 
   const projectOptions = useMemo(
     () => buildProjectOptions(projects, models),
@@ -205,6 +235,10 @@ function App() {
     (modelId: string) => {
       clearInspection()
       if (!modelId) setLayerDetailsOpen(false)
+      // Always re-show the raster when switching to a new layer — stale
+      // visibility across different species is almost never what the user
+      // wants.
+      setLayerVisible(true)
       setSelectedModelId(modelId)
       const m = models.find((x) => x.id === modelId)
       if (m) {
@@ -253,104 +287,103 @@ function App() {
   return (
     <div className="app-container">
       <Navbar />
-      <div className="app-main">
-        <MapControlPanel
+      <Box
+        component="main"
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Absolute-fill wrapper so the MapLibre canvas has an explicit size. */}
+        <Box sx={{ position: 'absolute', inset: 0 }}>
+          <MapComponent
+            opacity={opacity / 100}
+            visible={layerVisible}
+            model={selectedModel}
+            onInspect={selectedModel && !loadError ? handleInspect : undefined}
+          />
+        </Box>
+
+        <MapFloatingControls
           models={models}
           selectedModelId={selectedModelId}
           onModelChange={onModelChange}
           onOpenMapInfoDialog={() => setMapInfoOpen(true)}
           onOpenLayerDetailsDialog={() => setLayerDetailsOpen(true)}
+          opacity={opacity}
+          onOpacityChange={setOpacity}
+          layerVisible={layerVisible}
+          onToggleLayerVisible={toggleLayerVisible}
+          loading={!catalogReady}
+          errored={Boolean(loadError)}
         />
-        <Box
-          sx={{
-            flex: 1,
-            minWidth: 0,
-            minHeight: 0,
-            position: 'relative',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          {loadError && (
-            <div
-              role="alert"
-              style={{
-                position: 'absolute',
-                top: 20,
-                right: 20,
-                zIndex: 1001,
-                background: 'rgba(255, 230, 230, 0.95)',
-                padding: '12px 16px',
-                borderRadius: 8,
-                maxWidth: 360,
-                fontSize: 14,
-              }}
-            >
-              {loadError}
-            </div>
-          )}
-          {hudOpen && selectedModel && !loadError && (
-            <InspectionHud
-              onClose={closeHud}
-              modelLabel={layerDisplayName(selectedModel)}
-              lng={inspectCoords?.lng ?? null}
-              lat={inspectCoords?.lat ?? null}
-              inspection={inspection}
-              loading={inspectLoading}
-              error={inspectError}
-              technicalDetails={{
-                modelId: selectedModel.id,
-                projectId: selectedModel.project_id,
-                driverFeatureBandNames: getFeatureBandNames(selectedModel),
-              }}
-            />
-          )}
-          <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
-            <MapComponent
-              opacity={opacity / 100}
-              model={selectedModel}
-              onInspect={selectedModel && !loadError ? handleInspect : undefined}
-            />
-            {selectedModel && !loadError && (
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: 20,
-                  right: 20,
-                  zIndex: 999,
-                  pointerEvents: 'auto',
-                }}
-              >
-                <SuitabilityLegend />
-              </Box>
-            )}
-            <Box
-              sx={{
-                position: 'absolute',
-                bottom: 20,
-                left: 20,
-                zIndex: 999,
-                pointerEvents: 'auto',
-              }}
-            >
-              <FloatingMapTools
-                opacity={opacity}
-                onOpacityChange={setOpacity}
-                disabled={!selectedModel || Boolean(loadError)}
-              />
-            </Box>
-            <FloatingMapInterpretation onOpen={() => setMapInfoOpen(true)} />
+
+        {selectedModel && !loadError && layerVisible && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              zIndex: 999,
+              pointerEvents: 'auto',
+            }}
+          >
+            <SuitabilityLegend />
           </Box>
-        </Box>
-        <MapInterpretationDialog open={mapInfoOpen} onClose={() => setMapInfoOpen(false)} />
-        <MapLayerDetailsDialog
-          open={layerDetailsOpen}
-          onClose={() => setLayerDetailsOpen(false)}
-          model={selectedModel}
-          projectSummary={projectSummary}
-          selectedProjectLabel={selectedProjectLabel}
-        />
-      </div>
+        )}
+
+        {loadError && (
+          <Alert
+            severity="error"
+            variant="outlined"
+            sx={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              zIndex: 1001,
+              maxWidth: 360,
+              bgcolor: 'background.paper',
+              boxShadow: 2,
+            }}
+            action={
+              <Button color="inherit" size="small" onClick={retryLoadCatalog}>
+                Retry
+              </Button>
+            }
+          >
+            {loadError}
+          </Alert>
+        )}
+
+        {hudOpen && selectedModel && !loadError && (
+          <InspectionHud
+            onClose={closeHud}
+            modelLabel={layerDisplayName(selectedModel)}
+            lng={inspectCoords?.lng ?? null}
+            lat={inspectCoords?.lat ?? null}
+            inspection={inspection}
+            loading={inspectLoading}
+            error={inspectError}
+            technicalDetails={{
+              modelId: selectedModel.id,
+              projectId: selectedModel.project_id,
+              driverFeatureBandNames: getFeatureBandNames(selectedModel),
+            }}
+          />
+        )}
+      </Box>
+
+      <MapInterpretationDialog open={mapInfoOpen} onClose={() => setMapInfoOpen(false)} />
+      <MapLayerDetailsDialog
+        open={layerDetailsOpen}
+        onClose={() => setLayerDetailsOpen(false)}
+        model={selectedModel}
+        projectSummary={projectSummary}
+        selectedProjectLabel={selectedProjectLabel}
+      />
     </div>
   )
 }
