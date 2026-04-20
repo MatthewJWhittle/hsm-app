@@ -68,7 +68,7 @@ export function MapFloatingControls({
 
   const selectedTitle = selectedModel ? layerDisplayName(selectedModel) : ''
 
-  const [detailsExpanded, setDetailsExpanded] = useState(true)
+  const [detailsExpanded, setDetailsExpanded] = useState(false)
 
   const handleOpacityChange = useCallback(
     (_event: Event, value: number | number[]) => {
