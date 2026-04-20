@@ -42,6 +42,13 @@ class ArtifactReadRuntime:
 
     def __init__(self, settings: WorkerSettings) -> None:
         self._settings = settings
+        self._gcs_storage_client: storage.Client | None = None
+
+    def _storage_client(self) -> storage.Client:
+        """One client per runtime instance (connection pooling friendly)."""
+        if self._gcs_storage_client is None:
+            self._gcs_storage_client = storage.Client()
+        return self._gcs_storage_client
 
     def mint_signed_get_url(self, gcs_uri: str) -> str:
         """
@@ -57,8 +64,7 @@ class ArtifactReadRuntime:
             raise ValueError("gcs_uri must include bucket and object path")
         bucket_name, object_path = parts
 
-        client = storage.Client()
-        bucket = client.bucket(bucket_name)
+        bucket = self._storage_client().bucket(bucket_name)
         blob = bucket.blob(object_path)
         kwargs = {
             "version": "v4",
@@ -117,7 +123,12 @@ class ArtifactReadRuntime:
         """Full object bytes (e.g. pickle); ``gs://`` uses Application Default Credentials."""
         if uri.startswith("gs://"):
             bucket_name, blob_name = split_gs_uri(uri)
-            return storage.Client().bucket(bucket_name).blob(blob_name).download_as_bytes()
+            return (
+                self._storage_client()
+                .bucket(bucket_name)
+                .blob(blob_name)
+                .download_as_bytes()
+            )
         with open(uri, "rb") as f:
             return f.read()
 
@@ -130,8 +141,13 @@ class ArtifactReadRuntime:
         Load the explainability background Parquet as a DataFrame (v1: full read).
 
         For ``gs://``, uses pyarrow with a GCS filesystem (no eager Python-side download).
-        ``**read_kwargs`` are forwarded to :func:`pyarrow.parquet.read_table` or
-        :func:`pandas.read_parquet` for future column filters / options.
+        For local paths, uses :func:`pandas.read_parquet`.
+
+        ``**read_kwargs`` are forwarded to :func:`pyarrow.parquet.read_table` when ``uri`` is
+        ``gs://``, and to :func:`pandas.read_parquet` when ``uri`` is a local path. Only pass
+        keyword arguments that are valid for **both** APIs (e.g. ``columns=``) unless you know
+        which branch runs; otherwise use separate call sites or extend this method with
+        explicit ``pyarrow_kwargs`` / ``pandas_kwargs`` parameters.
         """
         if uri.startswith("gs://"):
             filesystem, path = pafs.FileSystem.from_uri(uri)

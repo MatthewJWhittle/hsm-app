@@ -9,7 +9,16 @@ import pandas as pd
 import pytest
 
 from hsm_core.artifact_read_runtime import ArtifactReadRuntime
+from hsm_core.env_cog_paths import raster_storage_uri_readable
 from hsm_core.settings import WorkerSettings
+
+
+def test_raster_storage_uri_readable_gs_vsicurl_and_local(tmp_path: Path) -> None:
+    assert raster_storage_uri_readable("gs://b/o.tif")
+    assert raster_storage_uri_readable("/vsicurl/https://example.com/x.tif")
+    p = tmp_path / "f.tif"
+    p.write_bytes(b"")
+    assert raster_storage_uri_readable(str(p))
 
 
 def test_rasterio_open_uri_local_passthrough(tmp_path: Path) -> None:

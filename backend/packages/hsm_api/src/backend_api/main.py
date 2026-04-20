@@ -38,6 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        """Populate ``app.state`` with the fields documented in ``backend_api.app_state.HsmAppState``."""
         app.state.settings = settings
         init_firebase_admin(settings)
         app.state.catalog_service = build_catalog_service(settings)
