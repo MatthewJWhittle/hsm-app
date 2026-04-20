@@ -1,6 +1,6 @@
-import { Box, IconButton, Paper, Tooltip, Typography } from '@mui/material'
+import { Box, Paper, Tooltip, Typography } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type {
   DriverVariable,
   PointInspection as PointInspectionData,
@@ -9,12 +9,24 @@ import type {
 
 interface InspectionHudProps {
   onClose: () => void
-  modelLabel: string
   lng: number | null
   lat: number | null
   inspection: PointInspectionData | null
   loading: boolean
   error: string | null
+}
+
+const DRIVER_LIST_HEIGHT_DEFAULT_PX = 320
+const DRIVER_LIST_HEIGHT_MIN_PX = 120
+const DRIVER_LIST_HEIGHT_MAX_PX = 560
+
+function clampDriverListHeightPx(h: number): number {
+  const min = DRIVER_LIST_HEIGHT_MIN_PX
+  if (typeof window !== 'undefined') {
+    const viewportCap = Math.max(min, Math.min(DRIVER_LIST_HEIGHT_MAX_PX, window.innerHeight - 120))
+    return Math.round(Math.max(min, Math.min(viewportCap, h)))
+  }
+  return Math.round(Math.max(min, Math.min(DRIVER_LIST_HEIGHT_MAX_PX, h)))
 }
 
 function signedDriverContribution(d: DriverVariable): number {
@@ -66,7 +78,8 @@ function SuitabilityReadout({
         fontWeight: 600,
         letterSpacing: '-0.02em',
         fontVariantNumeric: 'tabular-nums',
-        my: 0.25,
+        mt: 0,
+        mb: 0.25,
         opacity: stale ? 0.38 : 1,
         transition: stale ? 'opacity 0.2s ease' : 'opacity 0.15s ease',
       }}
@@ -315,7 +328,6 @@ function InfluenceDriverRow({
 
 export function InspectionHud({
   onClose,
-  modelLabel,
   lng,
   lat,
   inspection,
@@ -461,6 +473,59 @@ export function InspectionHud({
     return sortDriversForCompare(list)
   }, [inspection?.drivers])
 
+  const driversListRef = useRef<HTMLDivElement>(null)
+  const [driverListMoreBelow, setDriverListMoreBelow] = useState(false)
+  const [driversListMaxPx, setDriversListMaxPx] = useState(DRIVER_LIST_HEIGHT_DEFAULT_PX)
+  const driverListHeightResizeRef = useRef<{ originY: number; originH: number } | null>(null)
+
+  const updateDriverListScrollHint = useCallback(() => {
+    const el = driversListRef.current
+    if (!el) {
+      setDriverListMoreBelow(false)
+      return
+    }
+    const { scrollTop, scrollHeight, clientHeight } = el
+    const canScroll = scrollHeight > clientHeight + 1
+    const notAtBottom = scrollTop + clientHeight < scrollHeight - 2
+    setDriverListMoreBelow(canScroll && notAtBottom)
+  }, [])
+
+  useLayoutEffect(() => {
+    updateDriverListScrollHint()
+    const el = driversListRef.current
+    if (!el) return undefined
+    const ro = new ResizeObserver(() => updateDriverListScrollHint())
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [sortedDrivers.length, inspection, loading, driversListMaxPx, updateDriverListScrollHint])
+
+  const onDriverListHeightPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    driverListHeightResizeRef.current = { originY: e.clientY, originH: driversListMaxPx }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }, [driversListMaxPx])
+
+  const onDriverListHeightPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!driverListHeightResizeRef.current) return
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+    const { originY, originH } = driverListHeightResizeRef.current
+    const dy = e.clientY - originY
+    setDriversListMaxPx(clampDriverListHeightPx(originH + dy))
+  }, [])
+
+  const onDriverListHeightPointerUp = useCallback((e: React.PointerEvent) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+    driverListHeightResizeRef.current = null
+    try {
+      ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    updateDriverListScrollHint()
+  }, [updateDriverListScrollHint])
+
   const onDragPointerUp = useCallback((e: React.PointerEvent) => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
     setDragging(false)
@@ -470,6 +535,10 @@ export function InspectionHud({
       /* ignore */
     }
   }, [])
+
+  // `bottom`-anchored layout grows upward when content gets taller. Nudge the panel down by the
+  // same delta as the driver list height change so the top stays put and the bottom extends.
+  const driverListResizeCompensateY = driversListMaxPx - DRIVER_LIST_HEIGHT_DEFAULT_PX
 
   return (
     <Paper
@@ -486,7 +555,8 @@ export function InspectionHud({
         zIndex: 1000,
         maxWidth: 300,
         px: 1.75,
-        py: 1.5,
+        pt: 1.25,
+        pb: 1.5,
         borderRadius: 1.5,
         bgcolor: 'rgba(255, 255, 255, 0.92)',
         backdropFilter: 'blur(8px)',
@@ -494,7 +564,7 @@ export function InspectionHud({
         boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
         border: '1px solid',
         borderColor: 'divider',
-        transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
+        transform: `translate(${dragOffset.x}px, ${dragOffset.y + driverListResizeCompensateY}px)`,
         willChange: dragging ? 'transform' : undefined,
       }}
     >
@@ -503,91 +573,138 @@ export function InspectionHud({
         onPointerMove={onDragPointerMove}
         onPointerUp={onDragPointerUp}
         onPointerCancel={onDragPointerUp}
+        aria-label="Drag to move panel"
+        title="Drag panel"
         sx={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          gap: 1,
-          mb: 0.75,
           cursor: dragging ? 'grabbing' : 'grab',
           touchAction: 'none',
           userSelect: 'none',
-          mx: -0.5,
-          mt: -0.5,
-          px: 0.5,
-          pt: 0.5,
-          borderRadius: 1,
         }}
-        title="Drag panel"
       >
-        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3, flex: 1, pt: 0.25 }}>
-          {modelLabel}
-        </Typography>
-        <IconButton
-          size="small"
-          aria-label="Close"
-          onClick={onClose}
-          onPointerDown={(e) => e.stopPropagation()}
-          sx={{ color: 'text.secondary', mt: -0.5, mr: -0.5 }}
-        >
-          <span aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>
-            ×
-          </span>
-        </IconButton>
+        {loading && !inspection && (
+          <Typography
+            variant="h5"
+            component="p"
+            sx={{
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+              fontVariantNumeric: 'tabular-nums',
+              color: 'text.secondary',
+              opacity: 0.75,
+              my: 0,
+              transition: 'opacity 0.2s ease',
+            }}
+          >
+            …
+          </Typography>
+        )}
+
+        {inspection && (loading || (!loading && !error)) && (
+          <Box>
+            <SuitabilityReadout inspection={inspection} stale={loading} />
+          </Box>
+        )}
+
+        {!loading && error && (
+          <Typography variant="body2" color="error" sx={{ lineHeight: 1.4, my: 0 }}>
+            {error}
+          </Typography>
+        )}
       </Box>
-
-      {loading && !inspection && (
-        <Typography
-          variant="h5"
-          component="p"
-          sx={{
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            fontVariantNumeric: 'tabular-nums',
-            color: 'text.secondary',
-            opacity: 0.75,
-            my: 0.25,
-            transition: 'opacity 0.2s ease',
-          }}
-        >
-          …
-        </Typography>
-      )}
-
-      {inspection && (loading || (!loading && !error)) && (
-        <Box>
-          <SuitabilityReadout inspection={inspection} stale={loading} />
-        </Box>
-      )}
-
-      {!loading && error && (
-        <Typography variant="body2" color="error" sx={{ lineHeight: 1.4 }}>
-          {error}
-        </Typography>
-      )}
 
       {inspection &&
         !error &&
         sortedDrivers.length > 0 && (
-          <Box
-            sx={{
-              mt: 0.75,
-              maxHeight: 320,
-              overflowY: 'auto',
-              overflowX: 'hidden',
-              pr: 0.5,
-              mr: -0.5,
-            }}
-          >
-            {sortedDrivers.map((d) => (
-              <InfluenceDriverRow
-                key={d.name}
-                d={d}
-                scaleMaxAbs={compareScaleMax}
-                rawEnv={inspection.raw_environmental_values}
-                loading={loading}
+          <Box sx={{ mt: 0.75 }}>
+            <Box sx={{ position: 'relative' }}>
+              <Box
+                ref={driversListRef}
+                onScroll={updateDriverListScrollHint}
+                aria-label="Driver influences; scroll to see all predictors"
+                tabIndex={0}
+                sx={{
+                  maxHeight: driversListMaxPx,
+                  overflowY: 'auto',
+                  overflowX: 'hidden',
+                  pr: 0.75,
+                  mr: -0.5,
+                  scrollbarGutter: 'stable',
+                  scrollbarWidth: 'thin',
+                  '&::-webkit-scrollbar': { width: 6 },
+                  '&::-webkit-scrollbar-thumb': {
+                    borderRadius: 999,
+                    backgroundColor: alpha(theme.palette.text.primary, 0.18),
+                  },
+                }}
+              >
+                {sortedDrivers.map((d) => (
+                  <InfluenceDriverRow
+                    key={d.name}
+                    d={d}
+                    scaleMaxAbs={compareScaleMax}
+                    rawEnv={inspection.raw_environmental_values}
+                    loading={loading}
+                  />
+                ))}
+              </Box>
+              {driverListMoreBelow ? (
+                <Box
+                  aria-hidden
+                  sx={{
+                    pointerEvents: 'none',
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 32,
+                    borderBottomLeftRadius: 4,
+                    borderBottomRightRadius: 4,
+                    background: (t) =>
+                      `linear-gradient(180deg, ${alpha(t.palette.background.paper, 0)} 0%, ${alpha(
+                        t.palette.background.paper,
+                        0.88,
+                      )} 55%, ${alpha(t.palette.background.paper, 0.96)} 100%)`,
+                  }}
+                />
+              ) : null}
+            </Box>
+            <Box
+              onPointerDown={onDriverListHeightPointerDown}
+              onPointerMove={onDriverListHeightPointerMove}
+              onPointerUp={onDriverListHeightPointerUp}
+              onPointerCancel={onDriverListHeightPointerUp}
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Drag to resize driver list height"
+              aria-valuemin={DRIVER_LIST_HEIGHT_MIN_PX}
+              aria-valuemax={DRIVER_LIST_HEIGHT_MAX_PX}
+              aria-valuenow={driversListMaxPx}
+              sx={{
+                mt: 0.75,
+                mx: -0.75,
+                mb: -0.25,
+                py: 0.5,
+                cursor: 'ns-resize',
+                touchAction: 'none',
+                userSelect: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderTop: 1,
+                borderColor: 'divider',
+              }}
+            >
+              <Box
+                aria-hidden
+                sx={{
+                  width: 40,
+                  height: 4,
+                  borderRadius: 999,
+                  bgcolor: 'action.selected',
+                  opacity: 0.55,
+                }}
               />
-            ))}
+            </Box>
           </Box>
         )}
     </Paper>
