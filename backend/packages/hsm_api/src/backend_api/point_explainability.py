@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import io
 import logging
 import pickle
 import threading
@@ -17,7 +16,8 @@ from backend_api.feature_band_names import FeatureBandNamesValidationError
 from backend_api.model_effective_config import get_effective_driver_config, get_feature_band_indices
 from backend_api.point_sampling import PointSamplingError
 from backend_api.schemas import DriverVariable, Model
-from hsm_core.env_cog_paths import artifact_uri_exists, resolve_artifact_uri, split_gs_uri
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
+from hsm_core.env_cog_paths import artifact_uri_exists, resolve_artifact_uri
 
 if TYPE_CHECKING:
     from backend_api.catalog_service import CatalogService
@@ -57,20 +57,9 @@ def _background_storage_root(model: Model, dc: dict) -> str:
     return model.artifact_root
 
 
-def _download_gs_uri_bytes(uri: str) -> bytes:
-    from google.cloud import storage
-
-    bucket_name, blob_name = split_gs_uri(uri)
-    return storage.Client().bucket(bucket_name).blob(blob_name).download_as_bytes()
-
-
-def _load_classifier_or_raise(model_path: str) -> object:
+def _load_classifier_or_raise(model_path: str, artifact_read: ArtifactReadRuntime) -> object:
     try:
-        if model_path.startswith("gs://"):
-            raw = _download_gs_uri_bytes(model_path)
-        else:
-            with open(model_path, "rb") as f:
-                raw = f.read()
+        raw = artifact_read.read_opaque_bytes(model_path)
         return pickle.loads(raw)
     except ModuleNotFoundError as e:
         mod = getattr(e, "name", None) or str(e)
@@ -99,15 +88,13 @@ def _materialize_shap_explainer_bundle(
     model_path: str,
     bg_path: str,
     max_background_rows: int,
+    artifact_read: ArtifactReadRuntime,
 ) -> ShapExplainerBundle:
     """Load pickle + capped background and build ``shap.Explainer`` (no query row yet)."""
-    clf = _load_classifier_or_raise(model_path)
+    clf = _load_classifier_or_raise(model_path, artifact_read)
 
     try:
-        if bg_path.startswith("gs://"):
-            background = pd.read_parquet(io.BytesIO(_download_gs_uri_bytes(bg_path)))
-        else:
-            background = pd.read_parquet(bg_path)
+        background = artifact_read.read_explainability_background_parquet(bg_path)
     except Exception:
         logger.exception("Failed to read explainability background")
         raise PointSamplingError("explainability background could not be read") from None
@@ -183,6 +170,7 @@ def compute_shap_driver_variables(
     dc: dict,
     *,
     max_background_rows: int,
+    artifact_read: ArtifactReadRuntime,
 ) -> list[DriverVariable]:
     """
     Load sklearn pipeline + background from ``artifact_root``, run permutation SHAP
@@ -218,8 +206,9 @@ def compute_shap_driver_variables(
             model_path,
             bg_path,
             max_background_rows,
+            artifact_read,
             lambda: _materialize_shap_explainer_bundle(
-                model, dc, model_path, bg_path, max_background_rows
+                model, dc, model_path, bg_path, max_background_rows, artifact_read
             ),
         )
         fnames = bundle.fnames
@@ -282,6 +271,7 @@ def warm_explainability_cache(
     catalog: "CatalogService",
     *,
     max_background_rows: int,
+    artifact_read: ArtifactReadRuntime,
 ) -> None:
     """
     Load and cache SHAP explainer artifacts for a model (no query row).
@@ -308,8 +298,9 @@ def warm_explainability_cache(
             model_path,
             bg_path,
             max_background_rows,
+            artifact_read,
             lambda: _materialize_shap_explainer_bundle(
-                model, dc, model_path, bg_path, max_background_rows
+                model, dc, model_path, bg_path, max_background_rows, artifact_read
             ),
         )
     except PointSamplingError:

@@ -6,10 +6,9 @@ import logging
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Callable
 
-from hsm_core.env_cog_paths import split_gs_uri
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -32,26 +31,6 @@ _meta: dict[str, tuple[float, float, int, str, str]] = {}
 """model_id → (model_mtime, bg_mtime, max_background_rows, model_path_str, bg_path_str)."""
 
 
-def _artifact_cache_fingerprint(path: str) -> float:
-    """Local files use mtime; ``gs://`` objects use generation (float); else ``-1``."""
-    if path.startswith("gs://"):
-        try:
-            from google.cloud import storage
-
-            bucket_name, blob_name = split_gs_uri(path)
-            blob = storage.Client().bucket(bucket_name).blob(blob_name)
-            blob.reload()
-            if blob.generation is not None:
-                return float(blob.generation)
-        except Exception:
-            logger.debug("explainability cache fingerprint failed for %s", path, exc_info=True)
-        return -1.0
-    try:
-        return Path(path).stat().st_mtime
-    except OSError:
-        return -1.0
-
-
 def _touch(key: str, bundle: ShapExplainerBundle, meta: tuple[float, float, int, str, str]) -> None:
     _lru[key] = bundle
     _meta[key] = meta
@@ -67,6 +46,7 @@ def get_or_build_shap_bundle(
     model_path: str,
     bg_path: str,
     max_background_rows: int,
+    artifact_read: ArtifactReadRuntime,
     factory: Callable[[], ShapExplainerBundle],
 ) -> ShapExplainerBundle:
     """
@@ -74,8 +54,8 @@ def get_or_build_shap_bundle(
 
     ``factory`` must load artifacts and build the explainer (no SHAP run for the query row).
     """
-    mt_model = _artifact_cache_fingerprint(model_path)
-    mt_bg = _artifact_cache_fingerprint(bg_path)
+    mt_model = artifact_read.artifact_cache_fingerprint(model_path)
+    mt_bg = artifact_read.artifact_cache_fingerprint(bg_path)
     key = model_id
     mps, bgps = model_path, bg_path
     meta = (mt_model, mt_bg, max_background_rows, mps, bgps)

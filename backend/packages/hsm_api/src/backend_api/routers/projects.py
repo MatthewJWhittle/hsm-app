@@ -32,6 +32,7 @@ from backend_api.catalog_service import CatalogService
 from backend_api.catalog_write import upsert_project
 from backend_api.api_errors import validation_error
 from backend_api.cog_validation import CogValidationError
+from backend_api.deps.artifact_read_runtime_dep import get_artifact_read_runtime
 from backend_api.deps.catalog import get_object_storage, require_catalog_ready
 from backend_api.deps.firestore_dep import get_firestore_client
 from backend_api.env_background_sample import (
@@ -82,6 +83,7 @@ from backend_api.upload_session_ingest import (
     upload_session_gcs_uri,
     write_upload_file_to_tempfile,
 )
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 from hsm_core.env_cog_paths import environmental_cog_readable_for_sampling
 from hsm_core.explainability_job_preflight import (
     ExplainabilityJobPreflightError,
@@ -448,6 +450,7 @@ async def create_project(
     settings: Annotated[Settings, Depends(get_settings)],
     _claims: Annotated[dict, Depends(require_admin_claims)],
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
+    artifact_read: Annotated[ArtifactReadRuntime, Depends(get_artifact_read_runtime)],
     name: Annotated[str, Form()],
     file: Annotated[UploadFile | None, File()] = None,
     description: Annotated[str | None, Form()] = None,
@@ -508,6 +511,7 @@ async def create_project(
                 settings,
                 f"gs://{uploaded_session.gcs_bucket}",
                 uploaded_session.object_path,
+                artifact_read,
             )
         logger.info(
             "project_create_ingest_session project_id=%s upload_session_id=%s",
@@ -688,6 +692,7 @@ async def create_project(
                     cog_path,
                     band_defs,
                     settings.env_background_sample_rows,
+                    artifact_read,
                 )
 
             await run_in_threadpool(_bg)
@@ -878,6 +883,7 @@ async def replace_project_environmental_cogs(
     _claims: Annotated[dict, Depends(require_admin_claims)],
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    artifact_read: Annotated[ArtifactReadRuntime, Depends(get_artifact_read_runtime)],
     project_id: str,
     file: Annotated[UploadFile | None, File()] = None,
     upload_session_id: Annotated[str | None, Form()] = None,
@@ -1001,6 +1007,7 @@ async def replace_project_environmental_cogs(
             settings,
             f"gs://{uploaded_session.gcs_bucket}",
             uploaded_session.object_path,
+            artifact_read,
         )
 
         uploaded_session = await run_in_threadpool(

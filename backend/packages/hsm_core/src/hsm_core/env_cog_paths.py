@@ -6,8 +6,17 @@ from pathlib import Path
 
 
 def raster_storage_uri_readable(ref: str) -> bool:
-    """True if ``ref`` can be passed to rasterio (local file exists or ``gs://`` URI)."""
+    """
+    True if ``ref`` can be passed to rasterio.
+
+    Accepts:
+    - ``gs://`` (caller may later rewrite via ``ArtifactReadRuntime.rasterio_open_uri``)
+    - ``/vsicurl/https://...`` (GDAL VSI path after signing, used for ranged COG reads)
+    - an existing local file path
+    """
     if ref.startswith("gs://"):
+        return True
+    if ref.startswith("/vsicurl/"):
         return True
     return Path(ref).is_file()
 

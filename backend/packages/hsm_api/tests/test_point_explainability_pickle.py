@@ -8,6 +8,8 @@ import pytest
 from backend_api.point_explainability import compute_shap_driver_variables
 from backend_api.point_sampling import PointSamplingError
 from backend_api.schemas import Model, ModelAnalysis, ModelMetadata
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
+from hsm_core.settings import Settings
 
 
 def _minimal_model() -> Model:
@@ -47,6 +49,12 @@ def test_pickle_module_not_found_clear_error() -> None:
         patch("pickle.loads", side_effect=e),
     ):
         with pytest.raises(PointSamplingError) as ei:
-            compute_shap_driver_variables(model, feature_row, dc, max_background_rows=512)
+            compute_shap_driver_variables(
+                model,
+                feature_row,
+                dc,
+                max_background_rows=512,
+                artifact_read=ArtifactReadRuntime(Settings()),
+            )
     assert ei.value.code == "EXPLAINABILITY_PICKLE_IMPORT"
     assert "sdm" in ei.value.detail.lower() or "missing import" in ei.value.detail.lower()

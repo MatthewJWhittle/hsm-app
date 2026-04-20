@@ -18,6 +18,7 @@ from fastapi import (
     status,
 )
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
 from starlette.responses import Response
 
 from backend_api.api_errors import validation_error
@@ -25,6 +26,7 @@ from backend_api.auth_deps import optional_id_token_claims, require_admin_claims
 from backend_api.catalog_service import CatalogService
 from backend_api.catalog_write import upsert_model
 from backend_api.cog_validation import CogValidationError
+from backend_api.deps.artifact_read_runtime_dep import get_artifact_read_runtime
 from backend_api.deps.catalog import (
     get_model_or_404,
     get_object_storage,
@@ -69,7 +71,7 @@ from backend_api.upload_session_ingest import (
     upload_session_gcs_uri,
     write_upload_file_to_tempfile,
 )
-from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -227,6 +229,7 @@ async def get_model_point(
     m: Annotated[Model, Depends(get_model_visible_or_404)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
     settings: Annotated[Settings, Depends(get_settings)],
+    artifact_read: Annotated[ArtifactReadRuntime, Depends(get_artifact_read_runtime)],
 ):
     """
     Suitability value at a WGS84 point (band 1 of the model COG).
@@ -256,6 +259,7 @@ async def get_model_point(
             m,
             lng,
             lat,
+            artifact_read=artifact_read,
             catalog=catalog,
             shap_background_max_rows=settings.shap_background_max_rows,
         )
@@ -295,6 +299,7 @@ async def post_explainability_warmup(
     m: Annotated[Model, Depends(get_model_visible_or_404)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
     settings: Annotated[Settings, Depends(get_settings)],
+    artifact_read: Annotated[ArtifactReadRuntime, Depends(get_artifact_read_runtime)],
 ):
     """
     Load serialized estimator + explainability background and build the permutation SHAP explainer
@@ -307,6 +312,7 @@ async def post_explainability_warmup(
             m,
             catalog,
             max_background_rows=settings.shap_background_max_rows,
+            artifact_read=artifact_read,
         )
 
     await run_in_threadpool(_warm)
@@ -328,6 +334,7 @@ async def create_model(
     _claims: Annotated[dict, Depends(require_admin_claims)],
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    artifact_read: Annotated[ArtifactReadRuntime, Depends(get_artifact_read_runtime)],
 ):
     """Create a catalog entry and store the suitability COG (admin only).
 
@@ -409,6 +416,7 @@ async def create_model(
                 settings,
                 f"gs://{upload_session.gcs_bucket}",
                 upload_session.object_path,
+                artifact_read,
             )
         logger.info(
             "model_create_ingest_session model_id=%s upload_session_id=%s",
@@ -589,7 +597,7 @@ async def create_model(
     validate_model_feature_bands_for_admin(model, catalog)
 
     def _validate_and_enrich() -> Model:
-        validate_driver_band_indices_for_model(model, catalog)
+        validate_driver_band_indices_for_model(model, catalog, artifact_read)
         validate_explainability_artifacts_for_model(model, catalog)
         return model
 
@@ -675,6 +683,7 @@ async def update_model(
     storage: Annotated[ObjectStorage, Depends(get_object_storage)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
     existing: Annotated[Model, Depends(get_model_or_404)],
+    artifact_read: Annotated[ArtifactReadRuntime, Depends(get_artifact_read_runtime)],
 ):
     """Update metadata and/or replace the suitability COG (admin only).
 
@@ -808,7 +817,7 @@ async def update_model(
     validate_model_feature_bands_for_admin(model, catalog)
 
     def _validate_and_enrich() -> Model:
-        validate_driver_band_indices_for_model(model, catalog)
+        validate_driver_band_indices_for_model(model, catalog, artifact_read)
         validate_explainability_artifacts_for_model(model, catalog)
         return model
 

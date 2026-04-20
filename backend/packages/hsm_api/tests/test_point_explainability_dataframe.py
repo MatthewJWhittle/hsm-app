@@ -13,6 +13,8 @@ from sklearn.preprocessing import StandardScaler
 
 from backend_api.point_explainability import compute_shap_driver_variables
 from backend_api.schemas import Model, ModelAnalysis, ModelMetadata
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
+from hsm_core.settings import Settings
 
 
 def test_shap_column_transformer_pipeline_receives_dataframe(tmp_path: Path) -> None:
@@ -55,8 +57,9 @@ def test_shap_column_transformer_pipeline_receives_dataframe(tmp_path: Path) -> 
     }
     feature_row = pd.DataFrame([[0.12, -0.34]], columns=cols)
 
+    artifact_read = ArtifactReadRuntime(Settings())
     drivers = compute_shap_driver_variables(
-        model, feature_row, dc, max_background_rows=512
+        model, feature_row, dc, max_background_rows=512, artifact_read=artifact_read
     )
     assert len(drivers) >= 1
     names = {d.name for d in drivers}
