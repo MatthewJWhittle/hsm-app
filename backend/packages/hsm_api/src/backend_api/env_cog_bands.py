@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from rasterio.io import DatasetReader, MemoryFile
 
 from backend_api.schemas_project import BandLabelPatch, EnvironmentalBandDefinition
+from hsm_core.env_cog_paths import reject_raw_gs_uri_for_rasterio
 
 
 def count_bands_in_geotiff_bytes(content: bytes) -> int:
@@ -21,7 +22,8 @@ def count_bands_in_geotiff_bytes(content: bytes) -> int:
 
 
 def count_bands_in_path(path: str) -> int:
-    """Return band count from a GeoTIFF / COG on disk."""
+    """Return band count from a local path or rasterio URI (e.g. ``/vsicurl/...`` for GCS)."""
+    reject_raw_gs_uri_for_rasterio(path)
     with rasterio.open(path) as src:
         return int(src.count)
 
@@ -124,6 +126,7 @@ def default_band_definitions(count: int) -> list[EnvironmentalBandDefinition]:
 
 def default_band_definitions_from_path(path: str) -> list[EnvironmentalBandDefinition]:
     """Derive band definitions from an on-disk GeoTIFF/COG (same rules as upload inference)."""
+    reject_raw_gs_uri_for_rasterio(path)
     with rasterio.open(path) as src:
         defs, _ = infer_band_definitions_from_dataset(src)
     return defs
@@ -170,6 +173,7 @@ def band_definitions_for_upload_path(
     Resolve band definitions for a new upload from an on-disk raster path.
     """
     parsed = parse_band_definitions_json(definitions_form)
+    reject_raw_gs_uri_for_rasterio(path)
     with rasterio.open(path) as src:
         count = int(src.count)
         if parsed is not None:
@@ -192,6 +196,7 @@ def band_definitions_for_upload_uri(
     Resolve band definitions for a new upload from a raster URI/path readable by rasterio.
     """
     parsed = parse_band_definitions_json(definitions_form)
+    reject_raw_gs_uri_for_rasterio(uri)
     with rasterio.open(uri) as src:
         count = int(src.count)
         if parsed is not None:

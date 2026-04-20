@@ -9,8 +9,13 @@ import pandas as pd
 import pytest
 
 from hsm_core.artifact_read_runtime import ArtifactReadRuntime
-from hsm_core.env_cog_paths import raster_storage_uri_readable
+from hsm_core.env_cog_paths import raster_storage_uri_readable, reject_raw_gs_uri_for_rasterio
 from hsm_core.settings import WorkerSettings
+
+
+def test_reject_raw_gs_uri_for_rasterio_raises() -> None:
+    with pytest.raises(ValueError, match="rasterio cannot open raw gs://"):
+        reject_raw_gs_uri_for_rasterio("gs://bucket/object.tif")
 
 
 def test_raster_storage_uri_readable_gs_vsicurl_and_local(tmp_path: Path) -> None:

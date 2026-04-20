@@ -9,6 +9,7 @@ import rasterio
 from rasterio.crs import CRS
 
 from backend_api.point_sampling import EXPECTED_SUITABILITY_CRS
+from hsm_core.env_cog_paths import reject_raw_gs_uri_for_rasterio
 
 EXPECTED_EPSG = 3857
 
@@ -52,6 +53,7 @@ def validate_suitability_cog_path(path: Path) -> None:
 
 def validate_suitability_cog_uri(uri: str) -> None:
     """Validate COG from a rasterio-readable URI/path: tiled, EPSG:3857."""
+    reject_raw_gs_uri_for_rasterio(uri)
     try:
         with rasterio.open(uri) as src:
             if src.crs is None:

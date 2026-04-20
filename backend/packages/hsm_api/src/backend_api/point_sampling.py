@@ -24,7 +24,7 @@ from backend_api.schemas import (
     RawEnvironmentalValue,
 )
 from hsm_core.artifact_read_runtime import ArtifactReadRuntime
-from hsm_core.env_cog_paths import raster_storage_uri_readable
+from hsm_core.env_cog_paths import raster_storage_uri_readable, reject_raw_gs_uri_for_rasterio
 
 if TYPE_CHECKING:
     from backend_api.catalog_service import CatalogService
@@ -182,6 +182,7 @@ def sample_suitability(cog_path: str, lng: float, lat: float) -> float:
     if not raster_storage_uri_readable(cog_path):
         raise RasterNotFoundError("suitability raster not found on server")
 
+    reject_raw_gs_uri_for_rasterio(cog_path)
     with rasterio.open(cog_path) as src:
         _row_i, _col_i, window = _rowcol_window_for_wgs84_point(
             src,
@@ -225,6 +226,7 @@ def sample_environmental_bands_at_point(
     if not raster_storage_uri_readable(cog_path):
         raise RasterNotFoundError("environmental raster not found on server")
 
+    reject_raw_gs_uri_for_rasterio(cog_path)
     out: list[float] = []
     with rasterio.open(cog_path) as src:
         _row_i, _col_i, window = _rowcol_window_for_wgs84_point(

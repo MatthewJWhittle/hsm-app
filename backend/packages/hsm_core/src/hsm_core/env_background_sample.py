@@ -13,6 +13,7 @@ import pyarrow  # noqa: F401 — pandas needs pyarrow for DataFrame.to_parquet(e
 import rasterio
 
 from hsm_core.artifact_read_runtime import ArtifactReadRuntime
+from hsm_core.env_cog_paths import reject_raw_gs_uri_for_rasterio
 from hsm_core.schemas_project import EnvironmentalBandDefinition
 from hsm_core.settings import WorkerSettings
 from hsm_core.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
@@ -220,6 +221,7 @@ def sample_background_parquet_to_tempfile(
     (spatially spread, minimal random 1×1 reads). A second block pass runs only if
     some strata lack enough valid pixels (e.g. heavy nodata).
     """
+    reject_raw_gs_uri_for_rasterio(cog_uri)
     defs = sorted(band_definitions, key=lambda d: d.index)
     names = [d.name for d in defs]
 

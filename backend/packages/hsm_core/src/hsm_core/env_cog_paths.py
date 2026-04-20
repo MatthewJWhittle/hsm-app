@@ -26,6 +26,22 @@ def environmental_cog_readable_for_sampling(abs_path: str) -> bool:
     return raster_storage_uri_readable(abs_path)
 
 
+def reject_raw_gs_uri_for_rasterio(uri: str) -> None:
+    """
+    Fail fast on bare ``gs://`` refs before ``rasterio.open``.
+
+    GDAL/rasterio does not use Application Default Credentials the way the Python
+    ``google-cloud-storage`` client does; in Cloud Run, ``gs://`` opens typically fail
+    unless GDAL is configured separately. Prefer signed HTTPS URLs wrapped as
+    ``/vsicurl/...`` (see ``ArtifactReadRuntime.rasterio_open_uri``).
+    """
+    if uri.startswith("gs://"):
+        raise ValueError(
+            "rasterio cannot open raw gs:// URIs in this environment; "
+            "use ArtifactReadRuntime.rasterio_open_uri() first to build a /vsicurl/ URL"
+        )
+
+
 def split_gs_uri(uri: str) -> tuple[str, str]:
     """Return ``(bucket_name, object_name)`` for ``gs://bucket/object``."""
     if not uri.startswith("gs://"):

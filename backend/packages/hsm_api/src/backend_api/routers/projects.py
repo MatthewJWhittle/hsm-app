@@ -187,6 +187,7 @@ async def patch_environmental_band_definitions(
     settings: Annotated[Settings, Depends(get_settings)],
     _claims: Annotated[dict, Depends(require_admin_claims)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    artifact_read: Annotated[ArtifactReadRuntime, Depends(get_artifact_read_runtime)],
     project_id: str,
     definitions: Annotated[list[EnvironmentalBandDefinition], Body(...)],
 ):
@@ -213,8 +214,10 @@ async def patch_environmental_band_definitions(
             "environmental COG not found on server; upload the file first",
         )
 
+    raster_uri = artifact_read.rasterio_open_uri(abs_path)
+
     def _count() -> int:
-        return count_bands_in_path(abs_path)
+        return count_bands_in_path(raster_uri)
 
     count = await run_in_threadpool(_count)
     try:
@@ -257,6 +260,7 @@ async def patch_environmental_band_definition_labels(
     settings: Annotated[Settings, Depends(get_settings)],
     _claims: Annotated[dict, Depends(require_admin_claims)],
     catalog: Annotated[CatalogService, Depends(require_catalog_ready)],
+    artifact_read: Annotated[ArtifactReadRuntime, Depends(get_artifact_read_runtime)],
     project_id: str,
     updates: Annotated[dict[str, BandLabelPatch], Body(...)],
 ):
@@ -309,7 +313,8 @@ async def patch_environmental_band_definition_labels(
             detail=validation_error("BAND_LABEL_PATCH_INVALID", str(e)),
         ) from e
 
-    count = await run_in_threadpool(lambda: count_bands_in_path(abs_path))
+    raster_uri = artifact_read.rasterio_open_uri(abs_path)
+    count = await run_in_threadpool(lambda: count_bands_in_path(raster_uri))
     try:
         validate_band_definitions_match_raster(count, merged)
     except ValueError as e:
