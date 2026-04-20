@@ -10,6 +10,16 @@ export interface EnvironmentalBandDefinition {
   description?: string | null
 }
 
+/**
+ * Context for the selected catalog project, shaped for the map UX.
+ * ``null`` when no layer is selected yet.
+ */
+export type ProjectSummary = {
+  visibility: 'public' | 'private'
+  hasEnvironmentalCog: boolean
+  isLegacy: boolean
+} | null
+
 export interface CatalogProject {
   id: string
   name: string

@@ -3,14 +3,13 @@ import MapComponent from './components/Map'
 import { Alert, Box, Button } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { FloatingMapInterpretation } from './components/map/FloatingMapInterpretation'
-import { MapControlPanel, type ProjectSummary } from './components/map/MapControlPanel'
+import { MapFloatingControls } from './components/map/MapFloatingControls'
 import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
 import { SuitabilityLegend } from './components/map/SuitabilityLegend'
 import { InspectionHud } from './components/InspectionHud'
 import { type Model, getFeatureBandNames } from './types/model'
-import type { CatalogProject } from './types/project'
+import type { CatalogProject, ProjectSummary } from './types/project'
 import type { PointInspection } from './types/pointInspection'
 import { fetchModelCatalog } from './api/catalog'
 import { fetchProjectCatalog } from './api/projects'
@@ -257,8 +256,26 @@ function App() {
   return (
     <div className="app-container">
       <Navbar />
-      <div className="app-main">
-        <MapControlPanel
+      <Box
+        component="main"
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Absolute-fill wrapper so the MapLibre canvas has an explicit size. */}
+        <Box sx={{ position: 'absolute', inset: 0 }}>
+          <MapComponent
+            opacity={opacity / 100}
+            model={selectedModel}
+            onInspect={selectedModel && !loadError ? handleInspect : undefined}
+          />
+        </Box>
+
+        <MapFloatingControls
           models={models}
           selectedModelId={selectedModelId}
           onModelChange={onModelChange}
@@ -269,85 +286,70 @@ function App() {
           loading={!catalogReady}
           errored={Boolean(loadError)}
         />
-        <Box
-          sx={{
-            flex: 1,
-            minWidth: 0,
-            minHeight: 0,
-            position: 'relative',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          {loadError && (
-            <Alert
-              severity="error"
-              variant="outlined"
-              sx={{
-                position: 'absolute',
-                top: 16,
-                right: 16,
-                zIndex: 1001,
-                maxWidth: 360,
-                bgcolor: 'background.paper',
-                boxShadow: 2,
-              }}
-              action={
-                <Button color="inherit" size="small" onClick={retryLoadCatalog}>
-                  Retry
-                </Button>
-              }
-            >
-              {loadError}
-            </Alert>
-          )}
-          {hudOpen && selectedModel && !loadError && (
-            <InspectionHud
-              onClose={closeHud}
-              modelLabel={layerDisplayName(selectedModel)}
-              lng={inspectCoords?.lng ?? null}
-              lat={inspectCoords?.lat ?? null}
-              inspection={inspection}
-              loading={inspectLoading}
-              error={inspectError}
-              technicalDetails={{
-                modelId: selectedModel.id,
-                projectId: selectedModel.project_id,
-                driverFeatureBandNames: getFeatureBandNames(selectedModel),
-              }}
-            />
-          )}
-          <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative' }}>
-            <MapComponent
-              opacity={opacity / 100}
-              model={selectedModel}
-              onInspect={selectedModel && !loadError ? handleInspect : undefined}
-            />
-            {selectedModel && !loadError && (
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: 20,
-                  right: 20,
-                  zIndex: 999,
-                  pointerEvents: 'auto',
-                }}
-              >
-                <SuitabilityLegend />
-              </Box>
-            )}
-            <FloatingMapInterpretation onOpen={() => setMapInfoOpen(true)} />
+
+        {selectedModel && !loadError && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              zIndex: 999,
+              pointerEvents: 'auto',
+            }}
+          >
+            <SuitabilityLegend />
           </Box>
-        </Box>
-        <MapInterpretationDialog open={mapInfoOpen} onClose={() => setMapInfoOpen(false)} />
-        <MapLayerDetailsDialog
-          open={layerDetailsOpen}
-          onClose={() => setLayerDetailsOpen(false)}
-          model={selectedModel}
-          projectSummary={projectSummary}
-          selectedProjectLabel={selectedProjectLabel}
-        />
-      </div>
+        )}
+
+        {loadError && (
+          <Alert
+            severity="error"
+            variant="outlined"
+            sx={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              zIndex: 1001,
+              maxWidth: 360,
+              bgcolor: 'background.paper',
+              boxShadow: 2,
+            }}
+            action={
+              <Button color="inherit" size="small" onClick={retryLoadCatalog}>
+                Retry
+              </Button>
+            }
+          >
+            {loadError}
+          </Alert>
+        )}
+
+        {hudOpen && selectedModel && !loadError && (
+          <InspectionHud
+            onClose={closeHud}
+            modelLabel={layerDisplayName(selectedModel)}
+            lng={inspectCoords?.lng ?? null}
+            lat={inspectCoords?.lat ?? null}
+            inspection={inspection}
+            loading={inspectLoading}
+            error={inspectError}
+            technicalDetails={{
+              modelId: selectedModel.id,
+              projectId: selectedModel.project_id,
+              driverFeatureBandNames: getFeatureBandNames(selectedModel),
+            }}
+          />
+        )}
+      </Box>
+
+      <MapInterpretationDialog open={mapInfoOpen} onClose={() => setMapInfoOpen(false)} />
+      <MapLayerDetailsDialog
+        open={layerDetailsOpen}
+        onClose={() => setLayerDetailsOpen(false)}
+        model={selectedModel}
+        projectSummary={projectSummary}
+        selectedProjectLabel={selectedProjectLabel}
+      />
     </div>
   )
 }
