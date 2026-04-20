@@ -6,12 +6,32 @@ import tempfile
 from pathlib import Path
 
 import rasterio
-from rasterio.crs import CRS
+from rasterio.io import DatasetReader
 
 from backend_api.point_sampling import EXPECTED_SUITABILITY_CRS
 from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 
 EXPECTED_EPSG = 3857
+
+
+def _raster_uses_internal_tiling(src: DatasetReader) -> bool:
+    """
+    True when the GeoTIFF uses a tiled storage layout (not row/strip).
+
+    Replaces rasterio's deprecated ``DatasetReader.is_tiled`` (rasterio 1.4+): strip
+    layouts use full-width row blocks; tiled COGs use blocks that do not span the full
+    width; a single block covering the whole raster is treated as non-tiled layout.
+    """
+    blocks = src.block_shapes
+    if not blocks:
+        return False
+    bh, bw = blocks[0]
+    height, width = src.shape
+    if bw == width and bh < height:
+        return False
+    if bh >= height and bw >= width:
+        return False
+    return True
 
 
 class CogValidationError(Exception):
@@ -40,14 +60,14 @@ def _validate_suitability_cog_rasterio_uri(uri: str) -> None:
                     code="COG_NO_CRS",
                     context={"expected_epsg": EXPECTED_EPSG},
                 )
-            if src.crs != CRS.from_epsg(EXPECTED_EPSG):
+            if src.crs != EXPECTED_SUITABILITY_CRS:
                 got = src.crs.to_string() if src.crs else "none"
                 raise CogValidationError(
                     f"CRS must be EPSG:3857; got {got}",
                     code="COG_CRS_MISMATCH",
                     context={"expected_epsg": EXPECTED_EPSG, "got_crs": got},
                 )
-            if not src.is_tiled:
+            if not _raster_uses_internal_tiling(src):
                 raise CogValidationError(
                     "raster must be tiled (Cloud Optimized GeoTIFF); use COG creation tools",
                     code="COG_NOT_TILED",

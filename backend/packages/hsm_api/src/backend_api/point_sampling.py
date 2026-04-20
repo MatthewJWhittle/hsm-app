@@ -170,6 +170,18 @@ def _rowcol_window_for_wgs84_point(
     return row_i, col_i, Window(col_i, row_i, 1, 1)
 
 
+def _rasterio_uri_for_point_sampling(
+    artifact_read: ArtifactReadRuntime,
+    storage_ref: str,
+    *,
+    not_found_message: str,
+) -> str:
+    """Check readability, then return the URI/path for ``rasterio.open`` (incl. signed ``gs://``)."""
+    if not raster_storage_uri_readable(storage_ref):
+        raise RasterNotFoundError(not_found_message)
+    return artifact_read.rasterio_open_uri(storage_ref)
+
+
 def sample_suitability(
     artifact_read: ArtifactReadRuntime,
     storage_ref: str,
@@ -186,10 +198,11 @@ def sample_suitability(
         PointSamplingError: out of bounds, nodata, wrong CRS, unreadable pixel.
         RasterNotFoundError: path does not exist.
     """
-    if not raster_storage_uri_readable(storage_ref):
-        raise RasterNotFoundError("suitability raster not found on server")
-
-    cog_uri = artifact_read.rasterio_open_uri(storage_ref)
+    cog_uri = _rasterio_uri_for_point_sampling(
+        artifact_read,
+        storage_ref,
+        not_found_message="suitability raster not found on server",
+    )
     with rasterio.open(cog_uri) as src:
         _row_i, _col_i, window = _rowcol_window_for_wgs84_point(
             src,
@@ -236,10 +249,11 @@ def sample_environmental_bands_at_point(
         PointSamplingError: CRS, extent, nodata, or index out of range.
         RasterNotFoundError: file missing.
     """
-    if not raster_storage_uri_readable(storage_ref):
-        raise RasterNotFoundError("environmental raster not found on server")
-
-    cog_uri = artifact_read.rasterio_open_uri(storage_ref)
+    cog_uri = _rasterio_uri_for_point_sampling(
+        artifact_read,
+        storage_ref,
+        not_found_message="environmental raster not found on server",
+    )
     out: list[float] = []
     with rasterio.open(cog_uri) as src:
         _row_i, _col_i, window = _rowcol_window_for_wgs84_point(
