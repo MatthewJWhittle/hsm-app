@@ -11,6 +11,7 @@ from fastapi.openapi.utils import get_openapi
 from backend_api.routers import auth, jobs, models, projects, root, uploads
 from backend_api.catalog_service import build_catalog_service
 from hsm_core.firebase_admin_app import init_firebase_admin
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 from hsm_core.settings import Settings
 from hsm_core.storage import build_object_storage
 
@@ -41,6 +42,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         init_firebase_admin(settings)
         app.state.catalog_service = build_catalog_service(settings)
         app.state.object_storage = build_object_storage(settings)
+        app.state.artifact_read_runtime = ArtifactReadRuntime(settings)
         yield
 
     app_kwargs: dict = {

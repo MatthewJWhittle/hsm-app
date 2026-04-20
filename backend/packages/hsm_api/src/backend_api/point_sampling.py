@@ -23,6 +23,7 @@ from backend_api.schemas import (
     PointInspectionCapabilities,
     RawEnvironmentalValue,
 )
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 from hsm_core.env_cog_paths import raster_storage_uri_readable
 
 if TYPE_CHECKING:
@@ -93,7 +94,9 @@ def resolve_environmental_cog_path_for_model(
     return None
 
 
-def validate_driver_band_indices_for_model(model: Model, catalog: "CatalogService") -> None:
+def validate_driver_band_indices_for_model(
+    model: Model, catalog: "CatalogService", artifact_read: ArtifactReadRuntime
+) -> None:
     """
     If the model lists ``feature_band_names`` and an environmental COG path resolves and is
     readable (local file or ``gs://``), ensure resolved indices are in range for that raster.
@@ -117,8 +120,9 @@ def validate_driver_band_indices_for_model(model: Model, catalog: "CatalogServic
     mx = max(indices)
     if min(indices) < 0:
         raise ValueError("resolved environmental band indices must be non-negative")
+    raster_uri = artifact_read.rasterio_open_uri(path)
     try:
-        with rasterio.open(path) as src:
+        with rasterio.open(raster_uri) as src:
             if mx >= src.count:
                 raise ValueError(
                     f"resolved band index {mx} is out of range for "
@@ -303,6 +307,7 @@ def inspect_point(
     lng: float,
     lat: float,
     *,
+    artifact_read: ArtifactReadRuntime,
     catalog: "CatalogService | None" = None,
     shap_background_max_rows: int | None = None,
 ) -> PointInspection:
@@ -314,8 +319,8 @@ def inspect_point(
 
     shap_cap = 512 if shap_background_max_rows is None else shap_background_max_rows
 
-    path = resolve_cog_path(model)
-    value = sample_suitability(path, lng, lat)
+    suit_raster_uri = artifact_read.rasterio_open_uri(resolve_cog_path(model))
+    value = sample_suitability(suit_raster_uri, lng, lat)
 
     drivers_out: list[DriverVariable] | None = None  # None → serialize as empty list
     raw_out: list[RawEnvironmentalValue] | None = None
@@ -342,8 +347,9 @@ def inspect_point(
                     "feature_band_names do not match the project environmental manifest",
                     code="FEATURE_BAND_MANIFEST_MISMATCH",
                 ) from None
+            env_raster_uri = artifact_read.rasterio_open_uri(env_path)
             band_values = sample_environmental_bands_at_point(
-                env_path, lng, lat, indices
+                env_raster_uri, lng, lat, indices
             )
             raw_out = build_raw_environmental_values(
                 model, band_values, dc, band_indices_0based=indices
@@ -370,6 +376,7 @@ def inspect_point(
                     feature_df,
                     dc,
                     max_background_rows=shap_cap,
+                    artifact_read=artifact_read,
                 )
 
     drivers_final = drivers_out or []
