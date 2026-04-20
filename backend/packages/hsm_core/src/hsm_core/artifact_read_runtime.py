@@ -12,6 +12,7 @@ import google.auth.transport.requests
 import pandas as pd
 import pyarrow.fs as pafs
 import pyarrow.parquet as pq
+import rasterio
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from google.cloud import storage
 from google.cloud.exceptions import GoogleCloudError
@@ -39,7 +40,8 @@ class ArtifactReadRuntime:
     """
     Thin read-side runtime: signing config from settings, plus library-facing prep for:
 
-    * **Raster** — ``rasterio.open`` via ``/vsicurl`` for ``gs://`` (ranged HTTP reads).
+    * **Raster** — ``rasterio.open`` via ``/vsicurl`` for ``gs://`` (ranged HTTP reads); use
+      :meth:`raster_band_count` / :meth:`rasterio_open_uri` so GDAL never sees raw ``gs://``.
     * **Columnar** — Parquet via pyarrow filesystem for ``gs://``, pandas for local paths.
     * **Opaque** — full byte reads for pickle and similar.
     """
@@ -122,6 +124,16 @@ class ArtifactReadRuntime:
             signed_url = self.mint_signed_get_url(ref)
             return f"/vsicurl/{signed_url}"
         return ref
+
+    def raster_band_count(self, ref: str) -> int:
+        """
+        Number of raster bands (e.g. environmental COG), after :meth:`rasterio_open_uri` prep.
+
+        ``ref`` may be a local path, ``gs://`` object path, or an already-prepared ``/vsicurl/...``
+        URL (passed through unchanged by :meth:`rasterio_open_uri`).
+        """
+        with rasterio.open(self.rasterio_open_uri(ref)) as src:
+            return int(src.count)
 
     def read_opaque_bytes(self, uri: str) -> bytes:
         """Full object bytes (e.g. pickle); ``gs://`` uses Application Default Credentials."""

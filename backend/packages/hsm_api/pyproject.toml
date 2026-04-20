@@ -48,6 +48,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    # rasterio 1.4 deprecates DatasetReader.is_tiled; validation still uses it until refactored
+    "ignore:.*is_tiled will be removed.*:PendingDeprecationWarning",
+]
 
 [dependency-groups]
 dev = [

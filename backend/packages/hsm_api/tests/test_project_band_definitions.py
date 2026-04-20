@@ -67,7 +67,10 @@ def admin_client_proj():
         ),
         patch("backend_api.routers.projects.Path") as mock_path_cls,
         patch("hsm_core.env_cog_paths.Path") as mock_path_env_cog,
-        patch("backend_api.routers.projects.count_bands_in_path", return_value=2),
+        patch(
+            "hsm_core.artifact_read_runtime.ArtifactReadRuntime.raster_band_count",
+            return_value=2,
+        ),
         patch(
             "backend_api.routers.projects.reload_catalog_threaded",
             new_callable=AsyncMock,
