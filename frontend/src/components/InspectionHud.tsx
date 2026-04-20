@@ -177,6 +177,27 @@ export function InspectionHud({
     setRawDetailsOpen(false)
   }, [lng, lat, inspection?.value])
 
+  useEffect(() => {
+    // Dismiss on Escape. Skip when focus is inside an input/textarea/contenteditable
+    // so the user can still press Escape to clear an Autocomplete etc. without
+    // collapsing the HUD.
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+
   const reducedMotion = () =>
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 

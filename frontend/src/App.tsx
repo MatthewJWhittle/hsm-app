@@ -4,7 +4,6 @@ import { Alert, Box, Button } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { FloatingMapInterpretation } from './components/map/FloatingMapInterpretation'
-import { FloatingMapTools } from './components/map/FloatingMapTools'
 import { MapControlPanel, type ProjectSummary } from './components/map/MapControlPanel'
 import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
@@ -265,6 +264,8 @@ function App() {
           onModelChange={onModelChange}
           onOpenMapInfoDialog={() => setMapInfoOpen(true)}
           onOpenLayerDetailsDialog={() => setLayerDetailsOpen(true)}
+          opacity={opacity}
+          onOpacityChange={setOpacity}
           loading={!catalogReady}
           errored={Boolean(loadError)}
         />
@@ -335,21 +336,6 @@ function App() {
                 <SuitabilityLegend />
               </Box>
             )}
-            <Box
-              sx={{
-                position: 'absolute',
-                bottom: 20,
-                left: 20,
-                zIndex: 999,
-                pointerEvents: 'auto',
-              }}
-            >
-              <FloatingMapTools
-                opacity={opacity}
-                onOpacityChange={setOpacity}
-                disabled={!selectedModel || Boolean(loadError)}
-              />
-            </Box>
             <FloatingMapInterpretation onOpen={() => setMapInfoOpen(true)} />
           </Box>
         </Box>

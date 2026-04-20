@@ -6,12 +6,13 @@ import {
   IconButton,
   Paper,
   Skeleton,
+  Slider,
   Stack,
   TextField,
   Tooltip,
   Typography,
 } from '@mui/material'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import type { Model } from '../../types/model'
 import { layerDisplayName } from '../../utils/layerDisplay'
 
@@ -31,6 +32,9 @@ interface MapControlPanelProps {
   onModelChange: (modelId: string) => void
   onOpenMapInfoDialog: () => void
   onOpenLayerDetailsDialog: () => void
+  /** Raster layer opacity as a percentage (0–100). */
+  opacity: number
+  onOpacityChange: (value: number) => void
   /** Catalog is still loading; render a skeleton in place of the picker. */
   loading?: boolean
   /** Catalog load failed; render a short disabled-state message. */
@@ -43,6 +47,8 @@ export function MapControlPanel({
   onModelChange,
   onOpenMapInfoDialog,
   onOpenLayerDetailsDialog,
+  opacity,
+  onOpacityChange,
   loading = false,
   errored = false,
 }: MapControlPanelProps) {
@@ -52,6 +58,13 @@ export function MapControlPanel({
   )
 
   const selectedTitle = selectedModel ? layerDisplayName(selectedModel) : ''
+
+  const handleOpacityChange = useCallback(
+    (_event: Event, value: number | number[]) => {
+      onOpacityChange(value as number)
+    },
+    [onOpacityChange],
+  )
 
   return (
     <Drawer
@@ -91,7 +104,7 @@ export function MapControlPanel({
           Explore modelled habitat suitability by species and activity.
         </Typography>
 
-        <Paper variant="outlined" sx={{ p: 1.5, mb: 1, flex: 1, borderRadius: 1, bgcolor: 'background.paper' }}>
+        <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5, borderRadius: 1, bgcolor: 'background.paper' }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 0.75 }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
               Layer
@@ -168,6 +181,18 @@ export function MapControlPanel({
               )}
             />
           )}
+          {!loading && selectedModel && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ display: 'block', mt: 1.25, lineHeight: 1.4, wordBreak: 'break-word' }}
+            >
+              Showing:{' '}
+              <Box component="span" sx={{ color: 'text.primary', fontWeight: 500 }}>
+                {selectedTitle}
+              </Box>
+            </Typography>
+          )}
           {!loading && !errored && models.length === 0 && (
             <Typography
               variant="caption"
@@ -187,6 +212,42 @@ export function MapControlPanel({
               Couldn’t load the layer catalog. Use Retry in the map area to try again.
             </Typography>
           )}
+        </Paper>
+
+        <Paper
+          variant="outlined"
+          sx={{ p: 1.5, mb: 1.5, borderRadius: 1, bgcolor: 'background.paper' }}
+        >
+          <Stack
+            direction="row"
+            alignItems="center"
+            justifyContent="space-between"
+            spacing={1}
+            sx={{ mb: 0.5 }}
+          >
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ fontWeight: 600, letterSpacing: '0.04em' }}
+            >
+              Transparency
+            </Typography>
+            <Typography variant="caption" color="text.secondary" aria-hidden>
+              {opacity}%
+            </Typography>
+          </Stack>
+          <Slider
+            size="small"
+            value={opacity}
+            onChange={handleOpacityChange}
+            min={0}
+            max={100}
+            disabled={!selectedModel}
+            aria-label="Layer transparency"
+            aria-valuetext={`${opacity} percent`}
+            valueLabelDisplay="auto"
+            valueLabelFormat={(v) => `${v}%`}
+          />
         </Paper>
       </Box>
     </Drawer>
