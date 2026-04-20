@@ -24,7 +24,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-TOP_INFLUENCE_DRIVERS = 8
 _MAX_CONCURRENT_SHAP_COMPUTES = 2
 _shap_compute_semaphore = threading.BoundedSemaphore(_MAX_CONCURRENT_SHAP_COMPUTES)
 
@@ -174,7 +173,7 @@ def compute_shap_driver_variables(
 ) -> list[DriverVariable]:
     """
     Load sklearn pipeline + background from ``artifact_root``, run permutation SHAP
-    for one row, return top drivers by |contribution|.
+    for one row, return all configured feature contributions ranked by |contribution|.
 
     ``feature_row`` columns must match training feature order (``feature_names``).
 
@@ -234,7 +233,6 @@ def compute_shap_driver_variables(
 
     pairs = list(zip(fnames, row.tolist()))
     pairs.sort(key=lambda x: abs(float(x[1])), reverse=True)
-    pairs = pairs[:TOP_INFLUENCE_DRIVERS]
 
     band_labels = bundle.band_labels
     name_to_display: dict[str, str] = {}

@@ -20,8 +20,16 @@ const visuallyHidden: Record<string, string | number> = {
   border: 0,
 }
 
-/** Floating map legend: compact bar + labels; detail expands on hover. */
-export function SuitabilityLegend() {
+export interface SuitabilityLegendProps {
+  /**
+   * When true, the legend is placed inside another surface (e.g. map controls card):
+   * full width, no separate floating card chrome.
+   */
+  embedded?: boolean
+}
+
+/** Map legend: compact bar + labels; detail expands on hover. */
+export function SuitabilityLegend({ embedded = false }: SuitabilityLegendProps) {
   const [hover, setHover] = useState(false)
 
   const handleEnter = useCallback(() => setHover(true), [])
@@ -33,25 +41,29 @@ export function SuitabilityLegend() {
       role="region"
       aria-label="Suitability colour scale from low to high"
       aria-describedby="suitability-legend-detail-sr"
-      variant="outlined"
+      variant={embedded ? 'elevation' : 'outlined'}
+      elevation={embedded ? 0 : undefined}
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
       sx={{
-        px: 0.75,
-        py: 0.5,
-        width: 200,
-        maxWidth: 'min(200px, calc(100vw - 48px))',
-        bgcolor: 'rgba(255, 255, 255, 0.94)',
-        backdropFilter: 'blur(8px)',
-        borderRadius: 1.5,
+        px: embedded ? 0 : 0.75,
+        py: embedded ? 0 : 0.5,
+        width: embedded ? '100%' : 200,
+        maxWidth: embedded ? '100%' : 'min(200px, calc(100vw - 48px))',
+        bgcolor: embedded ? 'transparent' : 'rgba(255, 255, 255, 0.94)',
+        backdropFilter: embedded ? 'none' : 'blur(8px)',
+        border: embedded ? 'none' : undefined,
+        boxShadow: 'none',
+        borderRadius: embedded ? 0 : 1.5,
         transition: (t) =>
           t.transitions.create(['box-shadow', 'padding'], {
             duration: t.transitions.duration.shorter,
           }),
-        ...(hover && {
-          boxShadow: 2,
-          py: 0.75,
-        }),
+        ...(hover &&
+          !embedded && {
+            boxShadow: 2,
+            py: 0.75,
+          }),
       }}
     >
       <Typography id="suitability-legend-detail-sr" component="span" sx={visuallyHidden}>

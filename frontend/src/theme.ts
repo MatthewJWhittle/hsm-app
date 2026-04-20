@@ -3,7 +3,7 @@ import { createTheme } from '@mui/material/styles'
 /**
  * App-wide MUI theme. Small, deliberate tweaks over the MUI defaults:
  * - disable ALL-CAPS button labels (preserve sentence case)
- * - slightly softer corner radius
+ * - modest corner radius (tighter than MUI’s previous 8px default here)
  * - Inter as the primary font (falls back to system stack if it fails to load)
  */
 export const theme = createTheme({
@@ -14,7 +14,8 @@ export const theme = createTheme({
     },
   },
   shape: {
-    borderRadius: 8,
+    /** Base px value; components use multiples (e.g. `borderRadius: 2` → 2× this). */
+    borderRadius: 4,
   },
   typography: {
     fontFamily:

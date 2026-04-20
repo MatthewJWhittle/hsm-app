@@ -1,47 +1,66 @@
-import {
-  Box,
-  Button,
-  Collapse,
-  IconButton,
-  Paper,
-  Tooltip,
-  Typography,
-} from '@mui/material'
+import { Box, Paper, Tooltip, Typography } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  INTERPRETATION_HUD_REMINDER,
-  INTERPRETATION_INFLUENCE_CAPTION,
-  INTERPRETATION_RAW_VALUES_CAPTION,
-} from '../copy/interpretation'
-import { clampSuitability01, SUITABILITY_VIRIDIS_GRADIENT_CSS } from '../map/suitabilityScale'
-import type { DriverVariable, PointInspection as PointInspectionData } from '../types/pointInspection'
-
-export interface InspectionTechnicalDetails {
-  modelId: string
-  projectId?: string | null
-  /** Ordered ``metadata.analysis.feature_band_names`` (machine names). */
-  driverFeatureBandNames?: string[] | null
-}
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type {
+  DriverVariable,
+  PointInspection as PointInspectionData,
+  RawEnvironmentalValue,
+} from '../types/pointInspection'
 
 interface InspectionHudProps {
   onClose: () => void
-  modelLabel: string
   lng: number | null
   lat: number | null
   inspection: PointInspectionData | null
   loading: boolean
   error: string | null
-  technicalDetails?: InspectionTechnicalDetails | null
 }
 
-function shortId(id: string, head = 8): string {
-  if (id.length <= head + 2) return id
-  return `${id.slice(0, head)}…`
+const DRIVER_LIST_HEIGHT_DEFAULT_PX = 320
+const DRIVER_LIST_HEIGHT_MIN_PX = 120
+const DRIVER_LIST_HEIGHT_MAX_PX = 560
+
+function clampDriverListHeightPx(h: number): number {
+  const min = DRIVER_LIST_HEIGHT_MIN_PX
+  if (typeof window !== 'undefined') {
+    const viewportCap = Math.max(min, Math.min(DRIVER_LIST_HEIGHT_MAX_PX, window.innerHeight - 120))
+    return Math.round(Math.max(min, Math.min(viewportCap, h)))
+  }
+  return Math.round(Math.max(min, Math.min(DRIVER_LIST_HEIGHT_MAX_PX, h)))
 }
 
-function formatCoord(n: number, digits: number): string {
-  return n.toFixed(digits)
+function signedDriverContribution(d: DriverVariable): number {
+  const m = d.magnitude
+  if (m == null || !Number.isFinite(m)) {
+    return 0
+  }
+  // Backend may send either a nonnegative magnitude + direction, or a signed value.
+  if (m < 0) {
+    return m
+  }
+  if (d.direction === 'increase') return m
+  if (d.direction === 'decrease') return -m
+  return 0
+}
+
+/** Fewer digits for large magnitudes — raw env values are often broad-scale rasters. */
+function formatEnvSampleValue(value: number): string {
+  if (!Number.isFinite(value)) return ''
+  const a = Math.abs(value)
+  if (a >= 1000) return value.toFixed(0)
+  if (a >= 100) return value.toFixed(1)
+  if (a >= 10) return value.toFixed(2)
+  return value.toFixed(3)
+}
+
+/** One short line: signed effect + direction arrow (row label already names the variable). */
+function formatContributionLine(d: DriverVariable): string {
+  const s = signedDriverContribution(d)
+  if (Math.abs(s) < 1e-12) return '—'
+  const arrow = s > 0 ? '↑' : '↓'
+  const abs = Math.abs(s)
+  const nums = abs >= 1 ? abs.toFixed(2) : abs.toFixed(3)
+  return `${s < 0 ? '−' : ''}${nums} ${arrow}`
 }
 
 function SuitabilityReadout({
@@ -59,7 +78,8 @@ function SuitabilityReadout({
         fontWeight: 600,
         letterSpacing: '-0.02em',
         fontVariantNumeric: 'tabular-nums',
-        my: 0.25,
+        mt: 0,
+        mb: 0.25,
         opacity: stale ? 0.38 : 1,
         transition: stale ? 'opacity 0.2s ease' : 'opacity 0.15s ease',
       }}
@@ -79,103 +99,268 @@ function SuitabilityReadout({
   )
 }
 
-function SuitabilityScaleMarker({ value, stale }: { value: number; stale: boolean }) {
-  const pct = clampSuitability01(value) * 100
+function normEnvKey(s: string): string {
+  return s.trim().toLowerCase()
+}
+
+/**
+ * Map a driver row to its sampled raster value.
+ *
+ * The API uses **machine feature names** on `DriverVariable.name` (SHAP / estimator columns).
+ * `raw_environmental_values[].name` is often built from **catalog band labels** instead
+ * (see `build_raw_environmental_values` in the backend), so the strings differ even for
+ * the same variable. We match on `name`, then on `display_name` ↔ raw label.
+ */
+/** Alphabetical by label so the same variable stays in the same row when moving the click. */
+function sortDriversForCompare(drivers: DriverVariable[]): DriverVariable[] {
+  return [...drivers].sort((a, b) => {
+    const la = (a.display_name?.trim() || a.name).toLowerCase()
+    const lb = (b.display_name?.trim() || b.name).toLowerCase()
+    const c = la.localeCompare(lb, undefined, { sensitivity: 'base' })
+    if (c !== 0) return c
+    return a.name.localeCompare(b.name)
+  })
+}
+
+function rawValueForDriver(
+  raw: RawEnvironmentalValue[] | null | undefined,
+  d: DriverVariable,
+): RawEnvironmentalValue | undefined {
+  if (!raw?.length) return undefined
+
+  for (const r of raw) {
+    if (r.name === d.name || normEnvKey(r.name) === normEnvKey(d.name)) return r
+  }
+
+  const display = d.display_name?.trim()
+  if (display) {
+    for (const r of raw) {
+      if (r.name === display || normEnvKey(r.name) === normEnvKey(display)) return r
+    }
+  }
+
+  return undefined
+}
+
+function DriverTooltipBody({
+  d,
+  raw,
+}: {
+  d: DriverVariable
+  raw: RawEnvironmentalValue | undefined
+}) {
+  const unit = raw?.unit != null && raw.unit !== '' ? ` ${raw.unit}` : ''
+  const sampleLine =
+    raw != null ? `${formatEnvSampleValue(raw.value)}${unit}` : null
+  const desc = raw?.description?.trim()
+
   return (
-    <Box sx={{ mt: 0.75, opacity: stale ? 0.38 : 1, transition: 'opacity 0.2s ease' }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-        On this layer’s 0–1 scale
-      </Typography>
-      <Box
-        role="img"
-        aria-label={`Sample at about ${pct.toFixed(0)} percent along the low-to-high scale for this layer`}
-        sx={{
-          position: 'relative',
-          height: 6,
-          borderRadius: 0.5,
-          overflow: 'hidden',
-          border: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Box sx={{ position: 'absolute', inset: 0, background: SUITABILITY_VIRIDIS_GRADIENT_CSS }} />
-        <Box
-          aria-hidden
-          sx={{
-            position: 'absolute',
-            left: `${pct}%`,
-            top: 0,
-            bottom: 0,
-            width: 2,
-            ml: '-1px',
-            bgcolor: 'background.paper',
-            boxShadow: (t) => `0 0 0 1px ${t.palette.divider}`,
-          }}
-        />
-      </Box>
+    <Box sx={{ maxWidth: 260, py: 0 }}>
+      {sampleLine != null ? (
+        <Typography
+          variant="body2"
+          color="text.primary"
+          sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', lineHeight: 1.25, mb: desc ? 0.5 : 0 }}
+        >
+          {sampleLine}
+        </Typography>
+      ) : null}
+      {desc ? (
+        <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.45, opacity: 0.88 }}>
+          {desc}
+        </Typography>
+      ) : null}
+      {sampleLine == null && !desc ? (
+        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.35 }}>
+          {d.display_name?.trim() || d.name}
+        </Typography>
+      ) : null}
     </Box>
   )
 }
 
-function InfluenceDriverRow({ d, maxAbs }: { d: DriverVariable; maxAbs: number }) {
-  const mag = d.magnitude ?? 0
-  const w = maxAbs > 0 ? (Math.abs(mag) / maxAbs) * 100 : 0
-  const color =
-    d.direction === 'increase'
-      ? 'success.main'
-      : d.direction === 'decrease'
-        ? 'error.main'
-        : 'text.secondary'
+function InfluenceDriverRow({
+  d,
+  scaleMaxAbs,
+  rawEnv,
+  loading,
+}: {
+  d: DriverVariable
+  /** Shared across clicks (grows with strongest |influence| seen while panel is open). */
+  scaleMaxAbs: number
+  rawEnv: RawEnvironmentalValue[] | null | undefined
+  loading: boolean
+}) {
+  const signed = signedDriverContribution(d)
+  const frac = scaleMaxAbs > 0 ? Math.min(1, Math.abs(signed) / scaleMaxAbs) : 0
+  const halfPct = frac * 50
   const title = d.display_name?.trim() ? d.display_name : d.name
+  const raw = rawValueForDriver(rawEnv, d)
+  const isPos = signed > 0
+  const isNeg = signed < 0
+  const barColor = isPos ? 'success.main' : isNeg ? 'error.main' : 'action.disabled'
+
   return (
-    <Box sx={{ mb: 1 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-        <Tooltip title={d.display_name ? `Column: ${d.name}` : ''} disableHoverListener={!d.display_name}>
-          <span>{title}</span>
-        </Tooltip>
-        : {d.label ?? (d.magnitude != null ? d.magnitude.toFixed(4) : d.direction)}
-      </Typography>
-      <Box sx={{ height: 6, bgcolor: 'action.hover', borderRadius: 0.5, mt: 0.25 }}>
+    <Tooltip
+      followCursor
+      placement="top-start"
+      enterDelay={120}
+      enterNextDelay={80}
+      slotProps={{
+        tooltip: {
+          sx: (theme) => ({
+            bgcolor: alpha(theme.palette.background.paper, 0.94),
+            color: theme.palette.text.secondary,
+            border: `1px solid ${alpha(theme.palette.divider, 0.65)}`,
+            boxShadow: `0 2px 12px ${alpha(theme.palette.common.black, 0.06)}`,
+            backdropFilter: 'blur(8px)',
+            py: 0.5,
+            px: 0.85,
+          }),
+        },
+        popper: {
+          popperOptions: {
+            modifiers: [
+              {
+                name: 'offset',
+                options: { offset: [12, 12] },
+              },
+            ],
+          },
+        },
+      }}
+      title={<DriverTooltipBody d={d} raw={raw} />}
+    >
+      <Box
+        sx={{
+          mb: 1,
+          cursor: 'default',
+          opacity: loading ? 0.55 : 1,
+          transition: (theme) =>
+            theme.transitions.create('opacity', { duration: theme.transitions.duration.shorter }),
+        }}
+        aria-label={
+          [
+            title,
+            raw != null
+              ? `Value at point ${formatEnvSampleValue(raw.value)}${raw.unit != null && raw.unit !== '' ? ` ${raw.unit}` : ''}`
+              : null,
+            raw?.description?.trim() ?? null,
+            `Influence on suitability ${formatContributionLine(d)}`,
+          ]
+            .filter(Boolean)
+            .join('. ')
+        }
+      >
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.35, mb: 0.35 }}>
+          {title}
+        </Typography>
         <Box
+          role="img"
+          aria-label={
+            isPos
+              ? `Positive contribution, about ${halfPct.toFixed(0)} percent along the comparison scale for this panel`
+              : isNeg
+                ? `Negative contribution, about ${halfPct.toFixed(0)} percent along the comparison scale for this panel`
+                : 'Neutral or negligible contribution'
+          }
           sx={{
-            height: '100%',
-            width: `${w}%`,
-            bgcolor: color,
-            borderRadius: 0.5,
-            transition: 'width 0.2s ease',
+            position: 'relative',
+            height: 8,
+            borderRadius: 1,
+            bgcolor: 'action.hover',
+            overflow: 'hidden',
+            direction: 'ltr',
           }}
-        />
+        >
+          <Box
+            aria-hidden
+            sx={{
+              position: 'absolute',
+              left: '50%',
+              top: 0,
+              bottom: 0,
+              width: 1,
+              ml: '-0.5px',
+              bgcolor: 'divider',
+              zIndex: 1,
+            }}
+          />
+          {frac > 0 && isPos ? (
+            <Box
+              sx={{
+                position: 'absolute',
+                left: '50%',
+                top: 0,
+                bottom: 0,
+                width: `${halfPct}%`,
+                bgcolor: barColor,
+                borderRadius: '0 1px 1px 0',
+                transition: (theme) =>
+                  theme.transitions.create('width', { duration: theme.transitions.duration.short }),
+              }}
+            />
+          ) : null}
+          {frac > 0 && isNeg ? (
+            <Box
+              sx={{
+                position: 'absolute',
+                // Physical left edge so the segment always fills center → left (avoid
+                // `right` + `% width`, which is easy for engines to lay out wrong).
+                left: `calc(50% - ${halfPct}%)`,
+                top: 0,
+                bottom: 0,
+                width: `${halfPct}%`,
+                bgcolor: barColor,
+                borderRadius: '1px 0 0 1px',
+                transition: (theme) =>
+                  theme.transitions.create(['width', 'left'], {
+                    duration: theme.transitions.duration.short,
+                  }),
+              }}
+            />
+          ) : null}
+        </Box>
       </Box>
-    </Box>
+    </Tooltip>
   )
 }
 
 export function InspectionHud({
   onClose,
-  modelLabel,
   lng,
   lat,
   inspection,
   loading,
   error,
-  technicalDetails,
 }: InspectionHudProps) {
   const theme = useTheme()
   const paperRef = useRef<HTMLDivElement>(null)
   const prevLoadingRef = useRef<boolean | undefined>(undefined)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
-  const [technicalOpen, setTechnicalOpen] = useState(false)
-  const [rawDetailsOpen, setRawDetailsOpen] = useState(false)
   const dragStartRef = useRef({ clientX: 0, clientY: 0, offX: 0, offY: 0 })
+  const maxInfluenceAbsThisPoint = useMemo(() => {
+    const list = inspection?.drivers ?? []
+    if (!list.length) return 1e-9
+    return Math.max(
+      ...list.map((d) => Math.abs(signedDriverContribution(d))),
+      1e-9,
+    )
+  }, [inspection])
+
+  /** Session peak while panel is open; bars don’t shrink when a weaker point loads. */
+  const [sessionPeakInfluenceAbs, setSessionPeakInfluenceAbs] = useState(1e-9)
 
   useEffect(() => {
-    setTechnicalOpen(false)
-  }, [technicalDetails?.modelId])
+    if (!inspection) {
+      setSessionPeakInfluenceAbs(1e-9)
+      return
+    }
+    setSessionPeakInfluenceAbs((prev) => Math.max(prev, maxInfluenceAbsThisPoint))
+  }, [inspection, maxInfluenceAbsThisPoint])
 
-  useEffect(() => {
-    setRawDetailsOpen(false)
-  }, [lng, lat, inspection?.value])
+  const compareScaleMax = Math.max(sessionPeakInfluenceAbs, maxInfluenceAbsThisPoint)
 
   useEffect(() => {
     // Dismiss on Escape. Skip when focus is inside an input/textarea/contenteditable
@@ -282,6 +467,65 @@ export function InspectionHud({
     })
   }, [])
 
+  const sortedDrivers = useMemo(() => {
+    const list = inspection?.drivers
+    if (!list?.length) return []
+    return sortDriversForCompare(list)
+  }, [inspection?.drivers])
+
+  const driversListRef = useRef<HTMLDivElement>(null)
+  const [driverListMoreBelow, setDriverListMoreBelow] = useState(false)
+  const [driversListMaxPx, setDriversListMaxPx] = useState(DRIVER_LIST_HEIGHT_DEFAULT_PX)
+  const driverListHeightResizeRef = useRef<{ originY: number; originH: number } | null>(null)
+
+  const updateDriverListScrollHint = useCallback(() => {
+    const el = driversListRef.current
+    if (!el) {
+      setDriverListMoreBelow(false)
+      return
+    }
+    const { scrollTop, scrollHeight, clientHeight } = el
+    const canScroll = scrollHeight > clientHeight + 1
+    const notAtBottom = scrollTop + clientHeight < scrollHeight - 2
+    setDriverListMoreBelow(canScroll && notAtBottom)
+  }, [])
+
+  useLayoutEffect(() => {
+    updateDriverListScrollHint()
+    const el = driversListRef.current
+    if (!el) return undefined
+    const ro = new ResizeObserver(() => updateDriverListScrollHint())
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [sortedDrivers.length, inspection, loading, driversListMaxPx, updateDriverListScrollHint])
+
+  const onDriverListHeightPointerDown = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    driverListHeightResizeRef.current = { originY: e.clientY, originH: driversListMaxPx }
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  }, [driversListMaxPx])
+
+  const onDriverListHeightPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!driverListHeightResizeRef.current) return
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+    const { originY, originH } = driverListHeightResizeRef.current
+    const dy = e.clientY - originY
+    setDriversListMaxPx(clampDriverListHeightPx(originH + dy))
+  }, [])
+
+  const onDriverListHeightPointerUp = useCallback((e: React.PointerEvent) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
+    driverListHeightResizeRef.current = null
+    try {
+      ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    updateDriverListScrollHint()
+  }, [updateDriverListScrollHint])
+
   const onDragPointerUp = useCallback((e: React.PointerEvent) => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return
     setDragging(false)
@@ -291,6 +535,10 @@ export function InspectionHud({
       /* ignore */
     }
   }, [])
+
+  // `bottom`-anchored layout grows upward when content gets taller. Nudge the panel down by the
+  // same delta as the driver list height change so the top stays put and the bottom extends.
+  const driverListResizeCompensateY = driversListMaxPx - DRIVER_LIST_HEIGHT_DEFAULT_PX
 
   return (
     <Paper
@@ -307,7 +555,8 @@ export function InspectionHud({
         zIndex: 1000,
         maxWidth: 300,
         px: 1.75,
-        py: 1.5,
+        pt: 1.25,
+        pb: 1.5,
         borderRadius: 1.5,
         bgcolor: 'rgba(255, 255, 255, 0.92)',
         backdropFilter: 'blur(8px)',
@@ -315,7 +564,7 @@ export function InspectionHud({
         boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
         border: '1px solid',
         borderColor: 'divider',
-        transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)`,
+        transform: `translate(${dragOffset.x}px, ${dragOffset.y + driverListResizeCompensateY}px)`,
         willChange: dragging ? 'transform' : undefined,
       }}
     >
@@ -324,223 +573,140 @@ export function InspectionHud({
         onPointerMove={onDragPointerMove}
         onPointerUp={onDragPointerUp}
         onPointerCancel={onDragPointerUp}
+        aria-label="Drag to move panel"
+        title="Drag panel"
         sx={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          gap: 1,
-          mb: 0.75,
           cursor: dragging ? 'grabbing' : 'grab',
           touchAction: 'none',
           userSelect: 'none',
-          mx: -0.5,
-          mt: -0.5,
-          px: 0.5,
-          pt: 0.5,
-          borderRadius: 1,
         }}
-        title="Drag panel"
       >
-        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3, flex: 1, pt: 0.25 }}>
-          {modelLabel}
-        </Typography>
-        <IconButton
-          size="small"
-          aria-label="Close"
-          onClick={onClose}
-          onPointerDown={(e) => e.stopPropagation()}
-          sx={{ color: 'text.secondary', mt: -0.5, mr: -0.5 }}
-        >
-          <span aria-hidden style={{ fontSize: 18, lineHeight: 1 }}>
-            ×
-          </span>
-        </IconButton>
+        {loading && !inspection && (
+          <Typography
+            variant="h5"
+            component="p"
+            sx={{
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+              fontVariantNumeric: 'tabular-nums',
+              color: 'text.secondary',
+              opacity: 0.75,
+              my: 0,
+              transition: 'opacity 0.2s ease',
+            }}
+          >
+            …
+          </Typography>
+        )}
+
+        {inspection && (loading || (!loading && !error)) && (
+          <Box>
+            <SuitabilityReadout inspection={inspection} stale={loading} />
+          </Box>
+        )}
+
+        {!loading && error && (
+          <Typography variant="body2" color="error" sx={{ lineHeight: 1.4, my: 0 }}>
+            {error}
+          </Typography>
+        )}
       </Box>
 
-      {lat != null && lng != null && (
-        <Typography
-          variant="body2"
-          component="p"
-          title="Click to select coordinates, then copy"
-          sx={{
-            mb: 0.75,
-            px: 1,
-            py: 0.75,
-            borderRadius: 1,
-            bgcolor: 'action.hover',
-            fontFamily:
-              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-            fontSize: '0.8125rem',
-            fontVariantNumeric: 'tabular-nums',
-            userSelect: 'all',
-            cursor: 'text',
-            color: 'text.primary',
-            lineHeight: 1.5,
-          }}
-        >
-          {formatCoord(lat, 4)}, {formatCoord(lng, 4)}
-        </Typography>
-      )}
-
-      {loading && !inspection && (
-        <Typography
-          variant="h5"
-          component="p"
-          sx={{
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            fontVariantNumeric: 'tabular-nums',
-            color: 'text.secondary',
-            opacity: 0.75,
-            my: 0.25,
-            transition: 'opacity 0.2s ease',
-          }}
-        >
-          …
-        </Typography>
-      )}
-
-      {inspection && (loading || (!loading && !error)) && (
-        <Box>
-          <SuitabilityReadout inspection={inspection} stale={loading} />
-          <SuitabilityScaleMarker value={inspection.value} stale={loading} />
-        </Box>
-      )}
-
-      {!loading && error && (
-        <Typography variant="body2" color="error" sx={{ lineHeight: 1.4 }}>
-          {error}
-        </Typography>
-      )}
-
-      {!loading &&
+      {inspection &&
         !error &&
-        inspection &&
-        (() => {
-          const drivers = inspection.drivers ?? []
-          const rawVals = inspection.raw_environmental_values ?? []
-          if (drivers.length === 0 && rawVals.length === 0) return null
-          const maxAbs = Math.max(...drivers.map((d) => Math.abs(d.magnitude ?? 0)), 1e-9)
-          return (
-            <Box sx={{ mt: 0.75 }}>
-              {drivers.length > 0 && (
-                <>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: 'block', mb: 0.75, lineHeight: 1.45 }}
-                  >
-                    {INTERPRETATION_INFLUENCE_CAPTION}
-                  </Typography>
-                  {drivers.map((d, i) => (
-                    <InfluenceDriverRow key={`${d.name}-${i}`} d={d} maxAbs={maxAbs} />
-                  ))}
-                </>
-              )}
-              {rawVals.length > 0 && (
-                <Box sx={{ mt: drivers.length > 0 ? 1 : 0 }}>
-                  <Button
-                    size="small"
-                    variant="text"
-                    onClick={() => setRawDetailsOpen((o) => !o)}
-                    aria-expanded={rawDetailsOpen}
-                    sx={{ minWidth: 0, px: 0, py: 0.25, textTransform: 'none', fontSize: '0.75rem' }}
-                  >
-                    {rawDetailsOpen ? '▼' : '▶'} Environmental values at this point
-                  </Button>
-                  <Collapse in={rawDetailsOpen}>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ display: 'block', mb: 0.5, mt: 0.5, lineHeight: 1.45 }}
-                    >
-                      {INTERPRETATION_RAW_VALUES_CAPTION}
-                    </Typography>
-                    <Box component="ul" sx={{ m: 0, pl: 2 }}>
-                      {rawVals.map((r, ri) => (
-                        <li key={`${r.name}-${ri}`}>
-                          <Typography variant="caption" color="text.secondary" component="div">
-                            {r.name}: {r.value.toFixed(4)}
-                            {r.unit ? ` ${r.unit}` : ''}
-                          </Typography>
-                          {r.description?.trim() ? (
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                              sx={{ display: 'block', opacity: 0.85, pl: 0.5, mt: 0.25 }}
-                            >
-                              {r.description}
-                            </Typography>
-                          ) : null}
-                        </li>
-                      ))}
-                    </Box>
-                  </Collapse>
-                </Box>
-              )}
+        sortedDrivers.length > 0 && (
+          <Box sx={{ mt: 0.75 }}>
+            <Box sx={{ position: 'relative' }}>
+              <Box
+                ref={driversListRef}
+                onScroll={updateDriverListScrollHint}
+                aria-label="Driver influences; scroll to see all predictors"
+                tabIndex={0}
+                sx={{
+                  maxHeight: driversListMaxPx,
+                  overflowY: 'auto',
+                  overflowX: 'hidden',
+                  pr: 0.75,
+                  mr: -0.5,
+                  scrollbarGutter: 'stable',
+                  scrollbarWidth: 'thin',
+                  '&::-webkit-scrollbar': { width: 6 },
+                  '&::-webkit-scrollbar-thumb': {
+                    borderRadius: 999,
+                    backgroundColor: alpha(theme.palette.text.primary, 0.18),
+                  },
+                }}
+              >
+                {sortedDrivers.map((d) => (
+                  <InfluenceDriverRow
+                    key={d.name}
+                    d={d}
+                    scaleMaxAbs={compareScaleMax}
+                    rawEnv={inspection.raw_environmental_values}
+                    loading={loading}
+                  />
+                ))}
+              </Box>
+              {driverListMoreBelow ? (
+                <Box
+                  aria-hidden
+                  sx={{
+                    pointerEvents: 'none',
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    height: 32,
+                    borderBottomLeftRadius: 4,
+                    borderBottomRightRadius: 4,
+                    background: (t) =>
+                      `linear-gradient(180deg, ${alpha(t.palette.background.paper, 0)} 0%, ${alpha(
+                        t.palette.background.paper,
+                        0.88,
+                      )} 55%, ${alpha(t.palette.background.paper, 0.96)} 100%)`,
+                  }}
+                />
+              ) : null}
             </Box>
-          )
-        })()}
-
-      {technicalDetails && (
-        <Box sx={{ mt: 1 }}>
-          <Button
-            size="small"
-            variant="text"
-            onClick={() => setTechnicalOpen((o) => !o)}
-            aria-expanded={technicalOpen}
-            sx={{ minWidth: 0, px: 0, py: 0.25, textTransform: 'none', fontSize: '0.75rem' }}
-          >
-            {technicalOpen ? '▼' : '▶'} View technical details
-          </Button>
-          <Collapse in={technicalOpen}>
             <Box
+              onPointerDown={onDriverListHeightPointerDown}
+              onPointerMove={onDriverListHeightPointerMove}
+              onPointerUp={onDriverListHeightPointerUp}
+              onPointerCancel={onDriverListHeightPointerUp}
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Drag to resize driver list height"
+              aria-valuemin={DRIVER_LIST_HEIGHT_MIN_PX}
+              aria-valuemax={DRIVER_LIST_HEIGHT_MAX_PX}
+              aria-valuenow={driversListMaxPx}
               sx={{
                 mt: 0.75,
-                p: 1,
-                borderRadius: 1,
-                bgcolor: 'action.hover',
-                maxHeight: 200,
-                overflow: 'auto',
+                mx: -0.75,
+                mb: -0.25,
+                py: 0.5,
+                cursor: 'ns-resize',
+                touchAction: 'none',
+                userSelect: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderTop: 1,
+                borderColor: 'divider',
               }}
             >
-              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5 }}>
-                <strong>Layer ID</strong>{' '}
-                <Tooltip title={technicalDetails.modelId}>
-                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>{shortId(technicalDetails.modelId)}</span>
-                </Tooltip>
-              </Typography>
-              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5, mt: 0.5 }}>
-                <strong>Project</strong>{' '}
-                {technicalDetails.projectId ? (
-                  <Tooltip title={technicalDetails.projectId}>
-                    <span style={{ fontFamily: 'ui-monospace, monospace' }}>
-                      {shortId(technicalDetails.projectId)}
-                    </span>
-                  </Tooltip>
-                ) : (
-                  'None (stand-alone layer)'
-                )}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5, mt: 0.5 }}>
-                <strong>Environmental bands used</strong>{' '}
-                {technicalDetails.driverFeatureBandNames != null &&
-                technicalDetails.driverFeatureBandNames.length > 0
-                  ? `[${technicalDetails.driverFeatureBandNames.join(', ')}]`
-                  : '—'}
-              </Typography>
+              <Box
+                aria-hidden
+                sx={{
+                  width: 40,
+                  height: 4,
+                  borderRadius: 999,
+                  bgcolor: 'action.selected',
+                  opacity: 0.55,
+                }}
+              />
             </Box>
-          </Collapse>
-        </Box>
-      )}
-
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        sx={{ display: 'block', mt: 1.25, lineHeight: 1.45, opacity: 0.85 }}
-      >
-        {INTERPRETATION_HUD_REMINDER}
-      </Typography>
+          </Box>
+        )}
     </Paper>
   )
 }

@@ -7,6 +7,7 @@ import {
   DialogTitle,
   IconButton,
   Stack,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import {
@@ -14,9 +15,14 @@ import {
   LAYER_DETAILS_DIALOG_TITLE,
   LAYER_DETAILS_PROJECT_METADATA_UNAVAILABLE,
 } from '../../copy/interpretation'
-import type { Model } from '../../types/model'
+import { getFeatureBandNames, type Model } from '../../types/model'
 import { layerDisplayName } from '../../utils/layerDisplay'
 import type { ProjectSummary } from '../../types/project'
+
+function shortId(id: string, head = 8): string {
+  if (id.length <= head + 2) return id
+  return `${id.slice(0, head)}…`
+}
 
 export interface MapLayerDetailsDialogProps {
   open: boolean
@@ -34,6 +40,7 @@ export function MapLayerDetailsDialog({
   selectedProjectLabel,
 }: MapLayerDetailsDialogProps) {
   const show = Boolean(open && model)
+  const driverFeatureBandNames = model ? getFeatureBandNames(model) : null
 
   const projectContextCopy =
     model &&
@@ -105,12 +112,49 @@ export function MapLayerDetailsDialog({
               </Stack>
             )}
 
-            <Box>
+            <Box sx={{ mb: 2 }}>
               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
                 Project name
               </Typography>
               <Typography variant="body1" sx={{ fontWeight: 600, mt: 0.25 }}>
                 {selectedProjectLabel || '—'}
+              </Typography>
+            </Box>
+
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.04em' }}>
+              Technical identifiers
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 0.75, lineHeight: 1.45 }}>
+              Use these when sharing a layer with support or comparing outputs.
+            </Typography>
+            <Box
+              sx={{
+                p: 1.25,
+                borderRadius: 1,
+                bgcolor: 'action.hover',
+              }}
+            >
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.55 }}>
+                <strong>Layer ID</strong>{' '}
+                <Tooltip title={model.id}>
+                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>{shortId(model.id)}</span>
+                </Tooltip>
+              </Typography>
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.55, mt: 0.5 }}>
+                <strong>Project ID</strong>{' '}
+                {model.project_id ? (
+                  <Tooltip title={model.project_id}>
+                    <span style={{ fontFamily: 'ui-monospace, monospace' }}>{shortId(model.project_id)}</span>
+                  </Tooltip>
+                ) : (
+                  'None (stand-alone layer)'
+                )}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.55, mt: 0.5 }}>
+                <strong>Environmental bands used</strong>{' '}
+                {driverFeatureBandNames != null && driverFeatureBandNames.length > 0
+                  ? `[${driverFeatureBandNames.join(', ')}]`
+                  : '—'}
               </Typography>
             </Box>
           </DialogContent>

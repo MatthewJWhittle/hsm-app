@@ -6,9 +6,8 @@ import { useSearchParams } from 'react-router-dom'
 import { MapFloatingControls } from './components/map/MapFloatingControls'
 import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
-import { SuitabilityLegend } from './components/map/SuitabilityLegend'
 import { InspectionHud } from './components/InspectionHud'
-import { type Model, getFeatureBandNames } from './types/model'
+import { type Model } from './types/model'
 import type { CatalogProject, ProjectSummary } from './types/project'
 import type { PointInspection } from './types/pointInspection'
 import { fetchModelCatalog } from './api/catalog'
@@ -17,7 +16,6 @@ import { postExplainabilityWarmup } from './api/explainabilityWarmup'
 import { fetchPointInspection } from './api/inspectPoint'
 import { Navbar } from './components/Navbar'
 import { useAuth } from './auth/useAuth'
-import { layerDisplayName } from './utils/layerDisplay'
 
 const LEGACY_PROJECT_ID = '__legacy__'
 
@@ -54,7 +52,7 @@ function App() {
   const [models, setModels] = useState<Model[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedModelId, setSelectedModelId] = useState('')
-  const [opacity, setOpacity] = useState(70)
+  const [opacity, setOpacity] = useState(50)
   const [layerVisible, setLayerVisible] = useState(true)
   const [inspectCoords, setInspectCoords] = useState<{ lng: number; lat: number } | null>(
     null,
@@ -321,20 +319,6 @@ function App() {
           errored={Boolean(loadError)}
         />
 
-        {selectedModel && !loadError && layerVisible && (
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 16,
-              right: 16,
-              zIndex: 999,
-              pointerEvents: 'auto',
-            }}
-          >
-            <SuitabilityLegend />
-          </Box>
-        )}
-
         {loadError && (
           <Alert
             severity="error"
@@ -361,17 +345,11 @@ function App() {
         {hudOpen && selectedModel && !loadError && (
           <InspectionHud
             onClose={closeHud}
-            modelLabel={layerDisplayName(selectedModel)}
             lng={inspectCoords?.lng ?? null}
             lat={inspectCoords?.lat ?? null}
             inspection={inspection}
             loading={inspectLoading}
             error={inspectError}
-            technicalDetails={{
-              modelId: selectedModel.id,
-              projectId: selectedModel.project_id,
-              driverFeatureBandNames: getFeatureBandNames(selectedModel),
-            }}
           />
         )}
       </Box>

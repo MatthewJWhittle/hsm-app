@@ -10,7 +10,7 @@ export const INTERPRETATION_DECISION_SUPPORT =
 
 /** Where to find local score and drivers (point inspection). */
 export const INTERPRETATION_DRIVERS_POINTER =
-  'Click the map for a local score, drivers when available, and technical details.'
+  'Click the map for a local suitability score and driver estimates. Layer details lists layer and project identifiers.'
 
 /** Point inspection — variable influence (e.g. SHAP) when the model has explainability artefacts. */
 export const INTERPRETATION_INFLUENCE_CAPTION =
