@@ -10,8 +10,9 @@ export function FloatingMapInterpretation({ onOpen }: FloatingMapInterpretationP
   return (
     <Box
       sx={{
+        // Sit above the MapLibre attribution strip so they don't overlap.
         position: 'absolute',
-        bottom: 40,
+        bottom: 72,
         right: 12,
         zIndex: 999,
         pointerEvents: 'auto',
@@ -24,6 +25,7 @@ export function FloatingMapInterpretation({ onOpen }: FloatingMapInterpretationP
           size="small"
           sx={{
             bgcolor: 'rgba(255, 255, 255, 0.94)',
+            backdropFilter: 'blur(8px)',
             border: 1,
             borderColor: 'divider',
             boxShadow: 2,

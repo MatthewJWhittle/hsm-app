@@ -1,6 +1,6 @@
 import './App.css'
 import MapComponent from './components/Map'
-import { Box } from '@mui/material'
+import { Alert, Box, Button } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { FloatingMapInterpretation } from './components/map/FloatingMapInterpretation'
@@ -66,8 +66,13 @@ function App() {
   const [hudOpen, setHudOpen] = useState(false)
   const inspectAbortRef = useRef<AbortController | null>(null)
   const [catalogReady, setCatalogReady] = useState(false)
+  const [reloadNonce, setReloadNonce] = useState(0)
   const [mapInfoOpen, setMapInfoOpen] = useState(false)
   const [layerDetailsOpen, setLayerDetailsOpen] = useState(false)
+
+  const retryLoadCatalog = useCallback(() => {
+    setReloadNonce((n) => n + 1)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -97,7 +102,7 @@ function App() {
     return () => {
       cancelled = true
     }
-  }, [user, getIdToken])
+  }, [user, getIdToken, reloadNonce])
 
   const projectOptions = useMemo(
     () => buildProjectOptions(projects, models),
@@ -260,6 +265,8 @@ function App() {
           onModelChange={onModelChange}
           onOpenMapInfoDialog={() => setMapInfoOpen(true)}
           onOpenLayerDetailsDialog={() => setLayerDetailsOpen(true)}
+          loading={!catalogReady}
+          errored={Boolean(loadError)}
         />
         <Box
           sx={{
@@ -272,22 +279,26 @@ function App() {
           }}
         >
           {loadError && (
-            <div
-              role="alert"
-              style={{
+            <Alert
+              severity="error"
+              variant="outlined"
+              sx={{
                 position: 'absolute',
-                top: 20,
-                right: 20,
+                top: 16,
+                right: 16,
                 zIndex: 1001,
-                background: 'rgba(255, 230, 230, 0.95)',
-                padding: '12px 16px',
-                borderRadius: 8,
                 maxWidth: 360,
-                fontSize: 14,
+                bgcolor: 'background.paper',
+                boxShadow: 2,
               }}
+              action={
+                <Button color="inherit" size="small" onClick={retryLoadCatalog}>
+                  Retry
+                </Button>
+              }
             >
               {loadError}
-            </div>
+            </Alert>
           )}
           {hudOpen && selectedModel && !loadError && (
             <InspectionHud

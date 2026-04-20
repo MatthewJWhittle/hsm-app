@@ -39,11 +39,9 @@ export function UserMenu() {
   const menuOpen = Boolean(anchorEl)
 
   if (!firebaseWebConfigOk()) {
-    return (
-      <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 280 }}>
-        Sign-in isn’t configured for this app build.
-      </Typography>
-    )
+    // Auth not wired for this build (e.g. a public-only deployment): render no
+    // sign-in surface rather than leaking a developer-facing diagnostic.
+    return null
   }
 
   if (loading) {

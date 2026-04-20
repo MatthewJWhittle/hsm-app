@@ -5,6 +5,7 @@ import {
   Drawer,
   IconButton,
   Paper,
+  Skeleton,
   Stack,
   TextField,
   Tooltip,
@@ -30,6 +31,10 @@ interface MapControlPanelProps {
   onModelChange: (modelId: string) => void
   onOpenMapInfoDialog: () => void
   onOpenLayerDetailsDialog: () => void
+  /** Catalog is still loading; render a skeleton in place of the picker. */
+  loading?: boolean
+  /** Catalog load failed; render a short disabled-state message. */
+  errored?: boolean
 }
 
 export function MapControlPanel({
@@ -38,6 +43,8 @@ export function MapControlPanel({
   onModelChange,
   onOpenMapInfoDialog,
   onOpenLayerDetailsDialog,
+  loading = false,
+  errored = false,
 }: MapControlPanelProps) {
   const selectedModel = useMemo(
     () => models.find((m) => m.id === selectedModelId) ?? null,
@@ -111,47 +118,75 @@ export function MapControlPanel({
             Habitat suitability layer (modelled raster, not raw survey points).
           </Typography>
 
-          <Autocomplete
-            size="small"
-            options={models}
-            value={selectedModel}
-            onChange={(_, newValue) => {
-              onModelChange(newValue?.id ?? '')
-            }}
-            getOptionLabel={(m) => layerDisplayName(m)}
-            isOptionEqualToValue={(a, b) => a.id === b.id}
-            disabled={models.length === 0}
-            noOptionsText="No matching layers"
-            filterOptions={(opts, state) => {
-              const q = state.inputValue.trim().toLowerCase()
-              if (!q) return opts
-              return opts.filter(
-                (m) =>
-                  m.species.toLowerCase().includes(q) ||
-                  m.activity.toLowerCase().includes(q) ||
-                  layerDisplayName(m).toLowerCase().includes(q),
-              )
-            }}
-            renderOption={(props, m) => (
-              <li {...props} key={m.id} title={layerDisplayName(m)}>
-                <Typography variant="body2" sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }} title={layerDisplayName(m)}>
-                  {layerDisplayName(m)}
-                </Typography>
-              </li>
-            )}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Species and activity"
-                placeholder="Search layers…"
-                aria-describedby="map-section-model-help"
-                inputProps={{
-                  ...params.inputProps,
-                  title: selectedTitle,
-                }}
-              />
-            )}
-          />
+          {loading ? (
+            <Skeleton
+              variant="rounded"
+              height={40}
+              aria-label="Loading layers"
+              role="status"
+            />
+          ) : (
+            <Autocomplete
+              size="small"
+              options={models}
+              value={selectedModel}
+              onChange={(_, newValue) => {
+                onModelChange(newValue?.id ?? '')
+              }}
+              getOptionLabel={(m) => layerDisplayName(m)}
+              isOptionEqualToValue={(a, b) => a.id === b.id}
+              disabled={models.length === 0}
+              noOptionsText="No matching layers"
+              filterOptions={(opts, state) => {
+                const q = state.inputValue.trim().toLowerCase()
+                if (!q) return opts
+                return opts.filter(
+                  (m) =>
+                    m.species.toLowerCase().includes(q) ||
+                    m.activity.toLowerCase().includes(q) ||
+                    layerDisplayName(m).toLowerCase().includes(q),
+                )
+              }}
+              renderOption={(props, m) => (
+                <li {...props} key={m.id} title={layerDisplayName(m)}>
+                  <Typography variant="body2" sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }} title={layerDisplayName(m)}>
+                    {layerDisplayName(m)}
+                  </Typography>
+                </li>
+              )}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Species and activity"
+                  placeholder="Search layers…"
+                  aria-describedby="map-section-model-help"
+                  inputProps={{
+                    ...params.inputProps,
+                    title: selectedTitle,
+                  }}
+                />
+              )}
+            />
+          )}
+          {!loading && !errored && models.length === 0 && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block', mt: 1.25, lineHeight: 1.45 }}
+            >
+              No layers are available yet. Once a catalog is published, species and
+              activity combinations will appear here.
+            </Typography>
+          )}
+          {!loading && errored && (
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block', mt: 1.25, lineHeight: 1.45 }}
+            >
+              Couldn’t load the layer catalog. Use Retry in the map area to try again.
+            </Typography>
+          )}
         </Paper>
       </Box>
     </Drawer>
