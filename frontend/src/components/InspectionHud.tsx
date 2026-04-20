@@ -1,28 +1,11 @@
-import {
-  Box,
-  Button,
-  Collapse,
-  IconButton,
-  Paper,
-  Tooltip,
-  Typography,
-} from '@mui/material'
+import { Box, IconButton, Paper, Tooltip, Typography } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-  INTERPRETATION_HUD_REMINDER,
-  INTERPRETATION_INFLUENCE_CAPTION,
-  INTERPRETATION_RAW_VALUES_CAPTION,
-} from '../copy/interpretation'
-import { clampSuitability01, SUITABILITY_VIRIDIS_GRADIENT_CSS } from '../map/suitabilityScale'
-import type { DriverVariable, PointInspection as PointInspectionData } from '../types/pointInspection'
-
-export interface InspectionTechnicalDetails {
-  modelId: string
-  projectId?: string | null
-  /** Ordered ``metadata.analysis.feature_band_names`` (machine names). */
-  driverFeatureBandNames?: string[] | null
-}
+import type {
+  DriverVariable,
+  PointInspection as PointInspectionData,
+  RawEnvironmentalValue,
+} from '../types/pointInspection'
 
 interface InspectionHudProps {
   onClose: () => void
@@ -32,16 +15,40 @@ interface InspectionHudProps {
   inspection: PointInspectionData | null
   loading: boolean
   error: string | null
-  technicalDetails?: InspectionTechnicalDetails | null
 }
 
-function shortId(id: string, head = 8): string {
-  if (id.length <= head + 2) return id
-  return `${id.slice(0, head)}…`
+function signedDriverContribution(d: DriverVariable): number {
+  const m = d.magnitude
+  if (m == null || !Number.isFinite(m)) {
+    return 0
+  }
+  // Backend may send either a nonnegative magnitude + direction, or a signed value.
+  if (m < 0) {
+    return m
+  }
+  if (d.direction === 'increase') return m
+  if (d.direction === 'decrease') return -m
+  return 0
 }
 
-function formatCoord(n: number, digits: number): string {
-  return n.toFixed(digits)
+/** Fewer digits for large magnitudes — raw env values are often broad-scale rasters. */
+function formatEnvSampleValue(value: number): string {
+  if (!Number.isFinite(value)) return ''
+  const a = Math.abs(value)
+  if (a >= 1000) return value.toFixed(0)
+  if (a >= 100) return value.toFixed(1)
+  if (a >= 10) return value.toFixed(2)
+  return value.toFixed(3)
+}
+
+/** One short line: signed effect + direction arrow (row label already names the variable). */
+function formatContributionLine(d: DriverVariable): string {
+  const s = signedDriverContribution(d)
+  if (Math.abs(s) < 1e-12) return '—'
+  const arrow = s > 0 ? '↑' : '↓'
+  const abs = Math.abs(s)
+  const nums = abs >= 1 ? abs.toFixed(2) : abs.toFixed(3)
+  return `${s < 0 ? '−' : ''}${nums} ${arrow}`
 }
 
 function SuitabilityReadout({
@@ -79,74 +86,206 @@ function SuitabilityReadout({
   )
 }
 
-function SuitabilityScaleMarker({ value, stale }: { value: number; stale: boolean }) {
-  const pct = clampSuitability01(value) * 100
+function normEnvKey(s: string): string {
+  return s.trim().toLowerCase()
+}
+
+/**
+ * Map a driver row to its sampled raster value.
+ *
+ * The API uses **machine feature names** on `DriverVariable.name` (SHAP / estimator columns).
+ * `raw_environmental_values[].name` is often built from **catalog band labels** instead
+ * (see `build_raw_environmental_values` in the backend), so the strings differ even for
+ * the same variable. We match on `name`, then on `display_name` ↔ raw label.
+ */
+function rawValueForDriver(
+  raw: RawEnvironmentalValue[] | null | undefined,
+  d: DriverVariable,
+): RawEnvironmentalValue | undefined {
+  if (!raw?.length) return undefined
+
+  for (const r of raw) {
+    if (r.name === d.name || normEnvKey(r.name) === normEnvKey(d.name)) return r
+  }
+
+  const display = d.display_name?.trim()
+  if (display) {
+    for (const r of raw) {
+      if (r.name === display || normEnvKey(r.name) === normEnvKey(display)) return r
+    }
+  }
+
+  return undefined
+}
+
+function DriverTooltipBody({
+  d,
+  raw,
+}: {
+  d: DriverVariable
+  raw: RawEnvironmentalValue | undefined
+}) {
+  const unit = raw?.unit != null && raw.unit !== '' ? ` ${raw.unit}` : ''
+  const sampleLine =
+    raw != null ? `${formatEnvSampleValue(raw.value)}${unit}` : null
+  const desc = raw?.description?.trim()
+
   return (
-    <Box sx={{ mt: 0.75, opacity: stale ? 0.38 : 1, transition: 'opacity 0.2s ease' }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-        On this layer’s 0–1 scale
-      </Typography>
-      <Box
-        role="img"
-        aria-label={`Sample at about ${pct.toFixed(0)} percent along the low-to-high scale for this layer`}
-        sx={{
-          position: 'relative',
-          height: 6,
-          borderRadius: 0.5,
-          overflow: 'hidden',
-          border: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Box sx={{ position: 'absolute', inset: 0, background: SUITABILITY_VIRIDIS_GRADIENT_CSS }} />
-        <Box
-          aria-hidden
-          sx={{
-            position: 'absolute',
-            left: `${pct}%`,
-            top: 0,
-            bottom: 0,
-            width: 2,
-            ml: '-1px',
-            bgcolor: 'background.paper',
-            boxShadow: (t) => `0 0 0 1px ${t.palette.divider}`,
-          }}
-        />
-      </Box>
+    <Box sx={{ maxWidth: 260, py: 0 }}>
+      {sampleLine != null ? (
+        <Typography
+          variant="body2"
+          color="text.primary"
+          sx={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums', lineHeight: 1.25, mb: desc ? 0.5 : 0 }}
+        >
+          {sampleLine}
+        </Typography>
+      ) : null}
+      {desc ? (
+        <Typography variant="caption" sx={{ display: 'block', lineHeight: 1.45, opacity: 0.88 }}>
+          {desc}
+        </Typography>
+      ) : null}
+      {sampleLine == null && !desc ? (
+        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.35 }}>
+          {d.display_name?.trim() || d.name}
+        </Typography>
+      ) : null}
     </Box>
   )
 }
 
-function InfluenceDriverRow({ d, maxAbs }: { d: DriverVariable; maxAbs: number }) {
-  const mag = d.magnitude ?? 0
-  const w = maxAbs > 0 ? (Math.abs(mag) / maxAbs) * 100 : 0
-  const color =
-    d.direction === 'increase'
-      ? 'success.main'
-      : d.direction === 'decrease'
-        ? 'error.main'
-        : 'text.secondary'
+function InfluenceDriverRow({
+  d,
+  maxAbs,
+  rawEnv,
+}: {
+  d: DriverVariable
+  maxAbs: number
+  rawEnv: RawEnvironmentalValue[] | null | undefined
+}) {
+  const signed = signedDriverContribution(d)
+  const frac = maxAbs > 0 ? Math.min(1, Math.abs(signed) / maxAbs) : 0
+  const halfPct = frac * 50
   const title = d.display_name?.trim() ? d.display_name : d.name
+  const raw = rawValueForDriver(rawEnv, d)
+  const isPos = signed > 0
+  const isNeg = signed < 0
+  const barColor = isPos ? 'success.main' : isNeg ? 'error.main' : 'action.disabled'
+
   return (
-    <Box sx={{ mb: 1 }}>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-        <Tooltip title={d.display_name ? `Column: ${d.name}` : ''} disableHoverListener={!d.display_name}>
-          <span>{title}</span>
-        </Tooltip>
-        : {d.label ?? (d.magnitude != null ? d.magnitude.toFixed(4) : d.direction)}
-      </Typography>
-      <Box sx={{ height: 6, bgcolor: 'action.hover', borderRadius: 0.5, mt: 0.25 }}>
+    <Tooltip
+      followCursor
+      placement="top-start"
+      enterDelay={120}
+      enterNextDelay={80}
+      slotProps={{
+        tooltip: {
+          sx: (theme) => ({
+            bgcolor: alpha(theme.palette.background.paper, 0.94),
+            color: theme.palette.text.secondary,
+            border: `1px solid ${alpha(theme.palette.divider, 0.65)}`,
+            boxShadow: `0 2px 12px ${alpha(theme.palette.common.black, 0.06)}`,
+            backdropFilter: 'blur(8px)',
+            py: 0.5,
+            px: 0.85,
+          }),
+        },
+        popper: {
+          popperOptions: {
+            modifiers: [
+              {
+                name: 'offset',
+                options: { offset: [12, 12] },
+              },
+            ],
+          },
+        },
+      }}
+      title={<DriverTooltipBody d={d} raw={raw} />}
+    >
+      <Box
+        sx={{ mb: 1, cursor: 'default' }}
+        aria-label={
+          [
+            title,
+            raw != null
+              ? `Value at point ${formatEnvSampleValue(raw.value)}${raw.unit != null && raw.unit !== '' ? ` ${raw.unit}` : ''}`
+              : null,
+            raw?.description?.trim() ?? null,
+            `Influence on suitability ${formatContributionLine(d)}`,
+          ]
+            .filter(Boolean)
+            .join('. ')
+        }
+      >
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.35, mb: 0.35 }}>
+          {title}
+        </Typography>
         <Box
+          role="img"
+          aria-label={
+            isPos
+              ? `Positive contribution, about ${halfPct.toFixed(0)} percent of the strongest driver at this point`
+              : isNeg
+                ? `Negative contribution, about ${halfPct.toFixed(0)} percent of the strongest driver at this point`
+                : 'Neutral or negligible contribution'
+          }
           sx={{
-            height: '100%',
-            width: `${w}%`,
-            bgcolor: color,
-            borderRadius: 0.5,
-            transition: 'width 0.2s ease',
+            position: 'relative',
+            height: 8,
+            borderRadius: 1,
+            bgcolor: 'action.hover',
+            overflow: 'hidden',
+            direction: 'ltr',
           }}
-        />
+        >
+          <Box
+            aria-hidden
+            sx={{
+              position: 'absolute',
+              left: '50%',
+              top: 0,
+              bottom: 0,
+              width: 1,
+              ml: '-0.5px',
+              bgcolor: 'divider',
+              zIndex: 1,
+            }}
+          />
+          {frac > 0 && isPos ? (
+            <Box
+              sx={{
+                position: 'absolute',
+                left: '50%',
+                top: 0,
+                bottom: 0,
+                width: `${halfPct}%`,
+                bgcolor: barColor,
+                borderRadius: '0 1px 1px 0',
+                transition: 'width 0.2s ease',
+              }}
+            />
+          ) : null}
+          {frac > 0 && isNeg ? (
+            <Box
+              sx={{
+                position: 'absolute',
+                // Physical left edge so the segment always fills center → left (avoid
+                // `right` + `% width`, which is easy for engines to lay out wrong).
+                left: `calc(50% - ${halfPct}%)`,
+                top: 0,
+                bottom: 0,
+                width: `${halfPct}%`,
+                bgcolor: barColor,
+                borderRadius: '1px 0 0 1px',
+                transition: 'width 0.2s ease, left 0.2s ease',
+              }}
+            />
+          ) : null}
+        </Box>
       </Box>
-    </Box>
+    </Tooltip>
   )
 }
 
@@ -158,24 +297,13 @@ export function InspectionHud({
   inspection,
   loading,
   error,
-  technicalDetails,
 }: InspectionHudProps) {
   const theme = useTheme()
   const paperRef = useRef<HTMLDivElement>(null)
   const prevLoadingRef = useRef<boolean | undefined>(undefined)
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 })
   const [dragging, setDragging] = useState(false)
-  const [technicalOpen, setTechnicalOpen] = useState(false)
-  const [rawDetailsOpen, setRawDetailsOpen] = useState(false)
   const dragStartRef = useRef({ clientX: 0, clientY: 0, offX: 0, offY: 0 })
-
-  useEffect(() => {
-    setTechnicalOpen(false)
-  }, [technicalDetails?.modelId])
-
-  useEffect(() => {
-    setRawDetailsOpen(false)
-  }, [lng, lat, inspection?.value])
 
   useEffect(() => {
     // Dismiss on Escape. Skip when focus is inside an input/textarea/contenteditable
@@ -357,31 +485,6 @@ export function InspectionHud({
         </IconButton>
       </Box>
 
-      {lat != null && lng != null && (
-        <Typography
-          variant="body2"
-          component="p"
-          title="Click to select coordinates, then copy"
-          sx={{
-            mb: 0.75,
-            px: 1,
-            py: 0.75,
-            borderRadius: 1,
-            bgcolor: 'action.hover',
-            fontFamily:
-              'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
-            fontSize: '0.8125rem',
-            fontVariantNumeric: 'tabular-nums',
-            userSelect: 'all',
-            cursor: 'text',
-            color: 'text.primary',
-            lineHeight: 1.5,
-          }}
-        >
-          {formatCoord(lat, 4)}, {formatCoord(lng, 4)}
-        </Typography>
-      )}
-
       {loading && !inspection && (
         <Typography
           variant="h5"
@@ -403,7 +506,6 @@ export function InspectionHud({
       {inspection && (loading || (!loading && !error)) && (
         <Box>
           <SuitabilityReadout inspection={inspection} stale={loading} />
-          <SuitabilityScaleMarker value={inspection.value} stale={loading} />
         </Box>
       )}
 
@@ -418,129 +520,24 @@ export function InspectionHud({
         inspection &&
         (() => {
           const drivers = inspection.drivers ?? []
-          const rawVals = inspection.raw_environmental_values ?? []
-          if (drivers.length === 0 && rawVals.length === 0) return null
-          const maxAbs = Math.max(...drivers.map((d) => Math.abs(d.magnitude ?? 0)), 1e-9)
+          if (drivers.length === 0) return null
+          const maxAbs = Math.max(
+            ...drivers.map((d) => Math.abs(signedDriverContribution(d))),
+            1e-9,
+          )
           return (
             <Box sx={{ mt: 0.75 }}>
-              {drivers.length > 0 && (
-                <>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ display: 'block', mb: 0.75, lineHeight: 1.45 }}
-                  >
-                    {INTERPRETATION_INFLUENCE_CAPTION}
-                  </Typography>
-                  {drivers.map((d, i) => (
-                    <InfluenceDriverRow key={`${d.name}-${i}`} d={d} maxAbs={maxAbs} />
-                  ))}
-                </>
-              )}
-              {rawVals.length > 0 && (
-                <Box sx={{ mt: drivers.length > 0 ? 1 : 0 }}>
-                  <Button
-                    size="small"
-                    variant="text"
-                    onClick={() => setRawDetailsOpen((o) => !o)}
-                    aria-expanded={rawDetailsOpen}
-                    sx={{ minWidth: 0, px: 0, py: 0.25, textTransform: 'none', fontSize: '0.75rem' }}
-                  >
-                    {rawDetailsOpen ? '▼' : '▶'} Environmental values at this point
-                  </Button>
-                  <Collapse in={rawDetailsOpen}>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{ display: 'block', mb: 0.5, mt: 0.5, lineHeight: 1.45 }}
-                    >
-                      {INTERPRETATION_RAW_VALUES_CAPTION}
-                    </Typography>
-                    <Box component="ul" sx={{ m: 0, pl: 2 }}>
-                      {rawVals.map((r, ri) => (
-                        <li key={`${r.name}-${ri}`}>
-                          <Typography variant="caption" color="text.secondary" component="div">
-                            {r.name}: {r.value.toFixed(4)}
-                            {r.unit ? ` ${r.unit}` : ''}
-                          </Typography>
-                          {r.description?.trim() ? (
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                              sx={{ display: 'block', opacity: 0.85, pl: 0.5, mt: 0.25 }}
-                            >
-                              {r.description}
-                            </Typography>
-                          ) : null}
-                        </li>
-                      ))}
-                    </Box>
-                  </Collapse>
-                </Box>
-              )}
+              {drivers.map((d, i) => (
+                <InfluenceDriverRow
+                  key={`${d.name}-${i}`}
+                  d={d}
+                  maxAbs={maxAbs}
+                  rawEnv={inspection.raw_environmental_values}
+                />
+              ))}
             </Box>
           )
         })()}
-
-      {technicalDetails && (
-        <Box sx={{ mt: 1 }}>
-          <Button
-            size="small"
-            variant="text"
-            onClick={() => setTechnicalOpen((o) => !o)}
-            aria-expanded={technicalOpen}
-            sx={{ minWidth: 0, px: 0, py: 0.25, textTransform: 'none', fontSize: '0.75rem' }}
-          >
-            {technicalOpen ? '▼' : '▶'} View technical details
-          </Button>
-          <Collapse in={technicalOpen}>
-            <Box
-              sx={{
-                mt: 0.75,
-                p: 1,
-                borderRadius: 1,
-                bgcolor: 'action.hover',
-                maxHeight: 200,
-                overflow: 'auto',
-              }}
-            >
-              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5 }}>
-                <strong>Layer ID</strong>{' '}
-                <Tooltip title={technicalDetails.modelId}>
-                  <span style={{ fontFamily: 'ui-monospace, monospace' }}>{shortId(technicalDetails.modelId)}</span>
-                </Tooltip>
-              </Typography>
-              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5, mt: 0.5 }}>
-                <strong>Project</strong>{' '}
-                {technicalDetails.projectId ? (
-                  <Tooltip title={technicalDetails.projectId}>
-                    <span style={{ fontFamily: 'ui-monospace, monospace' }}>
-                      {shortId(technicalDetails.projectId)}
-                    </span>
-                  </Tooltip>
-                ) : (
-                  'None (stand-alone layer)'
-                )}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" component="div" sx={{ lineHeight: 1.5, mt: 0.5 }}>
-                <strong>Environmental bands used</strong>{' '}
-                {technicalDetails.driverFeatureBandNames != null &&
-                technicalDetails.driverFeatureBandNames.length > 0
-                  ? `[${technicalDetails.driverFeatureBandNames.join(', ')}]`
-                  : '—'}
-              </Typography>
-            </Box>
-          </Collapse>
-        </Box>
-      )}
-
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        sx={{ display: 'block', mt: 1.25, lineHeight: 1.45, opacity: 0.85 }}
-      >
-        {INTERPRETATION_HUD_REMINDER}
-      </Typography>
     </Paper>
   )
 }

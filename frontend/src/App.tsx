@@ -8,7 +8,7 @@ import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
 import { SuitabilityLegend } from './components/map/SuitabilityLegend'
 import { InspectionHud } from './components/InspectionHud'
-import { type Model, getFeatureBandNames } from './types/model'
+import { type Model } from './types/model'
 import type { CatalogProject, ProjectSummary } from './types/project'
 import type { PointInspection } from './types/pointInspection'
 import { fetchModelCatalog } from './api/catalog'
@@ -367,11 +367,6 @@ function App() {
             inspection={inspection}
             loading={inspectLoading}
             error={inspectError}
-            technicalDetails={{
-              modelId: selectedModel.id,
-              projectId: selectedModel.project_id,
-              driverFeatureBandNames: getFeatureBandNames(selectedModel),
-            }}
           />
         )}
       </Box>
