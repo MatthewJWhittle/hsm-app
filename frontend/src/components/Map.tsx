@@ -3,7 +3,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { useMemo, useRef } from 'react'
 import { COLORMAP_NAME, SUITABILITY_RESCALE_MAX, SUITABILITY_RESCALE_MIN } from '../map/suitabilityScale'
 import type { Model } from '../types/model'
-import { resolveSuitabilityPath } from '../utils/cogPath'
+import { resolveSuitabilityPath, titilerRasterUrlParam } from '../utils/cogPath'
 import { titilerBase } from '../utils/apiBase'
 
 interface MapComponentProps {
@@ -23,10 +23,8 @@ function MapComponent({
   const tileUrl = useMemo(() => {
     if (!model) return ''
     const absPath = resolveSuitabilityPath(model)
-    const pathForFileUrl = absPath.replace(/^\/+/, '')
-    const urlParam = `file:///${pathForFileUrl}`
     const searchParams = new URLSearchParams({
-      url: urlParam,
+      url: titilerRasterUrlParam(absPath),
       colormap_name: COLORMAP_NAME,
       rescale: `${SUITABILITY_RESCALE_MIN},${SUITABILITY_RESCALE_MAX}`,
     })
