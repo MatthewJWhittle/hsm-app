@@ -14,8 +14,8 @@ def write_tiled_epsg3857_cog(path: Path | str, *, fill: float = 0.42) -> tuple[f
     """
     Small **tiled** EPSG:3857 GeoTIFF suitable for :func:`validate_suitability_cog_uri`.
 
-    Uses internal blocks smaller than the raster extent so ``DatasetReader.is_tiled`` is
-    true under rasterio 1.4+ (strip GeoTIFFs report ``is_tiled`` false).
+    Uses internal blocks smaller than the raster extent so COG validation accepts the
+    file as tiled (strip GeoTIFFs use full-width row blocks and fail validation).
 
     Returns bounds (minx, miny, maxx, maxy) in EPSG:3857 used for the transform.
     """
