@@ -16,6 +16,7 @@ from starlette.concurrency import run_in_threadpool
 from hsm_core.catalog_collections import PROJECTS_COLLECTION_ID
 from hsm_core.catalog_write import upsert_project
 from hsm_core.firestore_io import snapshot_to_document_dict
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 from hsm_core.env_background_sample import (
     sanitize_exception_for_client,
     write_project_explainability_background_parquet,
@@ -106,6 +107,7 @@ def _run_explainability_after_claim(
         job, settings_default=settings.env_background_sample_rows
     )
     storage = build_object_storage(settings)
+    artifact_read = ArtifactReadRuntime(settings)
 
     try:
         write_project_explainability_background_parquet(
@@ -116,6 +118,7 @@ def _run_explainability_after_claim(
             cog_path,
             band_defs,
             n_samples,
+            artifact_read,
         )
     except Exception as e:
         logger.exception("explainability_background_failed job_id=%s", job_id)

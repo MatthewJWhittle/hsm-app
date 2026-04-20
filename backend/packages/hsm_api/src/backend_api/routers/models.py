@@ -18,6 +18,7 @@ from fastapi import (
     status,
 )
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
 from starlette.responses import Response
 
 from backend_api.api_errors import validation_error
@@ -57,7 +58,6 @@ from backend_api.routers.catalog_upload_utils import (
 )
 from backend_api.routers.models_openapi import OPENAPI_POST_MODELS, OPENAPI_PUT_MODEL
 from backend_api.settings import Settings
-from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 from backend_api.schemas_upload import UploadSession
 from backend_api.schemas_upload import UploadSessionResponse, to_upload_session_response
 from backend_api.storage import (
@@ -71,7 +71,7 @@ from backend_api.upload_session_ingest import (
     upload_session_gcs_uri,
     write_upload_file_to_tempfile,
 )
-from starlette.datastructures import FormData, UploadFile as StarletteUploadFile
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -416,6 +416,7 @@ async def create_model(
                 settings,
                 f"gs://{upload_session.gcs_bucket}",
                 upload_session.object_path,
+                artifact_read,
             )
         logger.info(
             "model_create_ingest_session model_id=%s upload_session_id=%s",

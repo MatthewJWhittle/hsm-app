@@ -52,6 +52,14 @@ def test_read_opaque_bytes_gcs() -> None:
         assert rt.read_opaque_bytes("gs://mybucket/path/file.pkl") == b"xyz"
 
 
+def test_artifact_cache_fingerprint_local_mtime(tmp_path: Path) -> None:
+    f = tmp_path / "x.bin"
+    f.write_bytes(b"0")
+    rt = ArtifactReadRuntime(WorkerSettings())
+    fp = rt.artifact_cache_fingerprint(str(f))
+    assert fp == f.stat().st_mtime
+
+
 def test_read_explainability_background_parquet_local(tmp_path: Path) -> None:
     df = pd.DataFrame({"a": [1.0, 2.0]})
     path = tmp_path / "bg.parquet"

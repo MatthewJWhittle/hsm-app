@@ -68,13 +68,14 @@ def write_project_explainability_background_parquet(
     cog_path: str,
     band_defs: list[EnvironmentalBandDefinition],
     n_samples: int,
+    artifact_read: ArtifactReadRuntime,
 ) -> str:
     """
     Sample pixels from the COG and write ``explainability_background.parquet`` under the project.
 
     Returns the relative catalog path (fixed filename).
     """
-    uri = resolve_env_cog_uri_for_sampling(settings, artifact_root, cog_path)
+    uri = resolve_env_cog_uri_for_sampling(settings, artifact_root, cog_path, artifact_read)
     tmp_path = sample_background_parquet_to_tempfile(uri, band_defs, n_samples)
     try:
         storage.write_project_artifact_from_path(
@@ -86,7 +87,10 @@ def write_project_explainability_background_parquet(
 
 
 def resolve_env_cog_uri_for_sampling(
-    settings: WorkerSettings, artifact_root: str, cog_rel: str
+    settings: WorkerSettings,
+    artifact_root: str,
+    cog_rel: str,
+    artifact_read: ArtifactReadRuntime,
 ) -> str:
     """
     Path or URI for rasterio to open the environmental COG.
@@ -100,7 +104,7 @@ def resolve_env_cog_uri_for_sampling(
     root = artifact_root.rstrip("/")
     if root.startswith("gs://"):
         gcs_uri = f"{root}/{rel}"
-        return ArtifactReadRuntime(settings).rasterio_open_uri(gcs_uri)
+        return artifact_read.rasterio_open_uri(gcs_uri)
     return str(Path(root) / rel)
 
 

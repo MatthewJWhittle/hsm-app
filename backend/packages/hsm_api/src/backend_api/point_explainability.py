@@ -206,6 +206,7 @@ def compute_shap_driver_variables(
             model_path,
             bg_path,
             max_background_rows,
+            artifact_read,
             lambda: _materialize_shap_explainer_bundle(
                 model, dc, model_path, bg_path, max_background_rows, artifact_read
             ),
@@ -297,6 +298,7 @@ def warm_explainability_cache(
             model_path,
             bg_path,
             max_background_rows,
+            artifact_read,
             lambda: _materialize_shap_explainer_bundle(
                 model, dc, model_path, bg_path, max_background_rows, artifact_read
             ),

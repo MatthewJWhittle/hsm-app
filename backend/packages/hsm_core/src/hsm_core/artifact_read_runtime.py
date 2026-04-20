@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
+from pathlib import Path
 from typing import Any
 
 import google.auth
@@ -16,6 +18,8 @@ from google.cloud.exceptions import GoogleCloudError
 
 from hsm_core.env_cog_paths import split_gs_uri
 from hsm_core.settings import WorkerSettings
+
+logger = logging.getLogger(__name__)
 
 
 def _looks_like_signing_capability_error(exc: Exception) -> bool:
@@ -131,6 +135,33 @@ class ArtifactReadRuntime:
             )
         with open(uri, "rb") as f:
             return f.read()
+
+    def artifact_cache_fingerprint(self, path: str) -> float:
+        """
+        Stable cache key for local files (mtime) or ``gs://`` objects (generation).
+
+        Matches the semantics previously used by the explainability LRU cache.
+        """
+        if path.startswith("gs://"):
+            try:
+                bucket_name, blob_name = split_gs_uri(path)
+                blob = (
+                    self._storage_client()
+                    .bucket(bucket_name)
+                    .blob(blob_name)
+                )
+                blob.reload()
+                if blob.generation is not None:
+                    return float(blob.generation)
+            except Exception:
+                logger.debug(
+                    "artifact cache fingerprint failed for %s", path, exc_info=True
+                )
+            return -1.0
+        try:
+            return Path(path).stat().st_mtime
+        except OSError:
+            return -1.0
 
     def read_explainability_background_parquet(
         self,
