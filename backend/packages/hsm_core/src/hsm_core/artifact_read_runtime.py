@@ -1,0 +1,140 @@
+"""Read-time artefact access: prepare URIs and library inputs for rasterio, pyarrow/pandas, and opaque bytes."""
+
+from __future__ import annotations
+
+from datetime import timedelta
+from typing import Any
+
+import google.auth
+import google.auth.transport.requests
+import pandas as pd
+import pyarrow.fs as pafs
+import pyarrow.parquet as pq
+from google.auth.exceptions import DefaultCredentialsError, RefreshError
+from google.cloud import storage
+from google.cloud.exceptions import GoogleCloudError
+
+from hsm_core.env_cog_paths import split_gs_uri
+from hsm_core.settings import WorkerSettings
+
+
+def _looks_like_signing_capability_error(exc: Exception) -> bool:
+    if isinstance(exc, (DefaultCredentialsError, RefreshError)):
+        return True
+    if isinstance(exc, GoogleCloudError):
+        return True
+    msg = str(exc).lower()
+    return (
+        "private key" in msg
+        or "sign credentials" in msg
+        or "could not automatically determine credentials" in msg
+    )
+
+
+class ArtifactReadRuntime:
+    """
+    Thin read-side runtime: signing config from settings, plus library-facing prep for:
+
+    * **Raster** — ``rasterio.open`` via ``/vsicurl`` for ``gs://`` (ranged HTTP reads).
+    * **Columnar** — Parquet via pyarrow filesystem for ``gs://``, pandas for local paths.
+    * **Opaque** — full byte reads for pickle and similar.
+    """
+
+    def __init__(self, settings: WorkerSettings) -> None:
+        self._settings = settings
+
+    def mint_signed_get_url(self, gcs_uri: str) -> str:
+        """
+        Short-lived HTTPS GET URL for a ``gs://`` object.
+
+        Subclasses may override or wrap for URL reuse (not implemented here).
+        """
+        if not gcs_uri.startswith("gs://"):
+            raise ValueError("gcs_uri must start with gs://")
+        remainder = gcs_uri[5:]
+        parts = remainder.split("/", 1)
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValueError("gcs_uri must include bucket and object path")
+        bucket_name, object_path = parts
+
+        client = storage.Client()
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(object_path)
+        kwargs = {
+            "version": "v4",
+            "expiration": timedelta(seconds=self._settings.gcs_signed_read_url_ttl_seconds),
+            "method": "GET",
+        }
+        try:
+            return blob.generate_signed_url(**kwargs)
+        except Exception as direct_err:
+            if not _looks_like_signing_capability_error(direct_err):
+                raise
+            credentials, _ = google.auth.default(
+                scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            signer_email = self._settings.gcs_signed_url_service_account or getattr(
+                credentials, "service_account_email", None
+            )
+            if not signer_email or signer_email == "default":
+                raise RuntimeError(
+                    "runtime credentials cannot sign directly; set "
+                    "GCS_SIGNED_URL_SERVICE_ACCOUNT to a signer service account email"
+                ) from direct_err
+            if credentials is None:
+                raise RuntimeError(
+                    "storage client has no credentials available for IAM signed URL fallback"
+                ) from direct_err
+            access_token = getattr(credentials, "token", None)
+            is_expired = bool(getattr(credentials, "expired", False))
+            if not access_token or is_expired:
+                request = google.auth.transport.requests.Request()
+                credentials.refresh(request)
+                access_token = getattr(credentials, "token", None)
+            if not access_token:
+                raise RuntimeError(
+                    "could not refresh access token for IAM signed URL fallback"
+                ) from direct_err
+            return blob.generate_signed_url(
+                **kwargs,
+                service_account_email=signer_email,
+                access_token=access_token,
+            )
+
+    def rasterio_open_uri(self, ref: str) -> str:
+        """
+        URI or path to pass to ``rasterio.open``.
+
+        Local paths and absolute ``/`` paths are unchanged. ``gs://`` is rewritten to
+        ``/vsicurl/<signed https URL>`` for cloud-efficient ranged reads.
+        """
+        if ref.startswith("gs://"):
+            signed_url = self.mint_signed_get_url(ref)
+            return f"/vsicurl/{signed_url}"
+        return ref
+
+    def read_opaque_bytes(self, uri: str) -> bytes:
+        """Full object bytes (e.g. pickle); ``gs://`` uses Application Default Credentials."""
+        if uri.startswith("gs://"):
+            bucket_name, blob_name = split_gs_uri(uri)
+            return storage.Client().bucket(bucket_name).blob(blob_name).download_as_bytes()
+        with open(uri, "rb") as f:
+            return f.read()
+
+    def read_explainability_background_parquet(
+        self,
+        uri: str,
+        **read_kwargs: Any,
+    ) -> pd.DataFrame:
+        """
+        Load the explainability background Parquet as a DataFrame (v1: full read).
+
+        For ``gs://``, uses pyarrow with a GCS filesystem (no eager Python-side download).
+        ``**read_kwargs`` are forwarded to :func:`pyarrow.parquet.read_table` or
+        :func:`pandas.read_parquet` for future column filters / options.
+        """
+        if uri.startswith("gs://"):
+            filesystem, path = pafs.FileSystem.from_uri(uri)
+            table = pq.read_table(path, filesystem=filesystem, **read_kwargs)
+            return table.to_pandas()
+        return pd.read_parquet(uri, **read_kwargs)

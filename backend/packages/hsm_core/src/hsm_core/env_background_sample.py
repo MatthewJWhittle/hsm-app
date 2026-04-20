@@ -4,19 +4,15 @@ from __future__ import annotations
 
 import tempfile
 from dataclasses import dataclass
-from datetime import timedelta
 from pathlib import Path
 import re
 
-import google.auth
-import google.auth.transport.requests
 import numpy as np
 import pandas as pd
 import pyarrow  # noqa: F401 — pandas needs pyarrow for DataFrame.to_parquet(engine="pyarrow")
 import rasterio
-from google.auth.exceptions import DefaultCredentialsError, RefreshError
-from google.cloud import storage
-from google.cloud.exceptions import GoogleCloudError
+
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 from hsm_core.schemas_project import EnvironmentalBandDefinition
 from hsm_core.settings import WorkerSettings
 from hsm_core.storage import EXPLAINABILITY_BACKGROUND_FILENAME, ObjectStorage
@@ -89,74 +85,6 @@ def write_project_explainability_background_parquet(
     return EXPLAINABILITY_BACKGROUND_FILENAME
 
 
-def _looks_like_signing_capability_error(exc: Exception) -> bool:
-    if isinstance(exc, (DefaultCredentialsError, RefreshError)):
-        return True
-    if isinstance(exc, GoogleCloudError):
-        return True
-    msg = str(exc).lower()
-    return (
-        "private key" in msg
-        or "sign credentials" in msg
-        or "could not automatically determine credentials" in msg
-    )
-
-
-def _mint_signed_read_url_for_gcs_uri(settings: WorkerSettings, gcs_uri: str) -> str:
-    """Create a short-lived GET signed URL for a ``gs://`` object URI."""
-    if not gcs_uri.startswith("gs://"):
-        raise ValueError("gcs_uri must start with gs://")
-    remainder = gcs_uri[5:]
-    parts = remainder.split("/", 1)
-    if len(parts) != 2 or not parts[0] or not parts[1]:
-        raise ValueError("gcs_uri must include bucket and object path")
-    bucket_name, object_path = parts
-
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(object_path)
-    kwargs = {
-        "version": "v4",
-        "expiration": timedelta(seconds=settings.gcs_signed_read_url_ttl_seconds),
-        "method": "GET",
-    }
-    try:
-        return blob.generate_signed_url(**kwargs)
-    except Exception as direct_err:
-        if not _looks_like_signing_capability_error(direct_err):
-            raise
-        credentials, _ = google.auth.default(
-            scopes=["https://www.googleapis.com/auth/cloud-platform"]
-        )
-        signer_email = settings.gcs_signed_url_service_account or getattr(
-            credentials, "service_account_email", None
-        )
-        if not signer_email or signer_email == "default":
-            raise RuntimeError(
-                "runtime credentials cannot sign directly; set "
-                "GCS_SIGNED_URL_SERVICE_ACCOUNT to a signer service account email"
-            ) from direct_err
-        if credentials is None:
-            raise RuntimeError(
-                "storage client has no credentials available for IAM signed URL fallback"
-            ) from direct_err
-        access_token = getattr(credentials, "token", None)
-        is_expired = bool(getattr(credentials, "expired", False))
-        if not access_token or is_expired:
-            request = google.auth.transport.requests.Request()
-            credentials.refresh(request)
-            access_token = getattr(credentials, "token", None)
-        if not access_token:
-            raise RuntimeError(
-                "could not refresh access token for IAM signed URL fallback"
-            ) from direct_err
-        return blob.generate_signed_url(
-            **kwargs,
-            service_account_email=signer_email,
-            access_token=access_token,
-        )
-
-
 def resolve_env_cog_uri_for_sampling(
     settings: WorkerSettings, artifact_root: str, cog_rel: str
 ) -> str:
@@ -172,8 +100,7 @@ def resolve_env_cog_uri_for_sampling(
     root = artifact_root.rstrip("/")
     if root.startswith("gs://"):
         gcs_uri = f"{root}/{rel}"
-        signed_url = _mint_signed_read_url_for_gcs_uri(settings, gcs_uri)
-        return f"/vsicurl/{signed_url}"
+        return ArtifactReadRuntime(settings).rasterio_open_uri(gcs_uri)
     return str(Path(root) / rel)
 
 
