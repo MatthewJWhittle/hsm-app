@@ -13,31 +13,38 @@ from backend_api.cog_validation import (
     validate_suitability_cog_path,
     validate_suitability_cog_uri,
 )
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 
 
-async def validate_cog_bytes_threaded(content: bytes) -> None:
+async def validate_cog_bytes_threaded(
+    content: bytes, artifact_read: ArtifactReadRuntime
+) -> None:
     """Run COG validation off the event loop."""
 
     def _run() -> None:
-        validate_suitability_cog_bytes(content)
+        validate_suitability_cog_bytes(content, artifact_read)
 
     await run_in_threadpool(_run)
 
 
-async def validate_cog_path_threaded(path: str) -> None:
+async def validate_cog_path_threaded(
+    path: str, artifact_read: ArtifactReadRuntime
+) -> None:
     """Run COG validation for an on-disk path off the event loop."""
 
     def _run() -> None:
-        validate_suitability_cog_path(path=Path(path))
+        validate_suitability_cog_path(path=Path(path), artifact_read=artifact_read)
 
     await run_in_threadpool(_run)
 
 
-async def validate_cog_uri_threaded(uri: str) -> None:
-    """Run COG validation for a rasterio URI/path off the event loop."""
+async def validate_cog_uri_threaded(
+    artifact_read: ArtifactReadRuntime, uri: str
+) -> None:
+    """Run COG validation for a catalog/storage raster ref off the event loop."""
 
     def _run() -> None:
-        validate_suitability_cog_uri(uri=uri)
+        validate_suitability_cog_uri(artifact_read, uri)
 
     await run_in_threadpool(_run)
 

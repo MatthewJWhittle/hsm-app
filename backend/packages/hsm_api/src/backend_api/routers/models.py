@@ -483,10 +483,13 @@ async def create_model(
             logger.info("model_create_validate_start model_id=%s", model_id)
             if upload_uri is not None:
                 await validate_cog_uri_threaded(
-                    rasterio_uri if rasterio_uri is not None else upload_uri
+                    artifact_read,
+                    rasterio_uri if rasterio_uri is not None else upload_uri,
                 )
             elif upload_temp_path is not None:
-                await validate_cog_path_threaded(str(upload_temp_path))
+                await validate_cog_path_threaded(
+                    str(upload_temp_path), artifact_read
+                )
             else:
                 raise HTTPException(
                     status_code=422,
@@ -733,7 +736,9 @@ async def update_model(
                 )
             try:
                 logger.info("model_update_validate_start model_id=%s", model_id)
-                await validate_cog_path_threaded(str(upload_temp_path))
+                await validate_cog_path_threaded(
+                    str(upload_temp_path), artifact_read
+                )
                 logger.info("model_update_validate_ok model_id=%s", model_id)
             except CogValidationError as e:
                 raise _cog_validation_422(e) from e

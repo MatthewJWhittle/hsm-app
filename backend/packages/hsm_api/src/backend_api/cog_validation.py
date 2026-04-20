@@ -9,7 +9,7 @@ import rasterio
 from rasterio.crs import CRS
 
 from backend_api.point_sampling import EXPECTED_SUITABILITY_CRS
-from hsm_core.env_cog_paths import reject_raw_gs_uri_for_rasterio
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 
 EXPECTED_EPSG = 3857
 
@@ -30,30 +30,8 @@ class CogValidationError(Exception):
         super().__init__(message)
 
 
-def validate_suitability_cog_bytes(content: bytes) -> None:
-    """Validate COG bytes: readable GeoTIFF, tiled, EPSG:3857."""
-    if len(content) < 1024:
-        raise CogValidationError(
-            "file too small to be a valid GeoTIFF",
-            code="COG_TOO_SMALL",
-        )
-    with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp:
-        tmp.write(content)
-        path = Path(tmp.name)
-    try:
-        validate_suitability_cog_path(path)
-    finally:
-        path.unlink(missing_ok=True)
-
-
-def validate_suitability_cog_path(path: Path) -> None:
-    """Validate on-disk COG: tiled, EPSG:3857."""
-    validate_suitability_cog_uri(str(path))
-
-
-def validate_suitability_cog_uri(uri: str) -> None:
-    """Validate COG from a rasterio-readable URI/path: tiled, EPSG:3857."""
-    reject_raw_gs_uri_for_rasterio(uri)
+def _validate_suitability_cog_rasterio_uri(uri: str) -> None:
+    """Validate opened raster (CRS, tiling). ``uri`` must be passable to ``rasterio.open``."""
     try:
         with rasterio.open(uri) as src:
             if src.crs is None:
@@ -80,3 +58,41 @@ def validate_suitability_cog_uri(uri: str) -> None:
             code="COG_READ_ERROR",
             context={"rasterio": str(e)},
         ) from e
+
+
+def validate_suitability_cog_bytes(
+    content: bytes, artifact_read: ArtifactReadRuntime
+) -> None:
+    """Validate COG bytes: readable GeoTIFF, tiled, EPSG:3857."""
+    if len(content) < 1024:
+        raise CogValidationError(
+            "file too small to be a valid GeoTIFF",
+            code="COG_TOO_SMALL",
+        )
+    with tempfile.NamedTemporaryFile(suffix=".tif", delete=False) as tmp:
+        tmp.write(content)
+        path = Path(tmp.name)
+    try:
+        validate_suitability_cog_uri(artifact_read, str(path))
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def validate_suitability_cog_path(
+    path: Path, artifact_read: ArtifactReadRuntime
+) -> None:
+    """Validate on-disk COG: tiled, EPSG:3857."""
+    validate_suitability_cog_uri(artifact_read, str(path))
+
+
+def validate_suitability_cog_uri(
+    artifact_read: ArtifactReadRuntime, ref: str
+) -> None:
+    """
+    Validate COG from a catalog/storage ref (local path, ``gs://``, or ``/vsicurl/...``).
+
+    All opens go through ``artifact_read.rasterio_open_uri`` so ``gs://`` is never passed
+    raw to GDAL in Cloud Run.
+    """
+    uri = artifact_read.rasterio_open_uri(ref)
+    _validate_suitability_cog_rasterio_uri(uri)

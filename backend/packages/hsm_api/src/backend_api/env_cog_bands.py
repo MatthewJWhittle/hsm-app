@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from rasterio.io import DatasetReader, MemoryFile
 
 from backend_api.schemas_project import BandLabelPatch, EnvironmentalBandDefinition
-from hsm_core.env_cog_paths import reject_raw_gs_uri_for_rasterio
+from hsm_core.artifact_read_runtime import ArtifactReadRuntime
 
 
 def count_bands_in_geotiff_bytes(content: bytes) -> int:
@@ -19,13 +19,6 @@ def count_bands_in_geotiff_bytes(content: bytes) -> int:
     with MemoryFile(content) as mem:
         with mem.open() as src:
             return int(src.count)
-
-
-def count_bands_in_path(path: str) -> int:
-    """Return band count from a local path or rasterio URI (e.g. ``/vsicurl/...`` for GCS)."""
-    reject_raw_gs_uri_for_rasterio(path)
-    with rasterio.open(path) as src:
-        return int(src.count)
 
 
 def _normalise_machine_band_name(raw: str | None, index: int) -> tuple[str, str | None]:
@@ -124,14 +117,6 @@ def default_band_definitions(count: int) -> list[EnvironmentalBandDefinition]:
     ]
 
 
-def default_band_definitions_from_path(path: str) -> list[EnvironmentalBandDefinition]:
-    """Derive band definitions from an on-disk GeoTIFF/COG (same rules as upload inference)."""
-    reject_raw_gs_uri_for_rasterio(path)
-    with rasterio.open(path) as src:
-        defs, _ = infer_band_definitions_from_dataset(src)
-    return defs
-
-
 def band_definitions_for_upload_bytes(
     content: bytes,
     definitions_form: str | None,
@@ -164,17 +149,17 @@ def band_definitions_for_upload_bytes(
 
 
 def band_definitions_for_upload_path(
+    artifact_read: ArtifactReadRuntime,
     path: str,
     definitions_form: str | None,
     *,
     infer_band_definitions: bool = True,
 ) -> tuple[list[EnvironmentalBandDefinition], list[str]]:
     """
-    Resolve band definitions for a new upload from an on-disk raster path.
+    Resolve band definitions for a new upload from a local raster path (or ``gs://`` via runtime).
     """
     parsed = parse_band_definitions_json(definitions_form)
-    reject_raw_gs_uri_for_rasterio(path)
-    with rasterio.open(path) as src:
+    with rasterio.open(artifact_read.rasterio_open_uri(path)) as src:
         count = int(src.count)
         if parsed is not None:
             validate_band_definitions_match_raster(count, parsed)
@@ -187,17 +172,19 @@ def band_definitions_for_upload_path(
 
 
 def band_definitions_for_upload_uri(
+    artifact_read: ArtifactReadRuntime,
     uri: str,
     definitions_form: str | None,
     *,
     infer_band_definitions: bool = True,
 ) -> tuple[list[EnvironmentalBandDefinition], list[str]]:
     """
-    Resolve band definitions for a new upload from a raster URI/path readable by rasterio.
+    Resolve band definitions for a new upload from a catalog ref or rasterio-ready URI.
+
+    Opens via ``artifact_read.rasterio_open_uri`` so ``gs://`` is never passed raw to GDAL.
     """
     parsed = parse_band_definitions_json(definitions_form)
-    reject_raw_gs_uri_for_rasterio(uri)
-    with rasterio.open(uri) as src:
+    with rasterio.open(artifact_read.rasterio_open_uri(uri)) as src:
         count = int(src.count)
         if parsed is not None:
             validate_band_definitions_match_raster(count, parsed)

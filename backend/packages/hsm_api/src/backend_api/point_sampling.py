@@ -24,7 +24,7 @@ from backend_api.schemas import (
     RawEnvironmentalValue,
 )
 from hsm_core.artifact_read_runtime import ArtifactReadRuntime
-from hsm_core.env_cog_paths import raster_storage_uri_readable, reject_raw_gs_uri_for_rasterio
+from hsm_core.env_cog_paths import raster_storage_uri_readable
 
 if TYPE_CHECKING:
     from backend_api.catalog_service import CatalogService
@@ -120,14 +120,13 @@ def validate_driver_band_indices_for_model(
     mx = max(indices)
     if min(indices) < 0:
         raise ValueError("resolved environmental band indices must be non-negative")
-    raster_uri = artifact_read.rasterio_open_uri(path)
     try:
-        with rasterio.open(raster_uri) as src:
-            if mx >= src.count:
-                raise ValueError(
-                    f"resolved band index {mx} is out of range for "
-                    f"environmental raster with {src.count} band(s) (0-based indices)"
-                )
+        n_bands = artifact_read.raster_band_count(path)
+        if mx >= n_bands:
+            raise ValueError(
+                f"resolved band index {mx} is out of range for "
+                f"environmental raster with {n_bands} band(s) (0-based indices)"
+            )
     except ValueError:
         raise
     except Exception as e:
@@ -171,19 +170,27 @@ def _rowcol_window_for_wgs84_point(
     return row_i, col_i, Window(col_i, row_i, 1, 1)
 
 
-def sample_suitability(cog_path: str, lng: float, lat: float) -> float:
+def sample_suitability(
+    artifact_read: ArtifactReadRuntime,
+    storage_ref: str,
+    lng: float,
+    lat: float,
+) -> float:
     """
     Read band 1 at (lng, lat) in WGS84.
+
+    ``storage_ref`` is a catalog path or ``gs://`` URI; it is opened via
+    ``artifact_read.rasterio_open_uri``.
 
     Raises:
         PointSamplingError: out of bounds, nodata, wrong CRS, unreadable pixel.
         RasterNotFoundError: path does not exist.
     """
-    if not raster_storage_uri_readable(cog_path):
+    if not raster_storage_uri_readable(storage_ref):
         raise RasterNotFoundError("suitability raster not found on server")
 
-    reject_raw_gs_uri_for_rasterio(cog_path)
-    with rasterio.open(cog_path) as src:
+    cog_uri = artifact_read.rasterio_open_uri(storage_ref)
+    with rasterio.open(cog_uri) as src:
         _row_i, _col_i, window = _rowcol_window_for_wgs84_point(
             src,
             lng,
@@ -211,10 +218,16 @@ def sample_suitability(cog_path: str, lng: float, lat: float) -> float:
 
 
 def sample_environmental_bands_at_point(
-    cog_path: str, lng: float, lat: float, band_indices_0based: list[int]
+    artifact_read: ArtifactReadRuntime,
+    storage_ref: str,
+    lng: float,
+    lat: float,
+    band_indices_0based: list[int],
 ) -> list[float]:
     """
     Read each requested band at (lng, lat) in WGS84.
+
+    ``storage_ref`` is resolved for rasterio via ``artifact_read.rasterio_open_uri``.
 
     ``band_indices_0based`` are **0-based** indices into the raster band list; rasterio
     uses 1-based band numbers, so band ``i`` is read as ``src.read(i + 1, ...)``.
@@ -223,12 +236,12 @@ def sample_environmental_bands_at_point(
         PointSamplingError: CRS, extent, nodata, or index out of range.
         RasterNotFoundError: file missing.
     """
-    if not raster_storage_uri_readable(cog_path):
+    if not raster_storage_uri_readable(storage_ref):
         raise RasterNotFoundError("environmental raster not found on server")
 
-    reject_raw_gs_uri_for_rasterio(cog_path)
+    cog_uri = artifact_read.rasterio_open_uri(storage_ref)
     out: list[float] = []
-    with rasterio.open(cog_path) as src:
+    with rasterio.open(cog_uri) as src:
         _row_i, _col_i, window = _rowcol_window_for_wgs84_point(
             src,
             lng,
@@ -321,8 +334,7 @@ def inspect_point(
 
     shap_cap = 512 if shap_background_max_rows is None else shap_background_max_rows
 
-    suit_raster_uri = artifact_read.rasterio_open_uri(resolve_cog_path(model))
-    value = sample_suitability(suit_raster_uri, lng, lat)
+    value = sample_suitability(artifact_read, resolve_cog_path(model), lng, lat)
 
     drivers_out: list[DriverVariable] | None = None  # None → serialize as empty list
     raw_out: list[RawEnvironmentalValue] | None = None
@@ -349,9 +361,8 @@ def inspect_point(
                     "feature_band_names do not match the project environmental manifest",
                     code="FEATURE_BAND_MANIFEST_MISMATCH",
                 ) from None
-            env_raster_uri = artifact_read.rasterio_open_uri(env_path)
             band_values = sample_environmental_bands_at_point(
-                env_raster_uri, lng, lat, indices
+                artifact_read, env_path, lng, lat, indices
             )
             raw_out = build_raw_environmental_values(
                 model, band_values, dc, band_indices_0based=indices

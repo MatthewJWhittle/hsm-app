@@ -45,7 +45,6 @@ from backend_api.env_cog_bands import (
     apply_band_label_updates,
     band_definitions_for_upload_path,
     band_definitions_for_upload_uri,
-    count_bands_in_path,
     validate_band_definitions_match_raster,
 )
 from backend_api.deps.settings_dep import get_settings
@@ -214,10 +213,8 @@ async def patch_environmental_band_definitions(
             "environmental COG not found on server; upload the file first",
         )
 
-    raster_uri = artifact_read.rasterio_open_uri(abs_path)
-
     def _count() -> int:
-        return count_bands_in_path(raster_uri)
+        return artifact_read.raster_band_count(abs_path)
 
     count = await run_in_threadpool(_count)
     try:
@@ -313,8 +310,7 @@ async def patch_environmental_band_definition_labels(
             detail=validation_error("BAND_LABEL_PATCH_INVALID", str(e)),
         ) from e
 
-    raster_uri = artifact_read.rasterio_open_uri(abs_path)
-    count = await run_in_threadpool(lambda: count_bands_in_path(raster_uri))
+    count = await run_in_threadpool(lambda: artifact_read.raster_band_count(abs_path))
     try:
         validate_band_definitions_match_raster(count, merged)
     except ValueError as e:
@@ -566,10 +562,13 @@ async def create_project(
                 logger.info("project_create_validate_start project_id=%s", project_id)
                 if upload_uri is not None:
                     await validate_cog_uri_threaded(
-                        rasterio_uri if rasterio_uri is not None else upload_uri
+                        artifact_read,
+                        rasterio_uri if rasterio_uri is not None else upload_uri,
                     )
                 elif upload_temp_path is not None:
-                    await validate_cog_path_threaded(str(upload_temp_path))
+                    await validate_cog_path_threaded(
+                        str(upload_temp_path), artifact_read
+                    )
                 logger.info("project_create_validate_ok project_id=%s", project_id)
             except CogValidationError as e:
                 await run_in_threadpool(
@@ -644,6 +643,7 @@ async def create_project(
                 def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
                     if upload_uri is not None:
                         return band_definitions_for_upload_uri(
+                            artifact_read,
                             rasterio_uri if rasterio_uri is not None else upload_uri,
                             environmental_band_definitions,
                             infer_band_definitions=_infer_band_definitions_from_form(
@@ -652,6 +652,7 @@ async def create_project(
                         )
                     if upload_temp_path is not None:
                         return band_definitions_for_upload_path(
+                            artifact_read,
                             str(upload_temp_path),
                             environmental_band_definitions,
                             infer_band_definitions=_infer_band_definitions_from_form(
@@ -1030,7 +1031,8 @@ async def replace_project_environmental_cogs(
                 project_id,
             )
             await validate_cog_uri_threaded(
-                rasterio_uri if rasterio_uri is not None else upload_uri
+                artifact_read,
+                rasterio_uri if rasterio_uri is not None else upload_uri,
             )
             logger.info(
                 "project_replace_env_cog_validate_ok project_id=%s duration_ms=%s",
@@ -1146,6 +1148,7 @@ async def replace_project_environmental_cogs(
 
             def _defs() -> tuple[list[EnvironmentalBandDefinition], list[str]]:
                 return band_definitions_for_upload_uri(
+                    artifact_read,
                     rasterio_uri if rasterio_uri is not None else upload_uri,
                     environmental_band_definitions,
                     infer_band_definitions=_infer_band_definitions_from_form(

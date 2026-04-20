@@ -8,14 +8,34 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+import numpy as np
+import rasterio
+from rasterio.crs import CRS
+from rasterio.transform import from_bounds
+
 from hsm_core.artifact_read_runtime import ArtifactReadRuntime
-from hsm_core.env_cog_paths import raster_storage_uri_readable, reject_raw_gs_uri_for_rasterio
+from hsm_core.env_cog_paths import raster_storage_uri_readable
 from hsm_core.settings import WorkerSettings
 
 
-def test_reject_raw_gs_uri_for_rasterio_raises() -> None:
-    with pytest.raises(ValueError, match="rasterio cannot open raw gs://"):
-        reject_raw_gs_uri_for_rasterio("gs://bucket/object.tif")
+def test_raster_band_count_local_file(tmp_path: Path) -> None:
+    p = tmp_path / "x.tif"
+    h, w = 4, 4
+    transform = from_bounds(-180, -90, 180, 90, w, h)
+    with rasterio.open(
+        p,
+        "w",
+        driver="GTiff",
+        height=h,
+        width=w,
+        count=3,
+        dtype="float32",
+        crs=CRS.from_epsg(4326),
+        transform=transform,
+    ) as dst:
+        dst.write(np.zeros((3, h, w), dtype=np.float32))
+    rt = ArtifactReadRuntime(WorkerSettings())
+    assert rt.raster_band_count(str(p)) == 3
 
 
 def test_raster_storage_uri_readable_gs_vsicurl_and_local(tmp_path: Path) -> None:
