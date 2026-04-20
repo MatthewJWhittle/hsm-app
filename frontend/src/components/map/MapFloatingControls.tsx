@@ -1,5 +1,7 @@
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import VisibilityIcon from '@mui/icons-material/Visibility'
+import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined'
 import {
   Autocomplete,
   Box,
@@ -29,6 +31,9 @@ interface MapFloatingControlsProps {
   /** Raster layer opacity as a percentage (0–100). */
   opacity: number
   onOpacityChange: (value: number) => void
+  /** Whether the active raster layer is currently rendered on the map. */
+  layerVisible: boolean
+  onToggleLayerVisible: () => void
   /** Catalog is still loading; render a skeleton in place of the picker. */
   loading?: boolean
   /** Catalog load failed; render a short disabled-state message. */
@@ -48,6 +53,8 @@ export function MapFloatingControls({
   onOpenLayerDetailsDialog,
   opacity,
   onOpacityChange,
+  layerVisible,
+  onToggleLayerVisible,
   loading = false,
   errored = false,
 }: MapFloatingControlsProps) {
@@ -65,6 +72,10 @@ export function MapFloatingControls({
     [onOpacityChange],
   )
 
+  // Muted card affordance when the active raster is hidden: quick visual
+  // confirmation that the map is intentionally showing the basemap only.
+  const cardDimmed = !loading && Boolean(selectedModel) && !layerVisible
+
   return (
     <Paper
       elevation={4}
@@ -77,23 +88,62 @@ export function MapFloatingControls({
         width: MAP_FLOATING_CONTROLS_WIDTH_PX,
         maxWidth: 'calc(100vw - 32px)',
         borderRadius: 2,
-        bgcolor: 'rgba(255, 255, 255, 0.96)',
+        bgcolor: cardDimmed ? 'rgba(255, 255, 255, 0.82)' : 'rgba(255, 255, 255, 0.96)',
         backdropFilter: 'blur(8px)',
         border: 1,
         borderColor: 'divider',
         pointerEvents: 'auto',
         overflow: 'hidden',
+        transition: (t) =>
+          t.transitions.create(['background-color'], {
+            duration: t.transitions.duration.shorter,
+          }),
       }}
     >
-      <Box sx={{ px: 1.75, pt: 1.5, pb: 1.25 }}>
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          id="map-controls-layer-help"
-          sx={{ fontWeight: 600, letterSpacing: '0.04em', display: 'block', mb: 0.75 }}
+      <Box sx={{ px: 1.75, pt: 1.25, pb: 1.25 }}>
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          spacing={1}
+          sx={{ mb: 0.5 }}
         >
-          LAYER
-        </Typography>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            id="map-controls-layer-help"
+            sx={{ fontWeight: 600, letterSpacing: '0.04em' }}
+          >
+            LAYER
+          </Typography>
+          <Tooltip
+            placement="bottom-end"
+            title={
+              selectedModel
+                ? layerVisible
+                  ? 'Hide layer (V)'
+                  : 'Show layer (V)'
+                : 'Select a layer first'
+            }
+          >
+            <span>
+              <IconButton
+                size="small"
+                onClick={onToggleLayerVisible}
+                disabled={!selectedModel}
+                aria-label={layerVisible ? 'Hide layer' : 'Show layer'}
+                aria-pressed={!layerVisible}
+                sx={{ mr: -0.5, color: layerVisible ? 'primary.main' : 'text.secondary' }}
+              >
+                {layerVisible ? (
+                  <VisibilityIcon fontSize="small" />
+                ) : (
+                  <VisibilityOffOutlinedIcon fontSize="small" />
+                )}
+              </IconButton>
+            </span>
+          </Tooltip>
+        </Stack>
 
         {loading ? (
           <Skeleton
@@ -156,7 +206,8 @@ export function MapFloatingControls({
             color="text.secondary"
             sx={{ display: 'block', mt: 1, lineHeight: 1.4, wordBreak: 'break-word' }}
           >
-            Showing:{' '}
+            {layerVisible ? 'Showing' : 'Hidden'}
+            {': '}
             <Box component="span" sx={{ color: 'text.primary', fontWeight: 500 }}>
               {selectedTitle}
             </Box>
@@ -209,7 +260,7 @@ export function MapFloatingControls({
           onChange={handleOpacityChange}
           min={0}
           max={100}
-          disabled={!selectedModel}
+          disabled={!selectedModel || !layerVisible}
           aria-label="Layer transparency"
           aria-valuetext={`${opacity} percent`}
           valueLabelDisplay="auto"

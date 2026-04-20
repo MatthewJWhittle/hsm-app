@@ -55,6 +55,7 @@ function App() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [selectedModelId, setSelectedModelId] = useState('')
   const [opacity, setOpacity] = useState(70)
+  const [layerVisible, setLayerVisible] = useState(true)
   const [inspectCoords, setInspectCoords] = useState<{ lng: number; lat: number } | null>(
     null,
   )
@@ -70,6 +71,32 @@ function App() {
 
   const retryLoadCatalog = useCallback(() => {
     setReloadNonce((n) => n + 1)
+  }, [])
+
+  const toggleLayerVisible = useCallback(() => {
+    setLayerVisible((v) => !v)
+  }, [])
+
+  useEffect(() => {
+    // Keyboard shortcut: "V" toggles the active layer's visibility while
+    // focus is not in an input, textarea, or contenteditable surface. Matches
+    // the quick-compare workflow (flick raster on/off vs. the basemap).
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'v' && e.key !== 'V') return
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return
+      const target = e.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      setLayerVisible((v) => !v)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
   useEffect(() => {
@@ -208,6 +235,10 @@ function App() {
     (modelId: string) => {
       clearInspection()
       if (!modelId) setLayerDetailsOpen(false)
+      // Always re-show the raster when switching to a new layer — stale
+      // visibility across different species is almost never what the user
+      // wants.
+      setLayerVisible(true)
       setSelectedModelId(modelId)
       const m = models.find((x) => x.id === modelId)
       if (m) {
@@ -270,6 +301,7 @@ function App() {
         <Box sx={{ position: 'absolute', inset: 0 }}>
           <MapComponent
             opacity={opacity / 100}
+            visible={layerVisible}
             model={selectedModel}
             onInspect={selectedModel && !loadError ? handleInspect : undefined}
           />
@@ -283,11 +315,13 @@ function App() {
           onOpenLayerDetailsDialog={() => setLayerDetailsOpen(true)}
           opacity={opacity}
           onOpacityChange={setOpacity}
+          layerVisible={layerVisible}
+          onToggleLayerVisible={toggleLayerVisible}
           loading={!catalogReady}
           errored={Boolean(loadError)}
         />
 
-        {selectedModel && !loadError && (
+        {selectedModel && !loadError && layerVisible && (
           <Box
             sx={{
               position: 'absolute',
