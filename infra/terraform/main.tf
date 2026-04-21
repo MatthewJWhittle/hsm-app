@@ -613,6 +613,8 @@ resource "google_cloud_run_v2_service" "api_staging" {
           cpu    = var.api_cpu
           memory = var.api_memory
         }
+        # Brief extra vCPU during container startup (staging only); reduces cold-start latency.
+        startup_cpu_boost = true
       }
 
       env {
