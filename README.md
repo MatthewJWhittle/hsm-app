@@ -85,7 +85,7 @@ hsm-app/
 `-V` : Recreate anonymous volumes instead of retrieving data from the previous containers.
 This make Vite work - don't remove it.
 
-The backend service mounts an **anonymous volume** on `/app/.venv` (same idea as the frontend’s anonymous `/app/node_modules`), so the bind-mounted repo does not overlay the container venv with your Mac `.venv`. The startup command runs `uv sync --no-dev` into that empty mount (runtime deps only; no pytest). The image **COPY** is scoped to `pyproject.toml`, `uv.lock`, and `backend_api/` only — not tests or the whole repo root.
+The backend service mounts an **anonymous volume** on `/app/.venv` (same idea as the frontend’s anonymous `/app/node_modules`), so the bind-mounted repo does not overlay the container venv with your Mac `.venv`. Compose runs `uv sync --no-dev --all-packages` on startup, then `uv run uvicorn … --reload` (runtime deps only; no pytest) so the workspace matches the lockfile and code changes reload. The image **COPY** includes `pyproject.toml`, `uv.lock`, and `packages/` (full uv workspace) for `uv sync` at build time. **Production / Cloud Run** uses the image default **`CMD`**: `/app/.venv/bin/uvicorn` (no `uv run` per boot — see `backend/Dockerfile`); Compose **overrides** that for local development.
 
 The **frontend** waits until the **backend healthcheck** passes (`GET /health`) so Vite does not proxy `/api` to the API before `uvicorn` is listening (avoids `ECONNREFUSED` on first load).
 
