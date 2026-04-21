@@ -406,9 +406,9 @@ resource "google_cloud_run_v2_service" "worker_staging" {
         container_port = var.worker_container_port
       }
 
-      command = ["uv"]
+      command = ["/app/.venv/bin/uvicorn"]
       args = [
-        "run", "uvicorn", "hsm_worker.main:app",
+        "hsm_worker.main:app",
         "--host", "0.0.0.0",
         "--port", format("%d", var.worker_container_port),
       ]
@@ -499,9 +499,9 @@ resource "google_cloud_run_v2_service" "worker_prod" {
         container_port = var.worker_container_port
       }
 
-      command = ["uv"]
+      command = ["/app/.venv/bin/uvicorn"]
       args = [
-        "run", "uvicorn", "hsm_worker.main:app",
+        "hsm_worker.main:app",
         "--host", "0.0.0.0",
         "--port", format("%d", var.worker_container_port),
       ]

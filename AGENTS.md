@@ -9,7 +9,7 @@ When implementing catalog upload, point inspection, driver rasters, or explanati
 
 ## Backend guidance (FastAPI)
 
-The backend is a **uv workspace** under `backend/`: shared **`hsm_core`**, HTTP app **`hsm_api`** (`backend_api`), and **`hsm_worker`** (same container image; separate Cloud Run service for the worker). It serves `/api` and integrates with Firestore, Firebase Auth, and object storage. Keep code small, explicit, and easy to reason about.
+The backend is a **uv workspace** under `backend/`: shared **`hsm_core`**, HTTP app **`hsm_api`** (`backend_api`), and **`hsm_worker`** (same container image; separate Cloud Run service for the worker). It serves `/api` and integrates with Firestore, Firebase Auth, and object storage. Keep code small, explicit, and easy to reason about. **Docker:** the image default **`CMD`** runs **`/app/.venv/bin/uvicorn`** (production); **`docker-compose.yml`** overrides with **`uv sync` + `uv run uvicorn`** for bind-mounted local dev — do not "fix" Compose to match production `CMD` without preserving that workflow.
 
 ### Core principles
 

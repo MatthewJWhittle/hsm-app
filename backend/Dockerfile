@@ -22,4 +22,10 @@ RUN uv sync --frozen --no-dev --all-packages --no-editable
 
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "backend_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Production / Cloud Run: run uvicorn from the venv created by `RUN uv sync` above.
+# Do not use `uv run` here — by design it syncs/updates the project env before the command,
+# which repeats workspace work on every cold start. See uv docs: "Using uv in Docker".
+#
+# Local dev: `docker-compose.yml` overrides CMD with `uv sync && uv run uvicorn … --reload` so a
+# bind-mounted repo stays in sync and gets reload; that path is correct for development only.
+CMD ["/app/.venv/bin/uvicorn", "backend_api.main:app", "--host", "0.0.0.0", "--port", "8000"]

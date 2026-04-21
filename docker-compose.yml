@@ -45,6 +45,8 @@ services:
     depends_on:
       firebase-emulators:
         condition: service_started
+    # Overrides image CMD: `uv sync` + `uv run` for editable workspace + --reload on bind mount.
+    # (Production CMD uses /app/.venv/bin/uvicorn directly — see backend/Dockerfile.)
     command: >
       sh -c "uv sync --no-dev --all-packages && uv run uvicorn hsm_worker.main:app --host 0.0.0.0 --port 8080 --reload"
 
@@ -77,6 +79,8 @@ services:
         condition: service_started
       worker:
         condition: service_started
+    # Overrides image CMD: `uv sync` + `uv run` for editable workspace + --reload on bind mount.
+    # (Production CMD uses /app/.venv/bin/uvicorn directly — see backend/Dockerfile.)
     command: >
       sh -c "uv sync --no-dev --all-packages && uv run uvicorn backend_api.main:app --host 0.0.0.0 --port 8000 --reload"
     healthcheck:
