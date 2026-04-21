@@ -37,16 +37,6 @@ from backend_api.deps.visibility_models import (
     get_model_visible_or_404,
 )
 from backend_api.deps.settings_dep import get_settings
-from backend_api.point_explainability import (
-    validate_explainability_artifacts_for_model,
-    warm_explainability_cache,
-)
-from backend_api.point_sampling import (
-    PointSamplingError,
-    RasterNotFoundError,
-    inspect_point,
-    validate_driver_band_indices_for_model,
-)
 from backend_api.env_background_sample import resolve_env_cog_uri_for_sampling
 from backend_api.project_manifest import validate_model_feature_bands_for_admin
 from backend_api.schemas import Model, ModelAnalysis, ModelMetadata, PointInspection
@@ -253,6 +243,11 @@ async def get_model_point(
 
     **Timeout:** synchronous work is limited by ``POINT_INSPECT_TIMEOUT_SECONDS`` (default 45s); **504** on overrun.
     """
+    from backend_api.point_sampling import (
+        PointSamplingError,
+        RasterNotFoundError,
+        inspect_point,
+    )
 
     def _run() -> PointInspection:
         return inspect_point(
@@ -306,6 +301,7 @@ async def post_explainability_warmup(
     into an in-memory cache when explainability is configured. Safe to call repeatedly; no-op when
     not configured. Does not run SHAP for a map click — use ``GET …/point`` for that.
     """
+    from backend_api.point_explainability import warm_explainability_cache
 
     def _warm() -> None:
         warm_explainability_cache(
@@ -600,6 +596,9 @@ async def create_model(
     validate_model_feature_bands_for_admin(model, catalog)
 
     def _validate_and_enrich() -> Model:
+        from backend_api.point_explainability import validate_explainability_artifacts_for_model
+        from backend_api.point_sampling import validate_driver_band_indices_for_model
+
         validate_driver_band_indices_for_model(model, catalog, artifact_read)
         validate_explainability_artifacts_for_model(model, catalog)
         return model
@@ -821,13 +820,16 @@ async def update_model(
 
     validate_model_feature_bands_for_admin(model, catalog)
 
-    def _validate_and_enrich() -> Model:
+    def _validate_and_enrich_update() -> Model:
+        from backend_api.point_explainability import validate_explainability_artifacts_for_model
+        from backend_api.point_sampling import validate_driver_band_indices_for_model
+
         validate_driver_band_indices_for_model(model, catalog, artifact_read)
         validate_explainability_artifacts_for_model(model, catalog)
         return model
 
     try:
-        model = await run_in_threadpool(_validate_and_enrich)
+        model = await run_in_threadpool(_validate_and_enrich_update)
     except ValueError as e:
         raise HTTPException(
             status_code=422,

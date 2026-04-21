@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
-import shap
 
 from backend_api.explainability_runtime_cache import ShapExplainerBundle, get_or_build_shap_bundle
 from backend_api.feature_band_names import FeatureBandNamesValidationError
@@ -126,6 +125,8 @@ def _materialize_shap_explainer_bundle(
         return proba[:, pos]
 
     try:
+        import shap
+
         explainer = shap.Explainer(
             predict_fn,
             background,

@@ -12,7 +12,6 @@ import google.auth.transport.requests
 import pandas as pd
 import pyarrow.fs as pafs
 import pyarrow.parquet as pq
-import rasterio
 from google.auth.exceptions import DefaultCredentialsError, RefreshError
 from google.cloud import storage
 from google.cloud.exceptions import GoogleCloudError
@@ -132,6 +131,8 @@ class ArtifactReadRuntime:
         ``ref`` may be a local path, ``gs://`` object path, or an already-prepared ``/vsicurl/...``
         URL (passed through unchanged by :meth:`rasterio_open_uri`).
         """
+        import rasterio
+
         with rasterio.open(self.rasterio_open_uri(ref)) as src:
             return int(src.count)
 

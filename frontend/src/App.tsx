@@ -16,6 +16,7 @@ import { postExplainabilityWarmup } from './api/explainabilityWarmup'
 import { fetchPointInspection } from './api/inspectPoint'
 import { Navbar } from './components/Navbar'
 import { useAuth } from './auth/useAuth'
+import { triggerTitilerWarmup } from './utils/titilerWarmup'
 
 const LEGACY_PROJECT_ID = '__legacy__'
 
@@ -126,6 +127,11 @@ function App() {
       cancelled = true
     }
   }, [user, getIdToken, reloadNonce])
+
+  useEffect(() => {
+    if (!catalogReady) return
+    triggerTitilerWarmup()
+  }, [catalogReady])
 
   const projectOptions = useMemo(
     () => buildProjectOptions(projects, models),
