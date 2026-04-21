@@ -150,8 +150,8 @@ def test_post_models_with_explainability_uploads(catalog_docs):
         "suitability_cog.tif",
     )
     with (
-        patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
-        patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
+        patch("backend_api.point_explainability.validate_explainability_artifacts_for_model"),
+        patch("backend_api.point_sampling.validate_driver_band_indices_for_model"),
     ):
         with _admin_client(
             catalog_docs,
@@ -317,8 +317,8 @@ def test_post_models_201_with_upload_session_id(catalog_docs):
     )
 
     with (
-        patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
-        patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
+        patch("backend_api.point_explainability.validate_explainability_artifacts_for_model"),
+        patch("backend_api.point_sampling.validate_driver_band_indices_for_model"),
         patch("backend_api.routers.models.validate_cog_uri_threaded", new_callable=AsyncMock),
         patch(
             "backend_api.routers.models.upload_session_gcs_uri",
@@ -381,8 +381,8 @@ def test_post_models_upload_session_storage_failure_marks_failed(catalog_docs):
     )
 
     with (
-        patch("backend_api.routers.models.validate_explainability_artifacts_for_model"),
-        patch("backend_api.routers.models.validate_driver_band_indices_for_model"),
+        patch("backend_api.point_explainability.validate_explainability_artifacts_for_model"),
+        patch("backend_api.point_sampling.validate_driver_band_indices_for_model"),
         patch("backend_api.routers.models.validate_cog_uri_threaded", new_callable=AsyncMock),
         patch(
             "backend_api.routers.models.upload_session_gcs_uri",

@@ -7,12 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
-import rasterio
-from rasterio.crs import CRS
-from rasterio.io import DatasetReader
-from rasterio.transform import rowcol
-from rasterio.warp import transform as transform_coords
-from rasterio.windows import Window
 
 from backend_api.feature_band_names import FeatureBandNamesValidationError
 from backend_api.model_effective_config import get_effective_driver_config, get_feature_band_indices
@@ -28,8 +22,26 @@ from hsm_core.env_cog_paths import raster_storage_uri_readable
 
 if TYPE_CHECKING:
     from backend_api.catalog_service import CatalogService
+    from rasterio.io import DatasetReader
 
-EXPECTED_SUITABILITY_CRS = CRS.from_epsg(3857)
+_expected_epsg3857: object | None = None
+
+
+def _expected_suitability_crs() -> object:
+    """Lazy EPSG:3857 CRS so importing this module does not load rasterio."""
+    global _expected_epsg3857
+    if _expected_epsg3857 is None:
+        from rasterio.crs import CRS
+
+        _expected_epsg3857 = CRS.from_epsg(3857)
+    return _expected_epsg3857
+
+
+def __getattr__(name: str) -> object:
+    """Backward-compatible ``EXPECTED_SUITABILITY_CRS`` (loads rasterio on first use)."""
+    if name == "EXPECTED_SUITABILITY_CRS":
+        return _expected_suitability_crs()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class PointSamplingError(Exception):
@@ -136,7 +148,7 @@ def validate_driver_band_indices_for_model(
 
 
 def _rowcol_window_for_wgs84_point(
-    src: DatasetReader,
+    src: "DatasetReader",
     lng: float,
     lat: float,
     *,
@@ -146,11 +158,15 @@ def _rowcol_window_for_wgs84_point(
     crs_mismatch_code: str,
     outside_msg: str,
     outside_code: str,
-) -> tuple[int, int, Window]:
+):
     """Project WGS84 (lng, lat) to pixel row/col and 1×1 window; shared CRS / extent checks."""
+    from rasterio.transform import rowcol
+    from rasterio.warp import transform as transform_coords
+    from rasterio.windows import Window
+
     if not src.crs:
         raise PointSamplingError(crs_invalid_msg, code=crs_invalid_code)
-    if src.crs != EXPECTED_SUITABILITY_CRS:
+    if src.crs != _expected_suitability_crs():
         raise PointSamplingError(crs_mismatch_msg, code=crs_mismatch_code)
 
     xs, ys = transform_coords("EPSG:4326", src.crs, [lng], [lat])
@@ -167,7 +183,8 @@ def _rowcol_window_for_wgs84_point(
     if row_i < 0 or row_i >= src.height or col_i < 0 or col_i >= src.width:
         raise PointSamplingError(outside_msg, code=outside_code)
 
-    return row_i, col_i, Window(col_i, row_i, 1, 1)
+    win = Window(col_i, row_i, 1, 1)
+    return row_i, col_i, win
 
 
 def _rasterio_uri_for_point_sampling(
@@ -198,6 +215,8 @@ def sample_suitability(
         PointSamplingError: out of bounds, nodata, wrong CRS, unreadable pixel.
         RasterNotFoundError: path does not exist.
     """
+    import rasterio
+
     cog_uri = _rasterio_uri_for_point_sampling(
         artifact_read,
         storage_ref,
@@ -249,6 +268,8 @@ def sample_environmental_bands_at_point(
         PointSamplingError: CRS, extent, nodata, or index out of range.
         RasterNotFoundError: file missing.
     """
+    import rasterio
+
     cog_uri = _rasterio_uri_for_point_sampling(
         artifact_read,
         storage_ref,

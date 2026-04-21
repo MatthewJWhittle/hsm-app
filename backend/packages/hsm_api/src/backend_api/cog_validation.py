@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import rasterio
-from rasterio.io import DatasetReader
-
-from backend_api.point_sampling import EXPECTED_SUITABILITY_CRS
 from hsm_core.artifact_read_runtime import ArtifactReadRuntime
+
+if TYPE_CHECKING:
+    from rasterio.io import DatasetReader
 
 EXPECTED_EPSG = 3857
 
 
-def _raster_uses_internal_tiling(src: DatasetReader) -> bool:
+def _raster_uses_internal_tiling(src: "DatasetReader") -> bool:
     """
     True when the GeoTIFF uses a tiled storage layout (not row/strip).
 
@@ -52,6 +52,11 @@ class CogValidationError(Exception):
 
 def _validate_suitability_cog_rasterio_uri(uri: str) -> None:
     """Validate opened raster (CRS, tiling). ``uri`` must be passable to ``rasterio.open``."""
+    import rasterio
+    from rasterio.crs import CRS
+
+    expected = CRS.from_epsg(EXPECTED_EPSG)
+
     try:
         with rasterio.open(uri) as src:
             if src.crs is None:
@@ -60,7 +65,7 @@ def _validate_suitability_cog_rasterio_uri(uri: str) -> None:
                     code="COG_NO_CRS",
                     context={"expected_epsg": EXPECTED_EPSG},
                 )
-            if src.crs != EXPECTED_SUITABILITY_CRS:
+            if src.crs != expected:
                 got = src.crs.to_string() if src.crs else "none"
                 raise CogValidationError(
                     f"CRS must be EPSG:3857; got {got}",
