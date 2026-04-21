@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import sys
+import time
+
+# Cold-start profiling: before heavy imports (FastAPI, routers, SHAP, rasterio, …).
+print(f"HSM_MAIN_MODULE_START t={time.time():.6f}", file=sys.stderr, flush=True)
+
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
