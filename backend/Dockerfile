@@ -28,4 +28,6 @@ EXPOSE 8000
 #
 # Local dev: `docker-compose.yml` overrides CMD with `uv sync && uv run uvicorn … --reload` so a
 # bind-mounted repo stays in sync and gets reload; that path is correct for development only.
-CMD ["/app/.venv/bin/uvicorn", "backend_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+COPY docker-entrypoint-api.sh /docker-entrypoint-api.sh
+RUN chmod +x /docker-entrypoint-api.sh
+CMD ["/docker-entrypoint-api.sh"]
