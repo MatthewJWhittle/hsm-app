@@ -6,7 +6,7 @@ import type {
   PointInspection as PointInspectionData,
   RawEnvironmentalValue,
 } from '../types/pointInspection'
-import { suitabilityDisplayBinIndex01 } from '../map/suitabilityScale'
+import { SUITABILITY_HUD_BIN_COUNT, suitabilityDisplayBinIndex01 } from '../map/suitabilityScale'
 import { SuitabilityBinStrip } from './map/SuitabilityBinStrip'
 
 interface InspectionHudProps {
@@ -607,12 +607,16 @@ export function InspectionHud({
             <Box
               component="div"
               sx={{ mt: 0.6, width: '100%' }}
-              title="Five equal 0-1 display bands, same as the map legend. Your value is highlighted."
+              title="Ten equal 0-1 display steps; other steps are subdued. The map legend uses five steps."
             >
               <SuitabilityBinStrip
-                barHeight={7}
+                binCount={SUITABILITY_HUD_BIN_COUNT}
+                barHeight={12}
                 showEdgeLabels={false}
-                activeBinIndex={suitabilityDisplayBinIndex01(inspection.value)}
+                activeBinIndex={suitabilityDisplayBinIndex01(
+                  inspection.value,
+                  SUITABILITY_HUD_BIN_COUNT,
+                )}
               />
             </Box>
           </Box>

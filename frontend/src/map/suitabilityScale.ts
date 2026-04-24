@@ -43,13 +43,22 @@ export function viridisCssColor(t: number): string {
   return `rgb(${r}, ${g}, ${b})`
 }
 
-/** Number of **equal-width** 0-1 display bins (e.g. 0-0.2, 0.2-0.4, …) for binned UI. */
+/** Number of **equal-width** 0-1 display bins for the **map** legend (compact; e.g. 0-0.2, …). */
 export const SUITABILITY_DISPLAY_BIN_COUNT = 5
 
-const BIN_W = 1 / SUITABILITY_DISPLAY_BIN_COUNT
+/** Denser **equal-width** bins for the point-inspection panel (wider strip). */
+export const SUITABILITY_HUD_BIN_COUNT = 10
 
-/** 0, 0.2, 0.4, 0.6, 0.8, 1 — display bin **edges** for labels. */
-export const SUITABILITY_DISPLAY_BIN_EDGES: readonly number[] = [0, 0.2, 0.4, 0.6, 0.8, 1]
+/** Bin boundary values for ``binCount`` equal segments from 0 to 1. */
+export function suitabilityDisplayBinEdges(binCount: number): readonly number[] {
+  if (!Number.isInteger(binCount) || binCount < 1) {
+    throw new RangeError('binCount must be a positive integer')
+  }
+  return Array.from({ length: binCount + 1 }, (_, i) => i / binCount)
+}
+
+/** 0, 0.2, 0.4, 0.6, 0.8, 1 for the default map legend. */
+export const SUITABILITY_DISPLAY_BIN_EDGES: readonly number[] = suitabilityDisplayBinEdges(SUITABILITY_DISPLAY_BIN_COUNT)
 
 /**
  * Clamp suitability to [0, 1] for marker position vs TiTiler rescale.
@@ -61,21 +70,29 @@ export function clampSuitability01(n: number): number {
 }
 
 /**
- * Returns which equal-width 0-1 **display** bin a value lies in, 0 .. 4.
+ * Returns which equal-width 0-1 **display** bin a value lies in, `0 .. binCount-1`.
  * (Map rescale 0-1, not a population quantile.)
  */
-export function suitabilityDisplayBinIndex01(v: number): number {
-  const c = clampSuitability01(v)
-  if (c >= 1) {
-    return SUITABILITY_DISPLAY_BIN_COUNT - 1
+export function suitabilityDisplayBinIndex01(v: number, binCount: number = SUITABILITY_DISPLAY_BIN_COUNT): number {
+  if (!Number.isInteger(binCount) || binCount < 1) {
+    throw new RangeError('binCount must be a positive integer')
   }
-  return Math.min(SUITABILITY_DISPLAY_BIN_COUNT - 1, Math.floor(c / BIN_W))
+  const c = clampSuitability01(v)
+  const w = 1 / binCount
+  if (c >= 1) {
+    return binCount - 1
+  }
+  return Math.min(binCount - 1, Math.floor(c / w))
 }
 
-/** Colours for each of the five equal-width segments (sampling viridis at bin **centre** 0.1, 0.3, …, 0.9). */
-export function suitabilityDisplayBinSwatchColors(): string[] {
-  return Array.from({ length: SUITABILITY_DISPLAY_BIN_COUNT }, (_, k) => {
-    const t = (k + 0.5) * BIN_W
+/** Colours for each equal-width segment (viridis at bin **centre**). */
+export function suitabilityDisplayBinSwatchColors(binCount: number = SUITABILITY_DISPLAY_BIN_COUNT): string[] {
+  if (!Number.isInteger(binCount) || binCount < 1) {
+    throw new RangeError('binCount must be a positive integer')
+  }
+  const w = 1 / binCount
+  return Array.from({ length: binCount }, (_, k) => {
+    const t = (k + 0.5) * w
     return viridisCssColor(t)
   })
 }

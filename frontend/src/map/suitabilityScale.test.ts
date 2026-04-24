@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   clampSuitability01,
+  SUITABILITY_HUD_BIN_COUNT,
+  suitabilityDisplayBinEdges,
   suitabilityDisplayBinIndex01,
   suitabilityDisplayBinSwatchColors,
   SUITABILITY_VIRIDIS_GRADIENT_CSS,
@@ -39,7 +41,7 @@ describe('viridisCssColor', () => {
 })
 
 describe('suitabilityDisplayBinIndex01', () => {
-  it('maps five equal-width display bins', () => {
+  it('maps five equal-width display bins by default', () => {
     expect(suitabilityDisplayBinIndex01(0)).toBe(0)
     expect(suitabilityDisplayBinIndex01(0.19)).toBe(0)
     expect(suitabilityDisplayBinIndex01(0.2)).toBe(1)
@@ -47,12 +49,31 @@ describe('suitabilityDisplayBinIndex01', () => {
     expect(suitabilityDisplayBinIndex01(0.99)).toBe(4)
     expect(suitabilityDisplayBinIndex01(1)).toBe(4)
   })
+
+  it('maps ten equal-width display bins in the point HUD', () => {
+    expect(suitabilityDisplayBinIndex01(0, SUITABILITY_HUD_BIN_COUNT)).toBe(0)
+    expect(suitabilityDisplayBinIndex01(0.09, SUITABILITY_HUD_BIN_COUNT)).toBe(0)
+    expect(suitabilityDisplayBinIndex01(0.1, SUITABILITY_HUD_BIN_COUNT)).toBe(1)
+    expect(suitabilityDisplayBinIndex01(0.19, SUITABILITY_HUD_BIN_COUNT)).toBe(1)
+    expect(suitabilityDisplayBinIndex01(0.99, SUITABILITY_HUD_BIN_COUNT)).toBe(9)
+    expect(suitabilityDisplayBinIndex01(1, SUITABILITY_HUD_BIN_COUNT)).toBe(9)
+  })
+})
+
+describe('suitabilityDisplayBinEdges', () => {
+  it('returns 0 to 1 in equal steps', () => {
+    expect(suitabilityDisplayBinEdges(5)).toEqual([0, 0.2, 0.4, 0.6, 0.8, 1])
+    expect(suitabilityDisplayBinEdges(10).length).toBe(11)
+    expect(suitabilityDisplayBinEdges(10)[1]).toBe(0.1)
+  })
 })
 
 describe('suitabilityDisplayBinSwatchColors', () => {
-  it('returns five rgb strings', () => {
+  it('returns rgb strings (default 5, optional count)', () => {
     const c = suitabilityDisplayBinSwatchColors()
     expect(c).toHaveLength(5)
+    const c10 = suitabilityDisplayBinSwatchColors(10)
+    expect(c10).toHaveLength(10)
     expect(c.every((x) => /^rgb\(\d+, \d+, \d+\)$/.test(x))).toBe(true)
   })
 })
