@@ -43,6 +43,16 @@ export const INTERPRETATION_RAW_VALUES_CAPTION =
 export const INTERPRETATION_HUD_REMINDER =
   'Modelled relative suitability, not confirmed presence or absence on the ground.'
 
+/** Map top-right (i): aria + tooltip. */
+export const MAP_CONTEXT_INFO_ARIA = 'What am I looking at? Opens a short guide to this map view.'
+export const MAP_CONTEXT_INFO_TOOLTIP = 'What am I looking at?'
+
+/**
+ * One-time coachmark next to the top-right (i) on first visit; dismisses on click-away or
+ * when the user opens the guide. Kept short for a single horizontal chip.
+ */
+export const MAP_CONTEXT_COACHMARK = 'Click here to find out more about the map'
+
 /** Dialog title: general map / app interpretation (not layer-specific). */
 export const MAP_INFO_DIALOG_TITLE = 'About this map'
 

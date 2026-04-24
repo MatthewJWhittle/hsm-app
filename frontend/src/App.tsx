@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { MapClickInspectHint } from './components/map/MapClickInspectHint'
 import { MapFloatingControls } from './components/map/MapFloatingControls'
+import { MapContextInfoButton } from './components/map/MapContextInfoButton'
 import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
 import { MapLoadingOverlay } from './components/map/MapLoadingOverlay'
@@ -343,6 +344,14 @@ function App() {
         </Box>
 
         {!catalogReady && !loadError && <MapLoadingOverlay />}
+
+        {catalogReady && !loadError && (
+          <MapContextInfoButton
+            visible
+            suppressCoachmark={welcomeOpen}
+            onOpenAboutMap={() => setMapInfoOpen(true)}
+          />
+        )}
 
         <MapFloatingControls
           models={models}
