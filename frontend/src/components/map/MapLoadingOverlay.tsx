@@ -1,4 +1,5 @@
 import { Box, CircularProgress, Stack, Typography } from '@mui/material'
+import { MAP_OVERLAY_Z } from './mapOverlayZIndex'
 
 /** Shown over the map area while the layer catalog is loading. */
 export function MapLoadingOverlay() {
@@ -10,7 +11,7 @@ export function MapLoadingOverlay() {
       sx={{
         position: 'absolute',
         inset: 0,
-        zIndex: 900,
+        zIndex: MAP_OVERLAY_Z.loading,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

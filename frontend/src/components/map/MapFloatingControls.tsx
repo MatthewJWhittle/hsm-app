@@ -25,6 +25,8 @@ import {
   layerPrimaryLine,
   layerSecondaryLine,
 } from '../../utils/layerDisplay'
+import { MAP_FLOATING_ABOUT_MAP_ARIA, MAP_FLOATING_ABOUT_MAP_TOOLTIP } from '../../copy/interpretation'
+import { MAP_OVERLAY_Z } from './mapOverlayZIndex'
 
 /** Width of the floating top-left control card (map UX). */
 export const MAP_FLOATING_CONTROLS_WIDTH_PX = 400
@@ -114,7 +116,7 @@ export function MapFloatingControls({
         position: 'absolute',
         top: topOffsetPx,
         left: 16,
-        zIndex: 1000,
+        zIndex: MAP_OVERLAY_Z.floatingAndHud,
         width: { xs: 'calc(100vw - 32px)', sm: MAP_FLOATING_CONTROLS_WIDTH_PX },
         maxWidth: 'calc(100vw - 32px)',
         borderRadius: 2,
@@ -355,11 +357,11 @@ export function MapFloatingControls({
                 </IconButton>
               </span>
             </Tooltip>
-            <Tooltip title="About this map">
+            <Tooltip title={MAP_FLOATING_ABOUT_MAP_TOOLTIP}>
               <IconButton
                 size="small"
                 onClick={onOpenMapInfoDialog}
-                aria-label="About this map"
+                aria-label={MAP_FLOATING_ABOUT_MAP_ARIA}
               >
                 <HelpOutlineIcon fontSize="small" />
               </IconButton>

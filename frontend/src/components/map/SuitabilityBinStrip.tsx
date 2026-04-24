@@ -44,6 +44,7 @@ export function SuitabilityBinStrip({
   const binEdges = useMemo(() => suitabilityDisplayBinEdges(binCount), [binCount])
 
   const dimOthers = activeBinIndex != null
+  // App theme is light-only for now; keep the dark branch for a future `palette.mode: 'dark'`.
   const inactiveWash =
     theme.palette.mode === 'dark'
       ? alpha(theme.palette.common.black, 0.5)

@@ -48,6 +48,15 @@ export const MAP_CONTEXT_INFO_ARIA = 'What am I looking at? Opens a short guide 
 export const MAP_CONTEXT_INFO_TOOLTIP = 'What am I looking at?'
 
 /**
+ * Expanded floating card — **Help** opens the same “About this map” dialog as the top-right
+ * control; copy here stresses the **full guide** so it does not read as a different feature.
+ */
+export const MAP_FLOATING_ABOUT_MAP_TOOLTIP =
+  'Full map guide: what the colours mean, how to read the view, and key limitations.'
+export const MAP_FLOATING_ABOUT_MAP_ARIA =
+  'Open the full map guide: interpretation, scale, and how to use the view.'
+
+/**
  * One-time coachmark next to the top-right help control on first visit; dismisses on click-away or
  * when the user opens the guide. Kept short for a single horizontal chip.
  */

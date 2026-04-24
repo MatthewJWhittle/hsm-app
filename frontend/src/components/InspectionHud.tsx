@@ -7,6 +7,7 @@ import type {
   RawEnvironmentalValue,
 } from '../types/pointInspection'
 import { SUITABILITY_HUD_BIN_COUNT, suitabilityDisplayBinIndex01 } from '../map/suitabilityScale'
+import { MAP_OVERLAY_Z } from './map/mapOverlayZIndex'
 import { SuitabilityBinStrip } from './map/SuitabilityBinStrip'
 
 interface InspectionHudProps {
@@ -554,7 +555,7 @@ export function InspectionHud({
         position: 'absolute',
         bottom: 20,
         right: 20,
-        zIndex: 1000,
+        zIndex: MAP_OVERLAY_Z.floatingAndHud,
         maxWidth: 300,
         px: 1.75,
         pt: 1.25,

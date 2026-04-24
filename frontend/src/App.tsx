@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom'
 import { MapClickInspectHint } from './components/map/MapClickInspectHint'
 import { MapFloatingControls } from './components/map/MapFloatingControls'
 import { MapContextInfoButton } from './components/map/MapContextInfoButton'
+import { MAP_OVERLAY_Z } from './components/map/mapOverlayZIndex'
 import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
 import { MapLoadingOverlay } from './components/map/MapLoadingOverlay'
@@ -381,7 +382,7 @@ function App() {
               position: 'absolute',
               bottom: 12,
               left: 12,
-              zIndex: 998,
+              zIndex: MAP_OVERLAY_Z.cornerLegend,
               pointerEvents: 'auto',
               // Tight slot (~¼ the old 520px width); explicit width so the bar isn’t shrink-wrapped.
               width: 'min(130px, calc(100vw - 24px))',
@@ -399,7 +400,7 @@ function App() {
               position: 'absolute',
               top: 16,
               right: 16,
-              zIndex: 1001,
+              zIndex: MAP_OVERLAY_Z.errorBanner,
               maxWidth: 360,
               bgcolor: 'background.paper',
               boxShadow: 2,

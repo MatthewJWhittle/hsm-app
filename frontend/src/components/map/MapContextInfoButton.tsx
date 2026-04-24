@@ -1,9 +1,10 @@
 import HelpIcon from '@mui/icons-material/Help'
 import { alpha } from '@mui/material/styles'
 import { Box, ClickAwayListener, Fade, IconButton, Paper, Popper, Tooltip, Typography } from '@mui/material'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { MAP_CONTEXT_COACHMARK, MAP_CONTEXT_INFO_ARIA, MAP_CONTEXT_INFO_TOOLTIP } from '../../copy/interpretation'
 import { isMapContextHintSeen, markMapContextHintSeen } from './mapContextHintStorage'
+import { MAP_OVERLAY_Z } from './mapOverlayZIndex'
 
 export interface MapContextInfoButtonProps {
   /** When false, the control is not shown (e.g. catalog not ready, load error). */
@@ -44,6 +45,17 @@ export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpe
     }
   }, [showCoach, endCoachmark])
 
+  useEffect(() => {
+    if (!showCoach) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      endCoachmark()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [showCoach, endCoachmark])
+
   if (!visible) return null
 
   return (
@@ -53,7 +65,7 @@ export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpe
           position: 'absolute',
           top: 16,
           right: 16,
-          zIndex: 1002,
+          zIndex: MAP_OVERLAY_Z.contextHelp,
           display: 'flex',
           flexDirection: 'row',
           alignItems: 'center',
@@ -74,6 +86,7 @@ export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpe
           {({ TransitionProps }) => (
             <Fade {...TransitionProps} timeout={200}>
               <Paper
+                id="map-context-coachmark"
                 elevation={0}
                 role="status"
                 aria-live="polite"
@@ -146,6 +159,7 @@ export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpe
               size="small"
               onClick={handleOpen}
               aria-label={MAP_CONTEXT_INFO_ARIA}
+              aria-describedby={showCoach ? 'map-context-coachmark' : undefined}
               sx={(t) => ({
                 p: 0.5,
                 minWidth: 40,

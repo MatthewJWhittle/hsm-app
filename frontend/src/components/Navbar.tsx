@@ -16,7 +16,7 @@ export interface NavbarProps {
   currentProjectName?: string | null
 }
 
-export function Navbar({ currentProjectName }: NavbarProps = {}) {
+export function Navbar({ currentProjectName }: NavbarProps) {
   const showProject = Boolean(currentProjectName?.trim())
   return (
     <AppBar

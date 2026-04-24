@@ -3,6 +3,7 @@ import { Box, IconButton, Paper, Typography } from '@mui/material'
 import { useCallback, useId } from 'react'
 import { INTERPRETATION_CLICK_MAP_SHORT } from '../../copy/interpretation'
 import { dismissClickHintStorage } from './mapClickHintStorage'
+import { MAP_OVERLAY_Z } from './mapOverlayZIndex'
 
 export interface MapClickInspectHintProps {
   open: boolean
@@ -30,7 +31,7 @@ export function MapClickInspectHint({ open, onClose, bottomPx = 28 }: MapClickIn
         position: 'absolute',
         bottom: bottomPx,
         left: 16,
-        zIndex: 999,
+        zIndex: MAP_OVERLAY_Z.clickHint,
         maxWidth: { xs: 'min(calc(100vw - 32px), 360px)', sm: 360 },
         pointerEvents: 'auto',
       }}
