@@ -126,7 +126,8 @@ export function SuitabilityBinStrip({
                   sx={(t) => ({
                     position: 'absolute',
                     inset: 0,
-                    boxShadow: `inset 0 0 0 2px ${alpha(t.palette.primary.main, 0.92)}`,
+                    // Neutral rim (not primary): reads on both light and dark swatches without clashing with the map palette.
+                    boxShadow: `inset 0 0 0 2px ${alpha(t.palette.text.primary, 0.55)}`,
                     pointerEvents: 'none',
                     zIndex: 1,
                     transition: t.transitions.create('box-shadow', { duration: 120 }),

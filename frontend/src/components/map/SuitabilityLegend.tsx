@@ -94,6 +94,8 @@ export function SuitabilityLegend({ variant: variantProp = 'floating', embedded 
           sx={{
             m: 0,
             mb: 0.4,
+            width: '100%',
+            textAlign: 'center',
             fontSize: '0.58rem',
             lineHeight: 1.2,
             fontWeight: 600,
@@ -102,7 +104,7 @@ export function SuitabilityLegend({ variant: variantProp = 'floating', embedded 
             opacity: 0.85,
           }}
         >
-          Suitability scale
+          Suitability score
         </Typography>
         <Tooltip title={DETAIL_COPY} enterDelay={500} placement="top-start" disableInteractive>
           <Box sx={{ display: 'block', width: '100%', cursor: 'default' }}>
