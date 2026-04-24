@@ -3,9 +3,17 @@ import MapComponent from './components/Map'
 import { Alert, Box, Button } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { MapClickInspectHint } from './components/map/MapClickInspectHint'
 import { MapFloatingControls } from './components/map/MapFloatingControls'
+import { MapContextInfoButton } from './components/map/MapContextInfoButton'
+import { MAP_OVERLAY_Z } from './components/map/mapOverlayZIndex'
 import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
+import { MapLoadingOverlay } from './components/map/MapLoadingOverlay'
+import { markMapWelcomeSeen, isMapWelcomeSeen } from './components/map/mapWelcomeStorage'
+import { MapWelcomeDialog } from './components/map/MapWelcomeDialog'
+import { SuitabilityLegend } from './components/map/SuitabilityLegend'
+import { dismissClickHintStorage, isClickHintDismissedInStorage } from './components/map/mapClickHintStorage'
 import { InspectionHud } from './components/InspectionHud'
 import { type Model } from './types/model'
 import type { CatalogProject, ProjectSummary } from './types/project'
@@ -67,6 +75,8 @@ function App() {
   const [reloadNonce, setReloadNonce] = useState(0)
   const [mapInfoOpen, setMapInfoOpen] = useState(false)
   const [layerDetailsOpen, setLayerDetailsOpen] = useState(false)
+  const [welcomeOpen, setWelcomeOpen] = useState(false)
+  const [clickHintOpen, setClickHintOpen] = useState(() => !isClickHintDismissedInStorage())
 
   const retryLoadCatalog = useCallback(() => {
     setReloadNonce((n) => n + 1)
@@ -239,7 +249,7 @@ function App() {
     (modelId: string) => {
       clearInspection()
       if (!modelId) setLayerDetailsOpen(false)
-      // Always re-show the raster when switching to a new layer — stale
+      // Always re-show the raster when switching to a new layer; stale
       // visibility across different species is almost never what the user
       // wants.
       setLayerVisible(true)
@@ -256,6 +266,29 @@ function App() {
   const closeHud = useCallback(() => {
     clearInspection()
   }, [clearInspection])
+
+  const dismissWelcome = useCallback(() => {
+    markMapWelcomeSeen()
+    setWelcomeOpen(false)
+  }, [])
+
+  const closeClickHint = useCallback(() => {
+    dismissClickHintStorage()
+    setClickHintOpen(false)
+  }, [])
+
+  useEffect(() => {
+    if (inspection && !inspectLoading && !inspectError) {
+      dismissClickHintStorage()
+      setClickHintOpen(false)
+    }
+  }, [inspection, inspectLoading, inspectError])
+
+  useEffect(() => {
+    if (!catalogReady || loadError) return
+    if (isMapWelcomeSeen()) return
+    setWelcomeOpen(true)
+  }, [catalogReady, loadError])
 
   const handleInspect = useCallback(
     async (lng: number, lat: number) => {
@@ -290,7 +323,7 @@ function App() {
 
   return (
     <div className="app-container">
-      <Navbar />
+      <Navbar currentProjectName={catalogReady ? selectedProjectLabel : undefined} />
       <Box
         component="main"
         sx={{
@@ -311,6 +344,16 @@ function App() {
           />
         </Box>
 
+        {!catalogReady && !loadError && <MapLoadingOverlay />}
+
+        {catalogReady && !loadError && (
+          <MapContextInfoButton
+            visible
+            suppressCoachmark={welcomeOpen}
+            onOpenAboutMap={() => setMapInfoOpen(true)}
+          />
+        )}
+
         <MapFloatingControls
           models={models}
           selectedModelId={selectedModelId}
@@ -325,6 +368,30 @@ function App() {
           errored={Boolean(loadError)}
         />
 
+        {catalogReady && !loadError && (
+          <MapClickInspectHint
+            open={clickHintOpen}
+            onClose={closeClickHint}
+            bottomPx={selectedModel && layerVisible ? 58 : 28}
+          />
+        )}
+
+        {catalogReady && !loadError && selectedModel && layerVisible && (
+          <Box
+            sx={{
+              position: 'absolute',
+              bottom: 12,
+              left: 12,
+              zIndex: MAP_OVERLAY_Z.cornerLegend,
+              pointerEvents: 'auto',
+              // Tight slot (~¼ the old 520px width); explicit width so the bar isn’t shrink-wrapped.
+              width: 'min(130px, calc(100vw - 24px))',
+            }}
+          >
+            <SuitabilityLegend variant="corner" />
+          </Box>
+        )}
+
         {loadError && (
           <Alert
             severity="error"
@@ -333,7 +400,7 @@ function App() {
               position: 'absolute',
               top: 16,
               right: 16,
-              zIndex: 1001,
+              zIndex: MAP_OVERLAY_Z.errorBanner,
               maxWidth: 360,
               bgcolor: 'background.paper',
               boxShadow: 2,
@@ -360,6 +427,7 @@ function App() {
         )}
       </Box>
 
+      <MapWelcomeDialog open={welcomeOpen} onClose={dismissWelcome} />
       <MapInterpretationDialog open={mapInfoOpen} onClose={() => setMapInfoOpen(false)} />
       <MapLayerDetailsDialog
         open={layerDetailsOpen}

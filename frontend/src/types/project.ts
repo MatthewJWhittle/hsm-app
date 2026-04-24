@@ -1,4 +1,4 @@
-/** Catalog project (issue #14) — shared environmental COG; models reference ``project_id``. */
+/** Catalog project (issue #14): shared environmental COG; models reference ``project_id``. */
 
 export interface EnvironmentalBandDefinition {
   index: number

@@ -19,11 +19,17 @@ import {
 } from '@mui/material'
 import { useCallback, useMemo, useState } from 'react'
 import type { Model } from '../../types/model'
-import { layerDisplayName } from '../../utils/layerDisplay'
-import { SuitabilityLegend } from './SuitabilityLegend'
+import {
+  layerAutocompleteLabel,
+  layerDisplayName,
+  layerPrimaryLine,
+  layerSecondaryLine,
+} from '../../utils/layerDisplay'
+import { MAP_FLOATING_ABOUT_MAP_ARIA, MAP_FLOATING_ABOUT_MAP_TOOLTIP } from '../../copy/interpretation'
+import { MAP_OVERLAY_Z } from './mapOverlayZIndex'
 
 /** Width of the floating top-left control card (map UX). */
-export const MAP_FLOATING_CONTROLS_WIDTH_PX = 352
+export const MAP_FLOATING_CONTROLS_WIDTH_PX = 400
 
 interface MapFloatingControlsProps {
   models: Model[]
@@ -41,6 +47,8 @@ interface MapFloatingControlsProps {
   loading?: boolean
   /** Catalog load failed; render a short disabled-state message. */
   errored?: boolean
+  /** Vertical offset from top of map area (e.g. when interpretation strip is visible). */
+  topOffsetPx?: number
 }
 
 /**
@@ -60,6 +68,7 @@ export function MapFloatingControls({
   onToggleLayerVisible,
   loading = false,
   errored = false,
+  topOffsetPx = 16,
 }: MapFloatingControlsProps) {
   const selectedModel = useMemo(
     () => models.find((m) => m.id === selectedModelId) ?? null,
@@ -67,6 +76,9 @@ export function MapFloatingControls({
   )
 
   const selectedTitle = selectedModel ? layerDisplayName(selectedModel) : ''
+  const selectedInputTitle = selectedModel
+    ? [layerPrimaryLine(selectedModel), layerSecondaryLine(selectedModel)].filter(Boolean).join(' · ')
+    : ''
 
   const [detailsExpanded, setDetailsExpanded] = useState(false)
 
@@ -102,10 +114,10 @@ export function MapFloatingControls({
       onClick={expandIfCollapsed}
       sx={{
         position: 'absolute',
-        top: 16,
+        top: topOffsetPx,
         left: 16,
-        zIndex: 1000,
-        width: MAP_FLOATING_CONTROLS_WIDTH_PX,
+        zIndex: MAP_OVERLAY_Z.floatingAndHud,
+        width: { xs: 'calc(100vw - 32px)', sm: MAP_FLOATING_CONTROLS_WIDTH_PX },
         maxWidth: 'calc(100vw - 32px)',
         borderRadius: 2,
         bgcolor: cardDimmed ? 'rgba(255, 255, 255, 0.82)' : 'rgba(255, 255, 255, 0.96)',
@@ -122,7 +134,7 @@ export function MapFloatingControls({
       }}
     >
       <Box sx={{ px: 1.75, pt: 1.25, pb: detailsExpanded ? 1.25 : 1 }}>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ width: '100%' }}>
+        <Stack direction="row" alignItems="flex-start" spacing={1} sx={{ width: '100%' }}>
           {loading ? (
             <Skeleton
               variant="rounded"
@@ -140,7 +152,7 @@ export function MapFloatingControls({
                 onChange={(_, newValue) => {
                   onModelChange(newValue?.id ?? '')
                 }}
-                getOptionLabel={(m) => layerDisplayName(m)}
+                getOptionLabel={(m) => layerAutocompleteLabel(m)}
                 isOptionEqualToValue={(a, b) => a.id === b.id}
                 disabled={models.length === 0}
                 noOptionsText="No matching layers"
@@ -151,20 +163,35 @@ export function MapFloatingControls({
                     (m) =>
                       m.species.toLowerCase().includes(q) ||
                       m.activity.toLowerCase().includes(q) ||
-                      layerDisplayName(m).toLowerCase().includes(q),
+                      layerDisplayName(m).toLowerCase().includes(q) ||
+                      layerPrimaryLine(m).toLowerCase().includes(q) ||
+                      layerAutocompleteLabel(m).toLowerCase().includes(q),
                   )
                 }}
-                renderOption={(props, m) => (
-                  <li {...props} key={m.id} title={layerDisplayName(m)}>
-                    <Typography
-                      variant="body2"
-                      sx={{ whiteSpace: 'normal', wordBreak: 'break-word' }}
-                      title={layerDisplayName(m)}
-                    >
-                      {layerDisplayName(m)}
-                    </Typography>
-                  </li>
-                )}
+                renderOption={(props, m) => {
+                  const sec = layerSecondaryLine(m)
+                  return (
+                    <li {...props} key={m.id} title={layerDisplayName(m)}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.1 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}
+                        >
+                          {layerPrimaryLine(m)}
+                        </Typography>
+                        {sec && (
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{ whiteSpace: 'normal', wordBreak: 'break-word', lineHeight: 1.3 }}
+                          >
+                            {sec}
+                          </Typography>
+                        )}
+                      </Box>
+                    </li>
+                  )
+                }}
                 renderInput={(params) => (
                   <TextField
                     {...params}
@@ -174,11 +201,16 @@ export function MapFloatingControls({
                       '& .MuiInputBase-input': {
                         fontSize: '0.8125rem',
                         lineHeight: 1.35,
+                        whiteSpace: 'normal',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
                       },
                     }}
                     inputProps={{
                       ...params.inputProps,
-                      title: selectedTitle,
+                      title: selectedInputTitle || selectedTitle,
                     }}
                   />
                 )}
@@ -186,27 +218,6 @@ export function MapFloatingControls({
             </Box>
           )}
           <Stack direction="row" alignItems="center" spacing={0} sx={{ flexShrink: 0 }}>
-            <Tooltip
-              placement="bottom-end"
-              title={detailsExpanded ? 'Hide transparency & shortcuts' : 'Show transparency & shortcuts'}
-            >
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setDetailsExpanded((v) => !v)
-                }}
-                aria-label={detailsExpanded ? 'Collapse map controls' : 'Expand map controls'}
-                aria-expanded={detailsExpanded}
-                sx={{ mr: -0.25 }}
-              >
-                {detailsExpanded ? (
-                  <ExpandLessIcon fontSize="small" />
-                ) : (
-                  <ExpandMoreIcon fontSize="small" />
-                )}
-              </IconButton>
-            </Tooltip>
             <Tooltip
               placement="bottom-end"
               title={
@@ -227,7 +238,7 @@ export function MapFloatingControls({
                   disabled={!selectedModel}
                   aria-label={layerVisible ? 'Hide layer' : 'Show layer'}
                   aria-pressed={!layerVisible}
-                  sx={{ mr: -0.5, color: layerVisible ? 'primary.main' : 'text.secondary' }}
+                  sx={{ mr: -0.25, color: layerVisible ? 'primary.main' : 'text.secondary' }}
                 >
                   {layerVisible ? (
                     <VisibilityIcon fontSize="small" />
@@ -236,6 +247,27 @@ export function MapFloatingControls({
                   )}
                 </IconButton>
               </span>
+            </Tooltip>
+            <Tooltip
+              placement="bottom-end"
+              title={detailsExpanded ? 'Hide transparency & shortcuts' : 'Show transparency & shortcuts'}
+            >
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setDetailsExpanded((v) => !v)
+                }}
+                aria-label={detailsExpanded ? 'Collapse map controls' : 'Expand map controls'}
+                aria-expanded={detailsExpanded}
+                sx={{ mr: -0.5 }}
+              >
+                {detailsExpanded ? (
+                  <ExpandLessIcon fontSize="small" />
+                ) : (
+                  <ExpandMoreIcon fontSize="small" />
+                )}
+              </IconButton>
             </Tooltip>
           </Stack>
         </Stack>
@@ -298,12 +330,6 @@ export function MapFloatingControls({
             />
           </Box>
 
-          {selectedModel && layerVisible && !errored && (
-            <Box sx={{ px: 1.75, pt: 1, pb: 1.25 }} onClick={(e) => e.stopPropagation()}>
-              <SuitabilityLegend embedded />
-            </Box>
-          )}
-
           <Divider />
 
           <Stack
@@ -314,24 +340,28 @@ export function MapFloatingControls({
             onClick={(e) => e.stopPropagation()}
           >
             <Tooltip
-              title={selectedModel ? 'Layer details (version, project)' : 'Select a layer first'}
+              title={
+                selectedModel
+                  ? 'Model, version, and project for the selected layer'
+                  : 'Select a layer first'
+              }
             >
               <span>
                 <IconButton
                   size="small"
                   onClick={onOpenLayerDetailsDialog}
                   disabled={!selectedModel}
-                  aria-label="Layer details: version and project"
+                  aria-label="Open layer name, model version, and project"
                 >
                   <InfoOutlinedIcon fontSize="small" />
                 </IconButton>
               </span>
             </Tooltip>
-            <Tooltip title="About this map">
+            <Tooltip title={MAP_FLOATING_ABOUT_MAP_TOOLTIP}>
               <IconButton
                 size="small"
                 onClick={onOpenMapInfoDialog}
-                aria-label="About this map"
+                aria-label={MAP_FLOATING_ABOUT_MAP_ARIA}
               >
                 <HelpOutlineIcon fontSize="small" />
               </IconButton>

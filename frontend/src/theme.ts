@@ -1,17 +1,39 @@
 import { createTheme } from '@mui/material/styles'
+import { brandPalette } from './brand/palette'
+
+const { jungleTeal, dustyMauve, inkBlack } = brandPalette
 
 /**
- * App-wide MUI theme. Small, deliberate tweaks over the MUI defaults:
- * - disable ALL-CAPS button labels (preserve sentence case)
- * - modest corner radius (tighter than MUI’s previous 8px default here)
- * - Inter as the primary font (falls back to system stack if it fails to load)
+ * App-wide MUI theme tied to `brand/palette.ts`.
+ * - **Primary (jungle teal):** main actions, focus rings, `primary` components.
+ * - **Secondary (dusty mauve):** second accent, `secondary` components.
+ * - **Text** uses ink black; page background a warm off-white to sit with the scheme.
+ * - All-caps on buttons disabled, modest radius, Inter.
  */
 export const theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#1976d2',
+      main: jungleTeal,
+      light: '#7ab3a1',
+      dark: '#3b6a5c',
+      contrastText: '#ffffff',
     },
+    secondary: {
+      main: dustyMauve,
+      light: '#b08fa0',
+      dark: '#6d4d60',
+      contrastText: '#ffffff',
+    },
+    text: {
+      primary: inkBlack,
+      secondary: '#4d5056',
+    },
+    background: {
+      default: '#f7f5f3',
+      paper: '#ffffff',
+    },
+    divider: 'rgba(16, 20, 25, 0.12)',
   },
   shape: {
     /** Base px value; components use multiples (e.g. `borderRadius: 2` → 2× this). */

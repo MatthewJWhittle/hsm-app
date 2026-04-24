@@ -56,7 +56,7 @@ export interface ProjectFormFieldsProps {
   onEnvironmentalBandDefinitionsChange?: (value: EnvironmentalBandDefinition[]) => void
   /** Edit: ``label`` = display names only; ``all`` = name + label (stable names must match training). */
   environmentalBandEditableFields?: 'label' | 'all'
-  /** Edit: SHAP background Parquet — row count for optional manual regeneration */
+  /** Edit: SHAP background Parquet, row count for optional manual regeneration */
   regenerateExplainabilitySampleRows?: number
   onRegenerateExplainabilitySampleRowsChange?: (n: number) => void
   onRegenerateExplainabilityBackground?: () => void | Promise<void>
@@ -268,7 +268,7 @@ export function ProjectFormFields({
               <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
                 SHAP background sample
               </Box>
-              {' — '}
+              {' · '}
               {explainabilityBackgroundSampleRows != null ? (
                 <>explainability uses a random sample of {explainabilityBackgroundSampleRows.toLocaleString()} rows</>
               ) : (

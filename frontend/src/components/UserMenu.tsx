@@ -83,6 +83,10 @@ export function UserMenu() {
         <Dialog open={signInOpen} onClose={() => setSignInOpen(false)} maxWidth="xs" fullWidth>
           <DialogTitle>Sign in</DialogTitle>
           <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1, lineHeight: 1.5 }}>
+              You can explore the public map without signing in. Sign in to use account features, such as
+              map catalog management in Admin if your account has access.
+            </Typography>
             <Box
               component="form"
               id={formId}

@@ -188,6 +188,15 @@ General expectations:
 
 ---
 
+## User-facing copy and punctuation
+
+* Do **not** use the **em dash** (Unicode U+2014) in user-visible strings, ARIA text, tooltips, admin UI copy, or in new JSDoc / comment prose in this frontend. Use commas, full stops, colons, and semicolons instead.
+* Use a **middle dot** (`·`, U+00B7) as the separator in **species · activity** labels and the same pattern elsewhere the design calls for a short, neutral divider between two terms (not a sentence break).
+* For **empty or missing** values in tables and compact readouts, use a plain **ASCII hyphen** (`-`), not a typographic em dash.
+* Rationale and doc-level rules: [Design principles §12: Punctuation in interface copy](../docs/design-principles.md#12-punctuation-in-interface-copy).
+
+---
+
 ## Editing existing code
 
 When modifying existing files:
@@ -314,13 +323,13 @@ When several valid options exist, choose the one that is:
 * Server state: **none** (imperative `fetch` from `src/api/*`; add TanStack Query only if caching/refetch patterns justify it)
 * Forms: **none** (no forms-heavy flows yet; MUI primitives when needed)
 * Validation: **manual type guards** in `src/api/` (no Zod in tree today; add if validation grows)
-* Routing: **react-router-dom** — `/` map app, `/admin` catalog admin ([`src/main.tsx`](src/main.tsx), [`src/admin/AdminPage.tsx`](src/admin/AdminPage.tsx))
+* Routing: **react-router-dom** (`/`, map app; `/admin`, catalog admin) ([`src/main.tsx`](src/main.tsx), [`src/admin/AdminPage.tsx`](src/admin/AdminPage.tsx))
 * Styling: **MUI 7 + Emotion** (`@mui/material`, `@emotion/react`, `@emotion/styled`), plus `src/index.css` / `src/App.css`
-* Testing: **Vitest** — `npm run test` / `npm run test:watch`; CI in [.github/workflows/ci.yml](https://github.com/MatthewJWhittle/hsm-app/blob/main/.github/workflows/ci.yml) ([issue #18](https://github.com/MatthewJWhittle/hsm-app/issues/18))
+* Testing: **Vitest** (`npm run test` / `npm run test:watch`); CI in [.github/workflows/ci.yml](https://github.com/MatthewJWhittle/hsm-app/blob/main/.github/workflows/ci.yml) ([issue #18](https://github.com/MatthewJWhittle/hsm-app/issues/18))
 
 ### Conventions
 
-* Export style: **mixed** — `App` and `Map` default-exported (Vite/React convention); prefer **named exports** for new components and `src/api/*`
+* Export style: **mixed** (`App` and `Map` default-exported, Vite/React convention); prefer **named exports** for new components and `src/api/*`
 * Component file naming: **`PascalCase.tsx`** for components
 * Hook naming: `useX`
 * Test naming: **`*.test.ts`** / **`*.test.tsx`** next to source
@@ -331,13 +340,13 @@ When several valid options exist, choose the one that is:
 ### Commands
 
 * Lint: `npm run lint`
-* Test: `npm run test` (watch: `npm run test:watch`) — tracked in [#18](https://github.com/MatthewJWhittle/hsm-app/issues/18)
+* Test: `npm run test` (watch: `npm run test:watch`); tracked in [#18](https://github.com/MatthewJWhittle/hsm-app/issues/18)
 * Build: `npm run build` (runs `tsc -b` then Vite)
 * Typecheck: `npm run build` (project references) or `npx tsc -b --noEmit` from `frontend/`
 
 ### Forbidden in this repo
 
-* Raw `fetch` / URL construction inside purely presentational components — use **`src/api/`** or props/callbacks from a parent that owns IO
+* Raw `fetch` / URL construction inside purely presentational components: use **`src/api/`** or props/callbacks from a parent that owns IO
 * Weakening **`strict`** TypeScript or silencing errors without a short comment
 * New dependencies without justification (see core `AGENTS.md` rules)
 
@@ -372,5 +381,5 @@ follow the more specific constraint, but keep changes minimal and explain any de
 
 Features that surface **suitability**, **drivers**, or **interpretation** should align with repo-wide guidance:
 
-* **[ML artifacts and serving principles](../docs/ml-artifacts-and-serving-principles.md)** — bundles, API semantics, progressive disclosure, honest copy vs backend capability.
-* **[Root AGENTS.md](../AGENTS.md)** — pointer to the same for backend- or docs-only agents.
+* **[ML artifacts and serving principles](../docs/ml-artifacts-and-serving-principles.md)**: bundles, API semantics, progressive disclosure, honest copy vs backend capability.
+* **[Root AGENTS.md](../AGENTS.md)**: pointer to the same for backend- or docs-only agents.

@@ -2,6 +2,10 @@
 
 These principles should guide product decisions, scope choices and design trade-offs.
 
+For **interface** look, feel, and information hierarchy, see [Design principles](design-principles.md) **§11 Information hierarchy**.
+
+The product is **not** tied to a single modelling commission: **project- and layer-specific** claims belong in **catalog metadata** and **layer-scoped** UI, not in generic “about the map” copy.
+
 ## 1. Decision support, not decision automation
 
 The product should support ecological reasoning and planning, not replace expert judgement.

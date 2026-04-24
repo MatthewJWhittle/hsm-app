@@ -6,6 +6,9 @@ import type {
   PointInspection as PointInspectionData,
   RawEnvironmentalValue,
 } from '../types/pointInspection'
+import { SUITABILITY_HUD_BIN_COUNT, suitabilityDisplayBinIndex01 } from '../map/suitabilityScale'
+import { MAP_OVERLAY_Z } from './map/mapOverlayZIndex'
+import { SuitabilityBinStrip } from './map/SuitabilityBinStrip'
 
 interface InspectionHudProps {
   onClose: () => void
@@ -43,7 +46,7 @@ function signedDriverContribution(d: DriverVariable): number {
   return 0
 }
 
-/** Fewer digits for large magnitudes — raw env values are often broad-scale rasters. */
+/** Fewer digits for large magnitudes; raw env values are often broad-scale rasters. */
 function formatEnvSampleValue(value: number): string {
   if (!Number.isFinite(value)) return ''
   const a = Math.abs(value)
@@ -56,7 +59,7 @@ function formatEnvSampleValue(value: number): string {
 /** One short line: signed effect + direction arrow (row label already names the variable). */
 function formatContributionLine(d: DriverVariable): string {
   const s = signedDriverContribution(d)
-  if (Math.abs(s) < 1e-12) return '—'
+  if (Math.abs(s) < 1e-12) return '-'
   const arrow = s > 0 ? '↑' : '↓'
   const abs = Math.abs(s)
   const nums = abs >= 1 ? abs.toFixed(2) : abs.toFixed(3)
@@ -552,7 +555,7 @@ export function InspectionHud({
         position: 'absolute',
         bottom: 20,
         right: 20,
-        zIndex: 1000,
+        zIndex: MAP_OVERLAY_Z.floatingAndHud,
         maxWidth: 300,
         px: 1.75,
         pt: 1.25,
@@ -602,6 +605,21 @@ export function InspectionHud({
         {inspection && (loading || (!loading && !error)) && (
           <Box>
             <SuitabilityReadout inspection={inspection} stale={loading} />
+            <Box
+              component="div"
+              sx={{ mt: 0.6, width: '100%' }}
+              title="Ten equal 0-1 display steps; other steps are subdued. The map legend uses five steps."
+            >
+              <SuitabilityBinStrip
+                binCount={SUITABILITY_HUD_BIN_COUNT}
+                barHeight={12}
+                showEdgeLabels={false}
+                activeBinIndex={suitabilityDisplayBinIndex01(
+                  inspection.value,
+                  SUITABILITY_HUD_BIN_COUNT,
+                )}
+              />
+            </Box>
           </Box>
         )}
 

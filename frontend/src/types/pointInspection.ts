@@ -1,4 +1,4 @@
-/** Aligns with docs/data-models.md — PointInspection, DriverVariable, RawEnvironmentalValue. */
+/** Aligns with docs/data-models.md: PointInspection, DriverVariable, RawEnvironmentalValue. */
 
 export type DriverDirection = 'increase' | 'decrease' | 'neutral'
 
