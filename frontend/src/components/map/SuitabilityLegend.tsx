@@ -1,4 +1,4 @@
-import { Box, Collapse, Paper, Stack, Typography } from '@mui/material'
+import { Box, Collapse, Paper, Stack, Tooltip, Typography } from '@mui/material'
 import { useCallback, useState } from 'react'
 import {
   SUITABILITY_RESCALE_MAX,
@@ -20,20 +20,90 @@ const visuallyHidden: Record<string, string | number> = {
   border: 0,
 }
 
+export type SuitabilityLegendVariant = 'compact' | 'embedded' | 'floating'
+
 export interface SuitabilityLegendProps {
   /**
-   * When true, the legend is placed inside another surface (e.g. map controls card):
-   * full width, no separate floating card chrome.
+   * - `compact`: always-visible bar for collapsed map controls (tooltip detail).
+   * - `embedded`: full legend with hover + collapse (expanded panel; rarely used when compact is on).
+   * - `floating`: small standalone card (e.g. future use outside controls).
+   * @deprecated Use `variant="embedded"`; `embedded` boolean kept for compatibility.
+   */
+  variant?: SuitabilityLegendVariant
+  /**
+   * @deprecated use `variant="embedded"`
    */
   embedded?: boolean
 }
 
-/** Map legend: compact bar + labels; detail expands on hover. */
-export function SuitabilityLegend({ embedded = false }: SuitabilityLegendProps) {
+function isEmbeddedMode(variant: SuitabilityLegendVariant) {
+  return variant === 'embedded'
+}
+
+function isCompact(variant: SuitabilityLegendVariant) {
+  return variant === 'compact'
+}
+
+/** Map legend: compact bar (default on map) or full card with hover detail. */
+export function SuitabilityLegend({ variant: variantProp = 'floating', embedded = false }: SuitabilityLegendProps) {
   const [hover, setHover] = useState(false)
+  const variant: SuitabilityLegendVariant =
+    embedded && variantProp === 'floating' ? 'embedded' : variantProp
+  const embeddedMode = isEmbeddedMode(variant)
+  const compact = isCompact(variant)
 
   const handleEnter = useCallback(() => setHover(true), [])
   const handleLeave = useCallback(() => setHover(false), [])
+
+  if (compact) {
+    return (
+      <Box
+        component="section"
+        role="region"
+        aria-label="Suitability colour scale from low to high"
+        onClick={(e) => e.stopPropagation()}
+        sx={{ width: '100%' }}
+      >
+        <Typography id="suitability-legend-detail-sr" component="span" sx={visuallyHidden}>
+          {DETAIL_COPY}
+        </Typography>
+        <Tooltip title={DETAIL_COPY} enterDelay={400} placement="bottom-start">
+          <Box sx={{ display: 'block', cursor: 'help' }}>
+            <Box
+              sx={{
+                height: 6,
+                borderRadius: 0.5,
+                background: SUITABILITY_VIRIDIS_GRADIENT_CSS,
+                border: 1,
+                borderColor: 'divider',
+              }}
+            />
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="baseline"
+              sx={{ mt: 0.25 }}
+            >
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ fontSize: '0.65rem', lineHeight: 1.2 }}
+              >
+                Low
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ fontSize: '0.65rem', lineHeight: 1.2 }}
+              >
+                High (0–1)
+              </Typography>
+            </Stack>
+          </Box>
+        </Tooltip>
+      </Box>
+    )
+  }
 
   return (
     <Paper
@@ -41,26 +111,27 @@ export function SuitabilityLegend({ embedded = false }: SuitabilityLegendProps) 
       role="region"
       aria-label="Suitability colour scale from low to high"
       aria-describedby="suitability-legend-detail-sr"
-      variant={embedded ? 'elevation' : 'outlined'}
-      elevation={embedded ? 0 : undefined}
+      variant={embeddedMode ? 'elevation' : 'outlined'}
+      elevation={embeddedMode ? 0 : undefined}
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
+      onClick={(e) => e.stopPropagation()}
       sx={{
-        px: embedded ? 0 : 0.75,
-        py: embedded ? 0 : 0.5,
-        width: embedded ? '100%' : 200,
-        maxWidth: embedded ? '100%' : 'min(200px, calc(100vw - 48px))',
-        bgcolor: embedded ? 'transparent' : 'rgba(255, 255, 255, 0.94)',
-        backdropFilter: embedded ? 'none' : 'blur(8px)',
-        border: embedded ? 'none' : undefined,
+        px: embeddedMode ? 0 : 0.75,
+        py: embeddedMode ? 0 : 0.5,
+        width: embeddedMode ? '100%' : 200,
+        maxWidth: embeddedMode ? '100%' : 'min(200px, calc(100vw - 48px))',
+        bgcolor: embeddedMode ? 'transparent' : 'rgba(255, 255, 255, 0.94)',
+        backdropFilter: embeddedMode ? 'none' : 'blur(8px)',
+        border: embeddedMode ? 'none' : undefined,
         boxShadow: 'none',
-        borderRadius: embedded ? 0 : 1.5,
+        borderRadius: embeddedMode ? 0 : 1.5,
         transition: (t) =>
           t.transitions.create(['box-shadow', 'padding'], {
             duration: t.transitions.duration.shorter,
           }),
-        ...(hover &&
-          !embedded && {
+        ...(!embeddedMode &&
+          hover && {
             boxShadow: 2,
             py: 0.75,
           }),

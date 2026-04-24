@@ -1,5 +1,5 @@
 /**
- * TiTiler raster styling for suitability COGs — keep in sync with
+ * TiTiler raster styling for suitability COGs; keep in sync with
  * `MapComponent` tile URL (`colormap_name`, `rescale`).
  */
 export const COLORMAP_NAME = 'viridis' as const

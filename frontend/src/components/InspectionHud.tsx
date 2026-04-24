@@ -43,7 +43,7 @@ function signedDriverContribution(d: DriverVariable): number {
   return 0
 }
 
-/** Fewer digits for large magnitudes — raw env values are often broad-scale rasters. */
+/** Fewer digits for large magnitudes; raw env values are often broad-scale rasters. */
 function formatEnvSampleValue(value: number): string {
   if (!Number.isFinite(value)) return ''
   const a = Math.abs(value)
@@ -56,7 +56,7 @@ function formatEnvSampleValue(value: number): string {
 /** One short line: signed effect + direction arrow (row label already names the variable). */
 function formatContributionLine(d: DriverVariable): string {
   const s = signedDriverContribution(d)
-  if (Math.abs(s) < 1e-12) return '—'
+  if (Math.abs(s) < 1e-12) return '-'
   const arrow = s > 0 ? '↑' : '↓'
   const abs = Math.abs(s)
   const nums = abs >= 1 ? abs.toFixed(2) : abs.toFixed(3)

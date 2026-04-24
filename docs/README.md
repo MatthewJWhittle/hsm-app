@@ -8,7 +8,7 @@ This folder holds product, architecture, and operational documentation. The set 
 2. [Outcomes and product goal](outcomes-and-product-goal.md) — intended outcomes and product goal  
 3. [Users and use cases](users-and-use-cases.md) — users, needs, and priority use cases  
 4. [Product principles](product-principles.md) — principles for scope and design  
-5. [Design principles](design-principles.md) — UI/UX look, feel, and information hierarchy  
+5. [Design principles](design-principles.md) — UI/UX look, feel, and **information hierarchy (§11)**  
 6. [MVP scope](mvp-scope.md) — smallest useful version and must-haves  
 7. [Admin scope decisions](admin-scope-decisions.md) — auth, storage, ids, and project-shaped future work (issue #9)  
 8. [Solution architecture](solution-architecture.md) — high-level architecture and subsystems  

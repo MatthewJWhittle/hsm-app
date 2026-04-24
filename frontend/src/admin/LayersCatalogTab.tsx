@@ -231,7 +231,7 @@ export function LayersCatalogTab({
                           size="small"
                           checked={selectedModelIds.includes(m.id)}
                           onChange={() => toggleModelSelected(m.id)}
-                          inputProps={{ 'aria-label': `Select layer ${m.species} — ${m.activity}` }}
+                          inputProps={{ 'aria-label': `Select layer ${m.species} · ${m.activity}` }}
                         />
                       </TableCell>
                       <TableCell>
@@ -260,7 +260,7 @@ export function LayersCatalogTab({
                           <Chip label="Ready" size="small" color="success" variant="outlined" />
                         ) : (
                           <Typography variant="body2" color="text.secondary">
-                            —
+                            -
                           </Typography>
                         )}
                       </TableCell>

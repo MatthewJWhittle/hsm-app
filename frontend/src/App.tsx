@@ -3,9 +3,14 @@ import MapComponent from './components/Map'
 import { Alert, Box, Button } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { MapClickInspectHint } from './components/map/MapClickInspectHint'
 import { MapFloatingControls } from './components/map/MapFloatingControls'
 import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
+import { MapLoadingOverlay } from './components/map/MapLoadingOverlay'
+import { markMapWelcomeSeen, isMapWelcomeSeen } from './components/map/mapWelcomeStorage'
+import { MapWelcomeDialog } from './components/map/MapWelcomeDialog'
+import { dismissClickHintStorage, isClickHintDismissedInStorage } from './components/map/mapClickHintStorage'
 import { InspectionHud } from './components/InspectionHud'
 import { type Model } from './types/model'
 import type { CatalogProject, ProjectSummary } from './types/project'
@@ -67,6 +72,8 @@ function App() {
   const [reloadNonce, setReloadNonce] = useState(0)
   const [mapInfoOpen, setMapInfoOpen] = useState(false)
   const [layerDetailsOpen, setLayerDetailsOpen] = useState(false)
+  const [welcomeOpen, setWelcomeOpen] = useState(false)
+  const [clickHintOpen, setClickHintOpen] = useState(() => !isClickHintDismissedInStorage())
 
   const retryLoadCatalog = useCallback(() => {
     setReloadNonce((n) => n + 1)
@@ -239,7 +246,7 @@ function App() {
     (modelId: string) => {
       clearInspection()
       if (!modelId) setLayerDetailsOpen(false)
-      // Always re-show the raster when switching to a new layer — stale
+      // Always re-show the raster when switching to a new layer; stale
       // visibility across different species is almost never what the user
       // wants.
       setLayerVisible(true)
@@ -256,6 +263,29 @@ function App() {
   const closeHud = useCallback(() => {
     clearInspection()
   }, [clearInspection])
+
+  const dismissWelcome = useCallback(() => {
+    markMapWelcomeSeen()
+    setWelcomeOpen(false)
+  }, [])
+
+  const closeClickHint = useCallback(() => {
+    dismissClickHintStorage()
+    setClickHintOpen(false)
+  }, [])
+
+  useEffect(() => {
+    if (inspection && !inspectLoading && !inspectError) {
+      dismissClickHintStorage()
+      setClickHintOpen(false)
+    }
+  }, [inspection, inspectLoading, inspectError])
+
+  useEffect(() => {
+    if (!catalogReady || loadError) return
+    if (isMapWelcomeSeen()) return
+    setWelcomeOpen(true)
+  }, [catalogReady, loadError])
 
   const handleInspect = useCallback(
     async (lng: number, lat: number) => {
@@ -311,6 +341,8 @@ function App() {
           />
         </Box>
 
+        {!catalogReady && !loadError && <MapLoadingOverlay />}
+
         <MapFloatingControls
           models={models}
           selectedModelId={selectedModelId}
@@ -324,6 +356,13 @@ function App() {
           loading={!catalogReady}
           errored={Boolean(loadError)}
         />
+
+        {catalogReady && !loadError && (
+          <MapClickInspectHint
+            open={clickHintOpen}
+            onClose={closeClickHint}
+          />
+        )}
 
         {loadError && (
           <Alert
@@ -360,6 +399,7 @@ function App() {
         )}
       </Box>
 
+      <MapWelcomeDialog open={welcomeOpen} onClose={dismissWelcome} />
       <MapInterpretationDialog open={mapInfoOpen} onClose={() => setMapInfoOpen(false)} />
       <MapLayerDetailsDialog
         open={layerDetailsOpen}
