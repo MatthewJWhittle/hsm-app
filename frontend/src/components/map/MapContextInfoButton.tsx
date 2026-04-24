@@ -1,4 +1,5 @@
-import InfoIcon from '@mui/icons-material/Info'
+import HelpIcon from '@mui/icons-material/Help'
+import { alpha } from '@mui/material/styles'
 import { Box, ClickAwayListener, Fade, IconButton, Paper, Popper, Tooltip, Typography } from '@mui/material'
 import { useCallback, useState } from 'react'
 import { MAP_CONTEXT_COACHMARK, MAP_CONTEXT_INFO_ARIA, MAP_CONTEXT_INFO_TOOLTIP } from '../../copy/interpretation'
@@ -13,8 +14,8 @@ export interface MapContextInfoButtonProps {
 }
 
 /**
- * Map-top-right (i) entry to “What am I looking at?”. Visually separate from
- * the floating card’s Help/Info (outline, lower-left in expanded controls).
+ * Map top-right “?” / help entry to “What am I looking at?”. Visually separate from
+ * the floating card’s Help/Info (smaller, lower-left in expanded controls).
  * Optional one-time coachmark; dismisses on click-away or when opening the guide.
  */
 export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpenAboutMap }: MapContextInfoButtonProps) {
@@ -112,7 +113,7 @@ export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpe
                 >
                   {MAP_CONTEXT_COACHMARK}
                 </Typography>
-                {/* Pointer toward the (i) — match paper translucency */}
+                {/* Pointer toward the help button — match paper translucency */}
                 <Box
                   aria-hidden
                   sx={{
@@ -145,24 +146,32 @@ export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpe
               size="small"
               onClick={handleOpen}
               aria-label={MAP_CONTEXT_INFO_ARIA}
-              color="inherit"
               sx={(t) => ({
                 p: 0.5,
                 minWidth: 40,
                 minHeight: 40,
                 borderRadius: 2,
                 color: t.palette.secondary.main,
-                bgcolor: 'background.paper',
+                // color="inherit" + default IconButton use transparent base/hover; keep an opaque card.
+                backgroundColor: t.palette.background.paper,
                 border: 1,
                 borderColor: 'secondary.main',
                 boxShadow: 1,
                 '&:hover': {
-                  bgcolor: 'action.hover',
-                  borderColor: 'secondary.dark',
+                  backgroundColor: alpha(t.palette.common.black, 0.05),
+                  borderColor: t.palette.secondary.dark,
+                  color: t.palette.secondary.dark,
+                  boxShadow: 2,
+                },
+                '&:active': {
+                  backgroundColor: alpha(t.palette.common.black, 0.08),
+                },
+                '&.Mui-focusVisible': {
+                  backgroundColor: t.palette.background.paper,
                 },
               })}
             >
-              <InfoIcon fontSize="small" aria-hidden />
+              <HelpIcon fontSize="small" aria-hidden />
             </IconButton>
           </span>
         </Tooltip>
