@@ -7,9 +7,11 @@ import { dismissClickHintStorage } from './mapClickHintStorage'
 export interface MapClickInspectHintProps {
   open: boolean
   onClose: () => void
+  /** Distance from map bottom; increase when a bottom-left overlay (e.g. colour legend) is visible. */
+  bottomPx?: number
 }
 
-export function MapClickInspectHint({ open, onClose }: MapClickInspectHintProps) {
+export function MapClickInspectHint({ open, onClose, bottomPx = 28 }: MapClickInspectHintProps) {
   const labelId = useId()
 
   const handleClose = useCallback(() => {
@@ -26,7 +28,7 @@ export function MapClickInspectHint({ open, onClose }: MapClickInspectHintProps)
       aria-labelledby={labelId}
       sx={{
         position: 'absolute',
-        bottom: 28,
+        bottom: bottomPx,
         left: 16,
         zIndex: 999,
         maxWidth: { xs: 'min(calc(100vw - 32px), 360px)', sm: 360 },

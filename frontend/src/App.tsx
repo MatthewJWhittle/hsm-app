@@ -10,6 +10,7 @@ import { MapInterpretationDialog } from './components/map/MapInterpretationDialo
 import { MapLoadingOverlay } from './components/map/MapLoadingOverlay'
 import { markMapWelcomeSeen, isMapWelcomeSeen } from './components/map/mapWelcomeStorage'
 import { MapWelcomeDialog } from './components/map/MapWelcomeDialog'
+import { SuitabilityLegend } from './components/map/SuitabilityLegend'
 import { dismissClickHintStorage, isClickHintDismissedInStorage } from './components/map/mapClickHintStorage'
 import { InspectionHud } from './components/InspectionHud'
 import { type Model } from './types/model'
@@ -361,7 +362,24 @@ function App() {
           <MapClickInspectHint
             open={clickHintOpen}
             onClose={closeClickHint}
+            bottomPx={selectedModel && layerVisible ? 58 : 28}
           />
+        )}
+
+        {catalogReady && !loadError && selectedModel && layerVisible && (
+          <Box
+            sx={{
+              position: 'absolute',
+              bottom: 12,
+              left: 12,
+              zIndex: 998,
+              pointerEvents: 'auto',
+              // Tight slot (~¼ the old 520px width); explicit width so the bar isn’t shrink-wrapped.
+              width: 'min(130px, calc(100vw - 24px))',
+            }}
+          >
+            <SuitabilityLegend variant="corner" />
+          </Box>
         )}
 
         {loadError && (

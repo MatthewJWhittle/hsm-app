@@ -25,7 +25,6 @@ import {
   layerPrimaryLine,
   layerSecondaryLine,
 } from '../../utils/layerDisplay'
-import { SuitabilityLegend } from './SuitabilityLegend'
 
 /** Width of the floating top-left control card (map UX). */
 export const MAP_FLOATING_CONTROLS_WIDTH_PX = 400
@@ -133,14 +132,6 @@ export function MapFloatingControls({
       }}
     >
       <Box sx={{ px: 1.75, pt: 1.25, pb: detailsExpanded ? 1.25 : 1 }}>
-        {selectedModel && layerVisible && !errored && !loading && (
-          <Box
-            onClick={(e) => e.stopPropagation()}
-            sx={{ mb: 1.25, pr: 0.25 }}
-          >
-            <SuitabilityLegend variant="compact" />
-          </Box>
-        )}
         <Stack direction="row" alignItems="flex-start" spacing={1} sx={{ width: '100%' }}>
           {loading ? (
             <Skeleton

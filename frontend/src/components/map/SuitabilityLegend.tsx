@@ -3,10 +3,10 @@ import { useCallback, useState } from 'react'
 import {
   SUITABILITY_RESCALE_MAX,
   SUITABILITY_RESCALE_MIN,
-  SUITABILITY_VIRIDIS_GRADIENT_CSS,
 } from '../../map/suitabilityScale'
+import { SuitabilityBinStrip } from './SuitabilityBinStrip'
 
-const DETAIL_COPY = `Modelled relative values for this layer, stretched to ${SUITABILITY_RESCALE_MIN}–${SUITABILITY_RESCALE_MAX} for display. Not directly comparable across different layers unless their rescales match.`
+const DETAIL_COPY = `Modelled relative values for this layer, stretched to ${SUITABILITY_RESCALE_MIN} to ${SUITABILITY_RESCALE_MAX} for display. The map and legend use five equal 0-1 display steps (0-0.2, 0.2-0.4, …, 0.8-1) to read the band. That is a fixed display scale, not a statistical quantile of the landscape. Not directly comparable across different layers unless their rescales match.`
 
 const visuallyHidden: Record<string, string | number> = {
   position: 'absolute',
@@ -20,11 +20,12 @@ const visuallyHidden: Record<string, string | number> = {
   border: 0,
 }
 
-export type SuitabilityLegendVariant = 'compact' | 'embedded' | 'floating'
+export type SuitabilityLegendVariant = 'compact' | 'corner' | 'embedded' | 'floating'
 
 export interface SuitabilityLegendProps {
   /**
-   * - `compact`: always-visible bar for collapsed map controls (tooltip detail).
+   * - `compact`: always-visible bar (tooltip detail); legacy use on controls.
+   * - `corner`: minimal high/low bar for a fixed map corner.
    * - `embedded`: full legend with hover + collapse (expanded panel; rarely used when compact is on).
    * - `floating`: small standalone card (e.g. future use outside controls).
    * @deprecated Use `variant="embedded"`; `embedded` boolean kept for compatibility.
@@ -44,16 +45,73 @@ function isCompact(variant: SuitabilityLegendVariant) {
   return variant === 'compact'
 }
 
-/** Map legend: compact bar (default on map) or full card with hover detail. */
+function isCorner(variant: SuitabilityLegendVariant) {
+  return variant === 'corner'
+}
+
+/** Map legend: compact / corner bar or full card with hover detail. */
 export function SuitabilityLegend({ variant: variantProp = 'floating', embedded = false }: SuitabilityLegendProps) {
   const [hover, setHover] = useState(false)
   const variant: SuitabilityLegendVariant =
     embedded && variantProp === 'floating' ? 'embedded' : variantProp
   const embeddedMode = isEmbeddedMode(variant)
   const compact = isCompact(variant)
+  const corner = isCorner(variant)
 
   const handleEnter = useCallback(() => setHover(true), [])
   const handleLeave = useCallback(() => setHover(false), [])
+
+  if (corner) {
+    return (
+      <Box
+        component="section"
+        role="region"
+        aria-labelledby="suitability-corner-strip-title"
+        onClick={(e) => e.stopPropagation()}
+        sx={{
+          // Parent sets width; fill it so the bar spans edge-to-edge in that slot.
+          width: '100%',
+          minWidth: 0,
+          boxSizing: 'border-box',
+          px: 0.75,
+          py: 0.5,
+          borderRadius: 1,
+          border: 1,
+          borderColor: 'divider',
+          bgcolor: 'rgba(255, 255, 255, 0.75)',
+          backdropFilter: 'blur(6px)',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        }}
+      >
+        <Typography id="suitability-legend-detail-sr" component="span" sx={visuallyHidden}>
+          {DETAIL_COPY}
+        </Typography>
+        <Typography
+          id="suitability-corner-strip-title"
+          component="p"
+          variant="overline"
+          color="text.secondary"
+          sx={{
+            m: 0,
+            mb: 0.4,
+            fontSize: '0.58rem',
+            lineHeight: 1.2,
+            fontWeight: 600,
+            letterSpacing: '0.07em',
+            textTransform: 'uppercase',
+            opacity: 0.85,
+          }}
+        >
+          Suitability scale
+        </Typography>
+        <Tooltip title={DETAIL_COPY} enterDelay={500} placement="top-start" disableInteractive>
+          <Box sx={{ display: 'block', width: '100%', cursor: 'default' }}>
+            <SuitabilityBinStrip barHeight={11} showEdgeLabels />
+          </Box>
+        </Tooltip>
+      </Box>
+    )
+  }
 
   if (compact) {
     return (
@@ -69,15 +127,7 @@ export function SuitabilityLegend({ variant: variantProp = 'floating', embedded 
         </Typography>
         <Tooltip title={DETAIL_COPY} enterDelay={400} placement="bottom-start">
           <Box sx={{ display: 'block', cursor: 'help' }}>
-            <Box
-              sx={{
-                height: 6,
-                borderRadius: 0.5,
-                background: SUITABILITY_VIRIDIS_GRADIENT_CSS,
-                border: 1,
-                borderColor: 'divider',
-              }}
-            />
+            <SuitabilityBinStrip barHeight={8} showEdgeLabels={false} />
             <Stack
               direction="row"
               justifyContent="space-between"
@@ -96,7 +146,7 @@ export function SuitabilityLegend({ variant: variantProp = 'floating', embedded 
                 color="text.secondary"
                 sx={{ fontSize: '0.65rem', lineHeight: 1.2 }}
               >
-                High (0–1)
+                High
               </Typography>
             </Stack>
           </Box>
@@ -141,15 +191,7 @@ export function SuitabilityLegend({ variant: variantProp = 'floating', embedded 
         {DETAIL_COPY}
       </Typography>
 
-      <Box
-        sx={{
-          height: 8,
-          borderRadius: 0.5,
-          background: SUITABILITY_VIRIDIS_GRADIENT_CSS,
-          border: 1,
-          borderColor: 'divider',
-        }}
-      />
+      <SuitabilityBinStrip barHeight={10} showEdgeLabels={false} />
       <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mt: 0.35 }}>
         <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem', lineHeight: 1.2 }}>
           Low suitability

@@ -6,6 +6,8 @@ import type {
   PointInspection as PointInspectionData,
   RawEnvironmentalValue,
 } from '../types/pointInspection'
+import { suitabilityDisplayBinIndex01 } from '../map/suitabilityScale'
+import { SuitabilityBinStrip } from './map/SuitabilityBinStrip'
 
 interface InspectionHudProps {
   onClose: () => void
@@ -602,6 +604,17 @@ export function InspectionHud({
         {inspection && (loading || (!loading && !error)) && (
           <Box>
             <SuitabilityReadout inspection={inspection} stale={loading} />
+            <Box
+              component="div"
+              sx={{ mt: 0.6, width: '100%' }}
+              title="Five equal 0-1 display bands, same as the map legend. Your value is highlighted."
+            >
+              <SuitabilityBinStrip
+                barHeight={7}
+                showEdgeLabels={false}
+                activeBinIndex={suitabilityDisplayBinIndex01(inspection.value)}
+              />
+            </Box>
           </Box>
         )}
 
