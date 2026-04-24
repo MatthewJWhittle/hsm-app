@@ -218,27 +218,6 @@ export function MapFloatingControls({
           <Stack direction="row" alignItems="center" spacing={0} sx={{ flexShrink: 0 }}>
             <Tooltip
               placement="bottom-end"
-              title={detailsExpanded ? 'Hide transparency & shortcuts' : 'Show transparency & shortcuts'}
-            >
-              <IconButton
-                size="small"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setDetailsExpanded((v) => !v)
-                }}
-                aria-label={detailsExpanded ? 'Collapse map controls' : 'Expand map controls'}
-                aria-expanded={detailsExpanded}
-                sx={{ mr: -0.25 }}
-              >
-                {detailsExpanded ? (
-                  <ExpandLessIcon fontSize="small" />
-                ) : (
-                  <ExpandMoreIcon fontSize="small" />
-                )}
-              </IconButton>
-            </Tooltip>
-            <Tooltip
-              placement="bottom-end"
               title={
                 selectedModel
                   ? layerVisible
@@ -257,7 +236,7 @@ export function MapFloatingControls({
                   disabled={!selectedModel}
                   aria-label={layerVisible ? 'Hide layer' : 'Show layer'}
                   aria-pressed={!layerVisible}
-                  sx={{ mr: -0.5, color: layerVisible ? 'primary.main' : 'text.secondary' }}
+                  sx={{ mr: -0.25, color: layerVisible ? 'primary.main' : 'text.secondary' }}
                 >
                   {layerVisible ? (
                     <VisibilityIcon fontSize="small" />
@@ -266,6 +245,27 @@ export function MapFloatingControls({
                   )}
                 </IconButton>
               </span>
+            </Tooltip>
+            <Tooltip
+              placement="bottom-end"
+              title={detailsExpanded ? 'Hide transparency & shortcuts' : 'Show transparency & shortcuts'}
+            >
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setDetailsExpanded((v) => !v)
+                }}
+                aria-label={detailsExpanded ? 'Collapse map controls' : 'Expand map controls'}
+                aria-expanded={detailsExpanded}
+                sx={{ mr: -0.5 }}
+              >
+                {detailsExpanded ? (
+                  <ExpandLessIcon fontSize="small" />
+                ) : (
+                  <ExpandMoreIcon fontSize="small" />
+                )}
+              </IconButton>
             </Tooltip>
           </Stack>
         </Stack>
