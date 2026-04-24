@@ -8,7 +8,16 @@ import { Link as RouterLink } from 'react-router-dom'
 import { BrandMark } from './BrandMark'
 import { UserMenu } from './UserMenu'
 
-export function Navbar() {
+export interface NavbarProps {
+  /**
+   * Active map project for the current layer (subtle, non-interactive). Omit on routes
+   * where it does not apply (e.g. admin).
+   */
+  currentProjectName?: string | null
+}
+
+export function Navbar({ currentProjectName }: NavbarProps = {}) {
+  const showProject = Boolean(currentProjectName?.trim())
   return (
     <AppBar
       position="static"
@@ -67,7 +76,43 @@ export function Navbar() {
           </Box>
         </ButtonBase>
         <Box sx={{ flex: 1 }} />
-        <UserMenu />
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            minWidth: 0,
+            flexShrink: 1,
+            justifyContent: 'flex-end',
+          }}
+        >
+          {showProject && (
+            <Typography
+              component="span"
+              variant="caption"
+              noWrap
+              title={currentProjectName!}
+              aria-label={`Current project, ${currentProjectName}`}
+              sx={{
+                color: 'text.secondary',
+                maxWidth: { xs: 96, sm: 220, md: 300 },
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                fontSize: '0.7rem',
+                lineHeight: 1.2,
+                fontWeight: 500,
+                opacity: 0.88,
+                flexShrink: 1,
+                minWidth: 0,
+              }}
+            >
+              {currentProjectName}
+            </Typography>
+          )}
+          <Box sx={{ flexShrink: 0 }}>
+            <UserMenu />
+          </Box>
+        </Box>
       </Toolbar>
     </AppBar>
   )

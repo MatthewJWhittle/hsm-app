@@ -321,7 +321,7 @@ function App() {
 
   return (
     <div className="app-container">
-      <Navbar />
+      <Navbar currentProjectName={catalogReady ? selectedProjectLabel : undefined} />
       <Box
         component="main"
         sx={{
