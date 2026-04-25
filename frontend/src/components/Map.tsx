@@ -1,10 +1,11 @@
-import Map, { Layer, Source } from 'react-map-gl/maplibre'
+import Map, { Layer, Source, type MapRef } from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { COLORMAP_NAME, SUITABILITY_RESCALE_MAX, SUITABILITY_RESCALE_MIN } from '../map/suitabilityScale'
 import type { Model } from '../types/model'
 import { resolveSuitabilityPath, titilerRasterUrlParam } from '../utils/cogPath'
 import { titilerBase } from '../utils/apiBase'
+import { fetchRasterBounds } from '../api/rasterBounds'
 
 interface MapComponentProps {
   model: Model | null
@@ -21,7 +22,11 @@ function MapComponent({
   visible = true,
   onInspect,
 }: MapComponentProps) {
-  const mapRef = useRef(null)
+  const mapRef = useRef<MapRef | null>(null)
+  const fittedModelIdRef = useRef<string | null>(null)
+  const hasUserMovedMapRef = useRef(false)
+  const programmaticFitRef = useRef(false)
+  const fitTimerRef = useRef<number | null>(null)
 
   const tileUrl = useMemo(() => {
     if (!model) return ''
@@ -44,6 +49,51 @@ function MapComponent({
     },
   }
 
+  useEffect(() => {
+    return () => {
+      if (fitTimerRef.current !== null) window.clearTimeout(fitTimerRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!model || !visible) return
+    if (hasUserMovedMapRef.current) return
+    if (fittedModelIdRef.current === model.id) return
+
+    const ac = new AbortController()
+    let cancelled = false
+
+    fetchRasterBounds(model, ac.signal)
+      .then((bounds) => {
+        if (cancelled || hasUserMovedMapRef.current) return
+        const map = mapRef.current
+        if (!map) return
+
+        fittedModelIdRef.current = model.id
+        programmaticFitRef.current = true
+        if (fitTimerRef.current !== null) window.clearTimeout(fitTimerRef.current)
+        map.fitBounds(bounds, {
+          padding: 72,
+          duration: 700,
+          maxZoom: 11,
+        })
+        fitTimerRef.current = window.setTimeout(() => {
+          programmaticFitRef.current = false
+          fitTimerRef.current = null
+        }, 800)
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        if (error instanceof Error && error.name === 'AbortError') return
+        console.warn('Could not fit map to raster bounds', error)
+      })
+
+    return () => {
+      cancelled = true
+      ac.abort()
+    }
+  }, [model, visible])
+
   return (
     <Map
       ref={mapRef}
@@ -54,6 +104,11 @@ function MapComponent({
       }}
       style={{ width: '100%', height: '100%' }}
       mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
+      onMoveStart={() => {
+        if (!programmaticFitRef.current) {
+          hasUserMovedMapRef.current = true
+        }
+      }}
       onClick={(e) => {
         const { lng, lat } = e.lngLat
         onInspect?.(lng, lat)
