@@ -247,6 +247,12 @@ variable "gcs_enable_versioning" {
   default     = false
 }
 
+variable "gcs_uploads_retention_days" {
+  description = "Days to retain staged direct-upload objects under uploads/ before lifecycle deletion."
+  type        = number
+  default     = 7
+}
+
 variable "create_firestore_database" {
   description = "Whether Terraform should create Firestore Native database (name '(default)')."
   type        = bool

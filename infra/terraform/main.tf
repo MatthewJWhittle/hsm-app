@@ -58,6 +58,17 @@ resource "google_storage_bucket" "model_artifacts" {
     enabled = var.gcs_enable_versioning
   }
 
+  lifecycle_rule {
+    action {
+      type = "Delete"
+    }
+
+    condition {
+      age            = var.gcs_uploads_retention_days
+      matches_prefix = ["uploads/"]
+    }
+  }
+
   cors {
     origin = [
       "https://hsm-dashboard-dev.web.app",

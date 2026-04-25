@@ -231,6 +231,7 @@ class GcsObjectStorage:
             raise ValueError("upload source object not found in storage")
         dst_name = f"{self._prefix}projects/{safe_id}/{ENVIRONMENTAL_DRIVER_FILENAME}"
         self._bucket.copy_blob(src_blob, self._bucket, new_name=dst_name)
+        _best_effort_delete_upload_source(src_blob, source_object_path)
         artifact_root = f"gs://{self._bucket.name}/{self._prefix}projects/{safe_id}"
         return artifact_root, ENVIRONMENTAL_DRIVER_FILENAME
 
@@ -249,6 +250,7 @@ class GcsObjectStorage:
             raise ValueError("upload source object not found in storage")
         dst_name = f"{self._prefix}models/{safe_id}/{SUITABILITY_FILENAME}"
         self._bucket.copy_blob(src_blob, self._bucket, new_name=dst_name)
+        _best_effort_delete_upload_source(src_blob, source_object_path)
         artifact_root = f"gs://{self._bucket.name}/{self._prefix}models/{safe_id}"
         return artifact_root, SUITABILITY_FILENAME
 
@@ -307,6 +309,19 @@ def _validate_artifact_relative_name(name: str) -> None:
         raise ValueError("artifact name must be a single path segment")
     if not re.match(r"^[a-zA-Z0-9._-]+$", name):
         raise ValueError("artifact name contains invalid characters")
+
+
+def _best_effort_delete_upload_source(src_blob: object, source_object_path: str) -> None:
+    """Remove staged direct-upload objects after promotion; lifecycle handles misses."""
+    try:
+        delete = getattr(src_blob, "delete")
+        delete()
+    except Exception:
+        logger.warning(
+            "Failed to delete staged upload object after promotion: %s",
+            source_object_path,
+            exc_info=True,
+        )
 
 
 def build_object_storage(settings: WorkerSettings) -> ObjectStorage:
