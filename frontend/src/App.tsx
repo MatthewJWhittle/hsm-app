@@ -9,6 +9,7 @@ import { MapContextInfoButton } from './components/map/MapContextInfoButton'
 import { MAP_OVERLAY_Z } from './components/map/mapOverlayZIndex'
 import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
+import { MapLayerLoadingHint } from './components/map/MapLayerLoadingHint'
 import { MapLoadingOverlay } from './components/map/MapLoadingOverlay'
 import { markMapWelcomeSeen, isMapWelcomeSeen } from './components/map/mapWelcomeStorage'
 import { MapWelcomeDialog } from './components/map/MapWelcomeDialog'
@@ -77,6 +78,8 @@ function App() {
   const [layerDetailsOpen, setLayerDetailsOpen] = useState(false)
   const [welcomeOpen, setWelcomeOpen] = useState(false)
   const [clickHintOpen, setClickHintOpen] = useState(() => !isClickHintDismissedInStorage())
+  const [layerTilesLoading, setLayerTilesLoading] = useState(false)
+  const [showLayerLoadingHint, setShowLayerLoadingHint] = useState(false)
 
   const retryLoadCatalog = useCallback(() => {
     setReloadNonce((n) => n + 1)
@@ -152,6 +155,19 @@ function App() {
     () => models.find((m) => m.id === selectedModelId) ?? null,
     [models, selectedModelId],
   )
+
+  useEffect(() => {
+    if (!catalogReady || loadError || !selectedModel || !layerVisible || !layerTilesLoading) {
+      setShowLayerLoadingHint(false)
+      return
+    }
+
+    setShowLayerLoadingHint(true)
+    const timeout = window.setTimeout(() => {
+      setShowLayerLoadingHint(false)
+    }, 8000)
+    return () => window.clearTimeout(timeout)
+  }, [catalogReady, layerTilesLoading, layerVisible, loadError, selectedModel])
 
   useEffect(() => {
     if (!catalogReady || !selectedModelId) return
@@ -341,10 +357,13 @@ function App() {
             visible={layerVisible}
             model={selectedModel}
             onInspect={selectedModel && !loadError ? handleInspect : undefined}
+            onLayerLoadingChange={setLayerTilesLoading}
           />
         </Box>
 
         {!catalogReady && !loadError && <MapLoadingOverlay />}
+
+        {catalogReady && !loadError && <MapLayerLoadingHint visible={showLayerLoadingHint} />}
 
         {catalogReady && !loadError && (
           <MapContextInfoButton
@@ -358,7 +377,6 @@ function App() {
           models={models}
           selectedModelId={selectedModelId}
           onModelChange={onModelChange}
-          onOpenMapInfoDialog={() => setMapInfoOpen(true)}
           onOpenLayerDetailsDialog={() => setLayerDetailsOpen(true)}
           opacity={opacity}
           onOpacityChange={setOpacity}
@@ -388,7 +406,7 @@ function App() {
               width: 'min(130px, calc(100vw - 24px))',
             }}
           >
-            <SuitabilityLegend variant="corner" />
+            <SuitabilityLegend variant="corner" onOpenMapGuide={() => setMapInfoOpen(true)} />
           </Box>
         )}
 

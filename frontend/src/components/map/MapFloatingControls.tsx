@@ -1,6 +1,5 @@
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffOutlinedIcon from '@mui/icons-material/VisibilityOffOutlined'
@@ -25,7 +24,6 @@ import {
   layerPrimaryLine,
   layerSecondaryLine,
 } from '../../utils/layerDisplay'
-import { MAP_FLOATING_ABOUT_MAP_ARIA, MAP_FLOATING_ABOUT_MAP_TOOLTIP } from '../../copy/interpretation'
 import { MAP_OVERLAY_Z } from './mapOverlayZIndex'
 
 /** Width of the floating top-left control card (map UX). */
@@ -35,7 +33,6 @@ interface MapFloatingControlsProps {
   models: Model[]
   selectedModelId: string
   onModelChange: (modelId: string) => void
-  onOpenMapInfoDialog: () => void
   onOpenLayerDetailsDialog: () => void
   /** Raster layer opacity as a percentage (0–100). */
   opacity: number
@@ -60,7 +57,6 @@ export function MapFloatingControls({
   models,
   selectedModelId,
   onModelChange,
-  onOpenMapInfoDialog,
   onOpenLayerDetailsDialog,
   opacity,
   onOpacityChange,
@@ -222,6 +218,29 @@ export function MapFloatingControls({
               placement="bottom-end"
               title={
                 selectedModel
+                  ? 'Model, version, and project for the selected layer'
+                  : 'Select a layer first'
+              }
+            >
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onOpenLayerDetailsDialog()
+                  }}
+                  disabled={!selectedModel}
+                  aria-label="Open layer name, model version, and project"
+                  sx={{ color: 'text.secondary' }}
+                >
+                  <InfoOutlinedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip
+              placement="bottom-end"
+              title={
+                selectedModel
                   ? layerVisible
                     ? 'Hide layer (V)'
                     : 'Show layer (V)'
@@ -329,44 +348,6 @@ export function MapFloatingControls({
               sx={{ py: 1 }}
             />
           </Box>
-
-          <Divider />
-
-          <Stack
-            direction="row"
-            alignItems="center"
-            spacing={0.5}
-            sx={{ px: 0.75, py: 0.5 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Tooltip
-              title={
-                selectedModel
-                  ? 'Model, version, and project for the selected layer'
-                  : 'Select a layer first'
-              }
-            >
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={onOpenLayerDetailsDialog}
-                  disabled={!selectedModel}
-                  aria-label="Open layer name, model version, and project"
-                >
-                  <InfoOutlinedIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title={MAP_FLOATING_ABOUT_MAP_TOOLTIP}>
-              <IconButton
-                size="small"
-                onClick={onOpenMapInfoDialog}
-                aria-label={MAP_FLOATING_ABOUT_MAP_ARIA}
-              >
-                <HelpOutlineIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          </Stack>
         </>
       ) : null}
     </Paper>

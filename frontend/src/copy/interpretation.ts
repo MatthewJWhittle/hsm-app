@@ -43,6 +43,9 @@ export const INTERPRETATION_RAW_VALUES_CAPTION =
 export const INTERPRETATION_HUD_REMINDER =
   'Modelled relative suitability, not confirmed presence or absence on the ground.'
 
+/** Compact guardrail attached to the suitability legend. */
+export const SUITABILITY_LEGEND_GUARDRAIL = 'Relative suitability, not confirmed presence.'
+
 /** Map top-right help (?): aria + tooltip. */
 export const MAP_CONTEXT_INFO_ARIA = 'What am I looking at? Opens a short guide to this map view.'
 export const MAP_CONTEXT_INFO_TOOLTIP = 'What am I looking at?'

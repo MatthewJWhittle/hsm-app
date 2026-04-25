@@ -7,6 +7,8 @@ export const MAP_OVERLAY_Z = {
   loading: 900,
   /** Bottom-left corner suitability strip */
   cornerLegend: 998,
+  /** Small top-right raster tile loading chip */
+  layerLoadingHint: 998,
   /** Bottom-left “click the map” hint */
   clickHint: 999,
   /** Top-left floating controls and bottom-right point-inspection HUD (position keeps them apart) */
