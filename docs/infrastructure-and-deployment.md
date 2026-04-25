@@ -45,6 +45,8 @@ COGs stay in a **private** GCS bucket. The TiTiler Cloud Run service runs as a *
 
 **Admin uploads (FastAPI):** Configure **`STORAGE_BACKEND`** — **`local`** for development (e.g. bind-mounted directory; Docker Compose sets **`LOCAL_STORAGE_ROOT=/data`** and **`STORAGE_BACKEND=local`**), **`gcs`** for production with **`GCS_BUCKET`** (and optional **`GCS_OBJECT_PREFIX`**). The API writes **`models/{model_id}/suitability_cog.tif`** and stores **`artifact_root`** / **`suitability_cog_path`** in Firestore. The FastAPI service account needs **`storage.objectAdmin`** or equivalent on the bucket for uploads. TiTiler continues to resolve tiles from the same logical paths (`file://` locally, **`gs://`** in cloud) as documented in [Data models](data-models.md).
 
+Direct-to-GCS upload sessions stage large files under **`uploads/{upload_id}/`** before promotion into final **`models/`** or **`projects/`** prefixes. Promotion should delete the staged object after a successful copy, and the bucket lifecycle rule deletes any remaining **`uploads/`** objects after a short retention window. This keeps abandoned or failed upload sessions from becoming permanent storage.
+
 ### Cold starts (scale-to-zero) and UX
 
 With **`min-instances=0`**, FastAPI and TiTiler can both **cold start** after idle—acceptable for cost; raise `min-instances` only if traffic justifies it.
