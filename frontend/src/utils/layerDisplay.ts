@@ -1,21 +1,5 @@
 import type { Model } from '../types/model'
 
-const COMMON_SPECIES_NAMES: Record<string, string> = {
-  'Myotis brandtii': "Brandt's bat",
-  'Myotis daubentonii': "Daubenton's bat",
-  'Myotis mystacinus': 'Whiskered bat',
-  'Myotis nattereri': "Natterer's bat",
-  'Nyctalus leisleri': "Leisler's bat",
-  'Nyctalus noctula': 'Noctule',
-  'Pipistrellus pipistrellus': 'Common pipistrelle',
-  'Pipistrellus pygmaeus': 'Soprano pipistrelle',
-  'Plecotus auritus': 'Brown long-eared bat',
-}
-
-function speciesDisplayName(species: string): string {
-  return COMMON_SPECIES_NAMES[species] ?? species
-}
-
 function activityDisplayName(activity: string): string {
   const normalized = activity.trim().toLowerCase()
   if (normalized === 'roost') return 'Roosting habitat'
@@ -25,7 +9,7 @@ function activityDisplayName(activity: string): string {
 
 /** Full layer label for UI (plain species/activity first where known). */
 export function layerDisplayName(m: Model): string {
-  return `${speciesDisplayName(m.species)} · ${activityDisplayName(m.activity)}`
+  return `${m.species} · ${activityDisplayName(m.activity)}`
 }
 
 const CARD_TITLE = (m: Model) => m.metadata?.card?.title?.trim() ?? ''

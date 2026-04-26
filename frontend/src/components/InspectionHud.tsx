@@ -9,7 +9,6 @@ import type {
 import { SUITABILITY_HUD_BIN_COUNT, suitabilityDisplayBinIndex01 } from '../map/suitabilityScale'
 import { MAP_OVERLAY_Z } from './map/mapOverlayZIndex'
 import { SuitabilityBinStrip } from './map/SuitabilityBinStrip'
-import { INTERPRETATION_HUD_REMINDER } from '../copy/interpretation'
 
 interface InspectionHudProps {
   onClose: () => void
@@ -75,6 +74,16 @@ function suitabilityBandLabel(value: number): string {
   return 'Very high suitability'
 }
 
+function scoreUnitLabel(unit?: string | null): string {
+  const trimmed = unit?.trim()
+  if (!trimmed) return ' (0-1)'
+  if (/^suitability\b/i.test(trimmed)) {
+    const scale = trimmed.replace(/^suitability\s*/i, '').trim()
+    return scale ? ` ${scale}` : ' (0-1)'
+  }
+  return ` ${trimmed}`
+}
+
 function SuitabilityReadout({
   inspection,
   stale,
@@ -108,15 +117,7 @@ function SuitabilityReadout({
         sx={{ m: 0, fontVariantNumeric: 'tabular-nums', lineHeight: 1.35 }}
       >
         Score {inspection.value.toFixed(3)}
-        {inspection.unit ? ` ${inspection.unit}` : ' (0-1)'}
-      </Typography>
-      <Typography
-        component="p"
-        variant="caption"
-        color="text.secondary"
-        sx={{ m: 0, mt: 0.25, lineHeight: 1.35 }}
-      >
-        {INTERPRETATION_HUD_REMINDER}
+        {scoreUnitLabel(inspection.unit)}
       </Typography>
     </Box>
   )
@@ -653,7 +654,14 @@ export function InspectionHud({
       {inspection &&
         !error &&
         sortedDrivers.length > 0 && (
-          <Box sx={{ mt: 0.75 }}>
+          <Box
+            sx={{
+              mt: 1,
+              pt: 0.85,
+              borderTop: 1,
+              borderColor: 'divider',
+            }}
+          >
             <Box sx={{ position: 'relative' }}>
               <Box
                 ref={driversListRef}

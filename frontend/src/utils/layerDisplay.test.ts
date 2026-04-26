@@ -19,22 +19,22 @@ function baseModel(over: Partial<Model> = {}): Model {
 }
 
 describe('layerDisplay', () => {
-  it('layerDisplayName uses common bat names and plain activity labels when known', () => {
-    expect(layerDisplayName(baseModel())).toBe("Daubenton's bat · Foraging and commuting habitat")
+  it('layerDisplayName uses catalog species and plain activity labels', () => {
+    expect(layerDisplayName(baseModel())).toBe('Myotis daubentonii · Foraging and commuting habitat')
   })
 
   it('layerPrimaryLine prefers plain species and activity over card title', () => {
     const m = baseModel({
       metadata: { card: { title: 'Yorkshire run A' } },
     })
-    expect(layerPrimaryLine(m)).toBe("Daubenton's bat · Foraging and commuting habitat")
+    expect(layerPrimaryLine(m)).toBe('Myotis daubentonii · Foraging and commuting habitat')
   })
 
   it('layerPrimaryLine falls back to layerDisplayName', () => {
-    expect(layerPrimaryLine(baseModel())).toBe("Daubenton's bat · Foraging and commuting habitat")
+    expect(layerPrimaryLine(baseModel())).toBe('Myotis daubentonii · Foraging and commuting habitat')
   })
 
-  it('layerSecondaryLine is scientific species and activity when common name is known', () => {
+  it('layerSecondaryLine keeps original activity when the primary activity label is rewritten', () => {
     const m = baseModel({ metadata: { card: { title: 'T' } } })
     expect(layerSecondaryLine(m)).toBe('Myotis daubentonii · In flight')
   })
@@ -46,7 +46,7 @@ describe('layerDisplay', () => {
   it('layerAutocompleteLabel includes primary and scientific label', () => {
     const m = baseModel({ metadata: { card: { title: 'T' } } })
     expect(layerAutocompleteLabel(m)).toBe(
-      "Daubenton's bat · Foraging and commuting habitat (Myotis daubentonii · In flight)",
+      'Myotis daubentonii · Foraging and commuting habitat (Myotis daubentonii · In flight)',
     )
   })
 

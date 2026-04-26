@@ -1,4 +1,5 @@
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
+import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined'
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
@@ -37,24 +38,12 @@ export function UserMenu() {
   const formId = useId()
 
   const menuOpen = Boolean(anchorEl)
-
-  if (!firebaseWebConfigOk()) {
-    // Auth not wired for this build (e.g. a public-only deployment): render no
-    // sign-in surface rather than leaking a developer-facing diagnostic.
-    return null
-  }
-
-  if (loading) {
-    return (
-      <Typography variant="body2" color="text.secondary">
-        Loading…
-      </Typography>
-    )
-  }
+  const authAvailable = firebaseWebConfigOk()
 
   const closeMenu = () => setAnchorEl(null)
 
   const onSignInDialog = async (mode: 'signIn' | 'signUp') => {
+    if (!authAvailable || loading) return
     setError(null)
     try {
       if (mode === 'signIn') {
@@ -77,60 +66,85 @@ export function UserMenu() {
   if (!user) {
     return (
       <>
-        <Button color="inherit" variant="outlined" size="small" onClick={() => setSignInOpen(true)}>
-          Sign in
-        </Button>
+        <Tooltip title={loading ? 'Checking account' : 'Sign in'}>
+          <IconButton
+            size="small"
+            onClick={() => setSignInOpen(true)}
+            aria-label={loading ? 'Checking account' : 'Sign in'}
+            sx={(t) => ({
+              width: 34,
+              height: 34,
+              color: 'text.secondary',
+              '&:hover': {
+                color: t.palette.secondary.dark,
+                bgcolor: 'action.hover',
+              },
+            })}
+          >
+            <AccountCircleOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Dialog open={signInOpen} onClose={() => setSignInOpen(false)} maxWidth="xs" fullWidth>
           <DialogTitle>Sign in</DialogTitle>
           <DialogContent>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 1, lineHeight: 1.5 }}>
-              You can explore the public map without signing in. Sign in to use account features, such as
-              map catalog management in Admin if your account has access.
-            </Typography>
-            <Box
-              component="form"
-              id={formId}
-              sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
-              onSubmit={(e) => {
-                e.preventDefault()
-                void onSignInDialog('signIn')
-              }}
-            >
-              <TextField
-                label="Email"
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                fullWidth
-                size="small"
-              />
-              <TextField
-                label="Password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                fullWidth
-                size="small"
-              />
-              {error && (
-                <Typography color="error" variant="caption" role="alert">
-                  {error}
+            {authAvailable ? (
+              <>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1, lineHeight: 1.5 }}>
+                  You can explore the public map without signing in. Sign in to use account features, such as
+                  map catalog management in Admin if your account has access.
                 </Typography>
-              )}
-            </Box>
+                <Box
+                  component="form"
+                  id={formId}
+                  sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    void onSignInDialog('signIn')
+                  }}
+                >
+                  <TextField
+                    label="Email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    fullWidth
+                    size="small"
+                    disabled={loading}
+                  />
+                  <TextField
+                    label="Password"
+                    type="password"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    fullWidth
+                    size="small"
+                    disabled={loading}
+                  />
+                  {error && (
+                    <Typography color="error" variant="caption" role="alert">
+                      {error}
+                    </Typography>
+                  )}
+                </Box>
+              </>
+            ) : (
+              <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+                Sign-in is not available in this build.
+              </Typography>
+            )}
           </DialogContent>
           <DialogActions sx={{ px: 3, pb: 2, gap: 1, flexWrap: 'wrap' }}>
             <Button onClick={() => setSignInOpen(false)}>Cancel</Button>
-            <Button type="submit" form={formId} variant="contained">
+            <Button type="submit" form={formId} variant="contained" disabled={!authAvailable || loading}>
               Sign in
             </Button>
             <Button
               onClick={() => void onSignInDialog('signUp')}
-              disabled={!email || !password}
+              disabled={!authAvailable || loading || !email || !password}
             >
               Create account
             </Button>

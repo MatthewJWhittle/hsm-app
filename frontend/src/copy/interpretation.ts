@@ -40,12 +40,8 @@ export const INTERPRETATION_INFLUENCE_CAPTION =
 export const INTERPRETATION_RAW_VALUES_CAPTION =
   'Values sampled from the environmental layers at this point.'
 
-/** Short reminder in the point-inspection HUD (repeat key caution). */
-export const INTERPRETATION_HUD_REMINDER =
-  'This is modelled habitat suitability, not a confirmed record.'
-
 /** Compact guardrail attached to the suitability legend. */
-export const SUITABILITY_LEGEND_GUARDRAIL = 'Relative suitability, not confirmed presence.'
+export const SUITABILITY_LEGEND_GUARDRAIL = 'Shows relative habitat suitability for the selected species.'
 
 /** Map top-right help (?): aria + tooltip. */
 export const MAP_CONTEXT_INFO_ARIA = 'What am I looking at? Opens a short guide to this map view.'

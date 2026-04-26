@@ -98,76 +98,77 @@ export function SuitabilityLegend({
 
   if (corner) {
     return (
-      <Box
-        component="section"
-        role="region"
-        aria-labelledby="suitability-corner-strip-title"
-        onClick={(e) => e.stopPropagation()}
-        sx={{
-          // Parent sets width; fill it so the bar spans edge-to-edge in that slot.
-          position: 'relative',
-          width: '100%',
-          minWidth: 0,
-          boxSizing: 'border-box',
-          px: 0.75,
-          py: 0.5,
-          borderRadius: 1,
-          border: 1,
-          borderColor: 'divider',
-          bgcolor: 'rgba(255, 255, 255, 0.75)',
-          backdropFilter: 'blur(6px)',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-        }}
+      <Tooltip
+        id="suitability-legend-guardrail"
+        title={SUITABILITY_LEGEND_GUARDRAIL}
+        placement="left"
+        open={guardrailOpen}
+        onOpen={showGuardrail}
+        onClose={hideGuardrail}
+        enterDelay={400}
+        enterTouchDelay={0}
       >
-        <Typography id="suitability-legend-detail-sr" component="span" sx={visuallyHidden}>
-          {DETAIL_COPY}
-        </Typography>
-        <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.2} sx={{ mb: 0.4 }}>
-          <Typography
-            id="suitability-corner-strip-title"
-            component="p"
-            variant="overline"
-            color="text.secondary"
-            sx={{
-              m: 0,
-              textAlign: 'center',
-              fontSize: '0.58rem',
-              lineHeight: 1.2,
-              fontWeight: 600,
-              letterSpacing: '0.07em',
-              textTransform: 'uppercase',
-              opacity: 0.85,
-            }}
-          >
-            Suitability score
-          </Typography>
-          <Tooltip
-            id="suitability-legend-guardrail"
-            title={SUITABILITY_LEGEND_GUARDRAIL}
-            placement="right"
-            open={guardrailOpen}
-            onOpen={showGuardrail}
-            onClose={hideGuardrail}
-            enterDelay={400}
-            enterTouchDelay={0}
-          >
-            {suitabilityInfoButton(guardrailOpen, handleOpenGuide)}
-          </Tooltip>
-        </Stack>
-        <Tooltip
-          title={DETAIL_COPY}
-          enterDelay={500}
-          placement="top-start"
-          disableInteractive
-          disableFocusListener={guardrailOpen}
-          disableHoverListener={guardrailOpen}
-          disableTouchListener={guardrailOpen}
+        <Box
+          component="section"
+          role="region"
+          aria-labelledby="suitability-corner-strip-title"
+          aria-describedby={guardrailOpen ? 'suitability-legend-guardrail' : undefined}
+          onClick={(e) => e.stopPropagation()}
+          sx={{
+            // Parent sets width; fill it so the bar spans edge-to-edge in that slot.
+            position: 'relative',
+            width: '100%',
+            minWidth: 0,
+            boxSizing: 'border-box',
+            px: 0.75,
+            py: 0.5,
+            borderRadius: 1,
+            border: 1,
+            borderColor: 'divider',
+            bgcolor: 'rgba(255, 255, 255, 0.75)',
+            backdropFilter: 'blur(6px)',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+          }}
         >
-          <Box sx={{ display: 'block', width: '100%', cursor: 'default' }}>
-            <SuitabilityBinStrip barHeight={11} showEdgeLabels />
-          </Box>
-        </Tooltip>
-      </Box>
+          <Typography id="suitability-legend-detail-sr" component="span" sx={visuallyHidden}>
+            {DETAIL_COPY}
+          </Typography>
+          <Stack direction="row" alignItems="center" justifyContent="center" spacing={0.2} sx={{ mb: 0.4 }}>
+            <Typography
+              id="suitability-corner-strip-title"
+              component="p"
+              variant="overline"
+              color="text.secondary"
+              sx={{
+                m: 0,
+                textAlign: 'center',
+                fontSize: '0.58rem',
+                lineHeight: 1.2,
+                fontWeight: 600,
+                letterSpacing: '0.07em',
+                textTransform: 'uppercase',
+                opacity: 0.85,
+              }}
+            >
+              Suitability score
+            </Typography>
+            {suitabilityInfoButton(guardrailOpen, handleOpenGuide)}
+          </Stack>
+          <Tooltip
+            title={DETAIL_COPY}
+            enterDelay={500}
+            placement="bottom-end"
+            disableInteractive
+            disableFocusListener={guardrailOpen}
+            disableHoverListener={guardrailOpen}
+            disableTouchListener={guardrailOpen}
+          >
+            <Box sx={{ display: 'block', width: '100%', cursor: 'default' }}>
+              <SuitabilityBinStrip barHeight={11} showEdgeLabels />
+            </Box>
+          </Tooltip>
+        </Box>
+      </Tooltip>
     )
   }
 

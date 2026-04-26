@@ -16,8 +16,7 @@ export interface MapContextInfoButtonProps {
 }
 
 /**
- * Map top-right “?” / help entry to “What am I looking at?”. Visually separate from
- * the floating card’s Help/Info (smaller, lower-left in expanded controls).
+ * Map bottom-left “?” / help entry to “What am I looking at?”.
  * Optional one-time coachmark; dismisses on click-away or when opening the guide.
  */
 export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpenAboutMap }: MapContextInfoButtonProps) {
@@ -64,8 +63,8 @@ export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpe
       <Box
         sx={{
           position: 'absolute',
-          top: 16,
-          right: 16,
+          bottom: 16,
+          left: 16,
           zIndex: MAP_OVERLAY_Z.contextHelp,
           display: 'flex',
           flexDirection: 'row',
@@ -77,8 +76,8 @@ export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpe
           open={popperOpen}
           anchorEl={anchor}
           id="map-context-coachmark"
-          placement="left"
-          pointerSide="right"
+          placement="right"
+          pointerSide="left"
         >
           {MAP_CONTEXT_COACHMARK}
         </MapCoachmark>
@@ -86,7 +85,7 @@ export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpe
           title={MAP_CONTEXT_INFO_TOOLTIP}
           enterDelay={400}
           enterTouchDelay={0}
-          placement="left"
+          placement="right"
           disableHoverListener={showCoach}
         >
           <span>

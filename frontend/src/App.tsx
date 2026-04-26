@@ -398,8 +398,8 @@ function App() {
           <Box
             sx={{
               position: 'absolute',
-              bottom: 12,
-              left: 12,
+              top: 16,
+              right: 16,
               zIndex: MAP_OVERLAY_Z.cornerLegend,
               pointerEvents: 'auto',
               // Tight slot (~¼ the old 520px width); explicit width so the bar isn’t shrink-wrapped.

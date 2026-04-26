@@ -257,7 +257,7 @@ export function MapFloatingControls({
                   disabled={!selectedModel}
                   aria-label={layerVisible ? 'Hide layer' : 'Show layer'}
                   aria-pressed={!layerVisible}
-                  sx={{ mr: -0.25, color: layerVisible ? 'primary.main' : 'text.secondary' }}
+                  sx={{ mr: -0.25, color: layerVisible ? 'text.primary' : 'text.secondary' }}
                 >
                   {layerVisible ? (
                     <VisibilityIcon fontSize="small" />
