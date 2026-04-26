@@ -1,4 +1,10 @@
-import Map, { Layer, Source, type MapRef, type MapSourceDataEvent } from 'react-map-gl/maplibre'
+import Map, {
+  Layer,
+  Source,
+  type MapMouseEvent,
+  type MapRef,
+  type MapSourceDataEvent,
+} from 'react-map-gl/maplibre'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useMemo, useRef } from 'react'
 import { COLORMAP_NAME, SUITABILITY_RESCALE_MAX, SUITABILITY_RESCALE_MIN } from '../map/suitabilityScale'
@@ -15,6 +21,8 @@ interface MapComponentProps {
   /** When set, map clicks sample suitability at the clicked (lng, lat). */
   onInspect?: (lng: number, lat: number) => void
   onLayerLoadingChange?: (loading: boolean) => void
+  onMapHover?: (point: { x: number; y: number }) => void
+  onMapLeave?: () => void
 }
 
 function MapComponent({
@@ -23,6 +31,8 @@ function MapComponent({
   visible = true,
   onInspect,
   onLayerLoadingChange,
+  onMapHover,
+  onMapLeave,
 }: MapComponentProps) {
   const mapRef = useRef<MapRef | null>(null)
   const fittedModelIdRef = useRef<string | null>(null)
@@ -124,6 +134,10 @@ function MapComponent({
         const { lng, lat } = e.lngLat
         onInspect?.(lng, lat)
       }}
+      onMouseMove={(e: MapMouseEvent) => {
+        onMapHover?.(e.point)
+      }}
+      onMouseLeave={onMapLeave}
     >
       {model && tileUrl && visible && (
         <Source

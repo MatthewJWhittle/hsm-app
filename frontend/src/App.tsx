@@ -77,9 +77,12 @@ function App() {
   const [mapInfoOpen, setMapInfoOpen] = useState(false)
   const [layerDetailsOpen, setLayerDetailsOpen] = useState(false)
   const [welcomeOpen, setWelcomeOpen] = useState(false)
-  const [clickHintOpen, setClickHintOpen] = useState(() => !isClickHintDismissedInStorage())
+  const [clickHintEligible, setClickHintEligible] = useState(() => !isClickHintDismissedInStorage())
+  const [clickHintOpen, setClickHintOpen] = useState(false)
+  const [clickHintPoint, setClickHintPoint] = useState<{ x: number; y: number } | null>(null)
   const [layerTilesLoading, setLayerTilesLoading] = useState(false)
   const [showLayerLoadingHint, setShowLayerLoadingHint] = useState(false)
+  const clickHintTimerRef = useRef<number | null>(null)
 
   const retryLoadCatalog = useCallback(() => {
     setReloadNonce((n) => n + 1)
@@ -289,16 +292,27 @@ function App() {
   }, [])
 
   const closeClickHint = useCallback(() => {
+    if (clickHintTimerRef.current !== null) {
+      window.clearTimeout(clickHintTimerRef.current)
+      clickHintTimerRef.current = null
+    }
     dismissClickHintStorage()
+    setClickHintEligible(false)
     setClickHintOpen(false)
+    setClickHintPoint(null)
   }, [])
 
   useEffect(() => {
     if (inspection && !inspectLoading && !inspectError) {
-      dismissClickHintStorage()
-      setClickHintOpen(false)
+      closeClickHint()
     }
-  }, [inspection, inspectLoading, inspectError])
+  }, [closeClickHint, inspection, inspectLoading, inspectError])
+
+  useEffect(() => {
+    return () => {
+      if (clickHintTimerRef.current !== null) window.clearTimeout(clickHintTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!catalogReady || loadError) return
@@ -309,6 +323,7 @@ function App() {
   const handleInspect = useCallback(
     async (lng: number, lat: number) => {
       if (!selectedModel) return
+      closeClickHint()
       inspectAbortRef.current?.abort()
       const ac = new AbortController()
       inspectAbortRef.current = ac
@@ -334,8 +349,34 @@ function App() {
           }
         })
     },
-    [selectedModel, user, getIdToken],
+    [closeClickHint, selectedModel, user, getIdToken],
   )
+
+  const handleMapHover = useCallback(
+    (point: { x: number; y: number }) => {
+      if (!clickHintEligible || !catalogReady || loadError || !selectedModel || !layerVisible) return
+      if (clickHintTimerRef.current !== null) window.clearTimeout(clickHintTimerRef.current)
+      setClickHintOpen(false)
+      setClickHintPoint(point)
+      clickHintTimerRef.current = window.setTimeout(() => {
+        clickHintTimerRef.current = null
+        dismissClickHintStorage()
+        setClickHintEligible(false)
+        setClickHintPoint(point)
+        setClickHintOpen(true)
+      }, 3000)
+    },
+    [catalogReady, clickHintEligible, layerVisible, loadError, selectedModel],
+  )
+
+  const handleMapLeave = useCallback(() => {
+    if (clickHintTimerRef.current !== null) {
+      window.clearTimeout(clickHintTimerRef.current)
+      clickHintTimerRef.current = null
+    }
+    setClickHintOpen(false)
+    setClickHintPoint(null)
+  }, [])
 
   return (
     <div className="app-container">
@@ -358,6 +399,8 @@ function App() {
             model={selectedModel}
             onInspect={selectedModel && !loadError ? handleInspect : undefined}
             onLayerLoadingChange={setLayerTilesLoading}
+            onMapHover={handleMapHover}
+            onMapLeave={handleMapLeave}
           />
         </Box>
 
@@ -389,8 +432,8 @@ function App() {
         {catalogReady && !loadError && (
           <MapClickInspectHint
             open={clickHintOpen}
+            point={clickHintPoint}
             onClose={closeClickHint}
-            bottomPx={selectedModel && layerVisible ? 58 : 28}
           />
         )}
 

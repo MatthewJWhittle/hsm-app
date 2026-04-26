@@ -15,7 +15,8 @@ export function MapLayerLoadingHint({ visible }: MapLayerLoadingHintProps) {
         sx={{
           position: 'absolute',
           top: 66,
-          right: 16,
+          left: '50%',
+          transform: 'translateX(-50%)',
           zIndex: MAP_OVERLAY_Z.layerLoadingHint,
           pointerEvents: 'none',
           maxWidth: 'calc(100vw - 32px)',

@@ -30,7 +30,7 @@ export const LAYER_DETAILS_SECTION_PROJECT = 'Project'
 
 /** First-sentence only; compact hint above attribution. */
 export const INTERPRETATION_CLICK_MAP_SHORT =
-  'Click the map to interpret habitat suitability at a place.'
+  'Click a place to see its suitability score and what may be driving it.'
 
 /** Point inspection: variable influence (e.g. SHAP) when the model has explainability artefacts. */
 export const INTERPRETATION_INFLUENCE_CAPTION =
