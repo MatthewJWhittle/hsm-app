@@ -74,6 +74,7 @@ services:
       - USE_CLOUD_TASKS=false
       - WORKER_BASE_URL=http://worker:8080
       - WORKER_INTERNAL_SECRET=dev-hsm-worker-internal-secret
+      - MAPTILER_API_KEY=${MAPTILER_API_KEY:-}
     depends_on:
       firebase-emulators:
         condition: service_started

@@ -212,9 +212,23 @@ resource "google_secret_manager_secret_iam_member" "api_staging_secret_accessor"
   member    = "serviceAccount:${google_service_account.api_staging.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "api_staging_maptiler_secret_accessor" {
+  project   = var.project_id
+  secret_id = var.maptiler_api_key_secret_name
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.api_staging.email}"
+}
+
 resource "google_secret_manager_secret_iam_member" "api_prod_secret_accessor" {
   project   = var.project_id
   secret_id = var.firebase_web_api_key_secret_name
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.api_prod.email}"
+}
+
+resource "google_secret_manager_secret_iam_member" "api_prod_maptiler_secret_accessor" {
+  project   = var.project_id
+  secret_id = var.maptiler_api_key_secret_name
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.api_prod.email}"
 }
@@ -674,6 +688,15 @@ resource "google_cloud_run_v2_service" "api_staging" {
         }
       }
       env {
+        name = "MAPTILER_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = var.maptiler_api_key_secret_name
+            version = "latest"
+          }
+        }
+      }
+      env {
         name  = "FIREBASE_PROJECT_ID"
         value = var.firebase_project_id
       }
@@ -800,6 +823,15 @@ resource "google_cloud_run_v2_service" "api_prod" {
         value_source {
           secret_key_ref {
             secret  = var.firebase_web_api_key_secret_name
+            version = "latest"
+          }
+        }
+      }
+      env {
+        name = "MAPTILER_API_KEY"
+        value_source {
+          secret_key_ref {
+            secret  = var.maptiler_api_key_secret_name
             version = "latest"
           }
         }

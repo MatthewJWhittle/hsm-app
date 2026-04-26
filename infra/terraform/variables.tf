@@ -290,6 +290,12 @@ variable "firebase_web_api_key_secret_name" {
   default     = "firebase-web-api-key"
 }
 
+variable "maptiler_api_key_secret_name" {
+  description = "Secret Manager secret id containing MAPTILER_API_KEY."
+  type        = string
+  default     = "maptiler-api-key"
+}
+
 variable "firebase_project_id" {
   description = "Firebase project id used for token verification and Auth endpoints."
   type        = string

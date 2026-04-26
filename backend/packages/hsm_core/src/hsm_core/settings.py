@@ -161,6 +161,29 @@ class WorkerSettings(BaseSettings):
         le=300.0,
     )
 
+    maptiler_api_key: str | None = Field(
+        default=None,
+        description="Server-side MapTiler API key used by the public place-search proxy.",
+        validation_alias=AliasChoices("MAPTILER_API_KEY"),
+    )
+    geocode_country: str = Field(
+        default="gb",
+        description="Comma-separated ISO 3166-1 alpha-2 country filters for place search.",
+        validation_alias=AliasChoices("GEOCODE_COUNTRY"),
+    )
+    geocode_language: str = Field(
+        default="en",
+        description="Comma-separated ISO 639-1 language preferences for place search.",
+        validation_alias=AliasChoices("GEOCODE_LANGUAGE"),
+    )
+    geocode_timeout_seconds: float = Field(
+        default=5.0,
+        description="Timeout in seconds for upstream MapTiler geocoding requests.",
+        validation_alias=AliasChoices("GEOCODE_TIMEOUT_SECONDS"),
+        ge=1.0,
+        le=30.0,
+    )
+
     app_env: str = Field(
         default="local",
         description="Deployment environment: local, staging, or production.",

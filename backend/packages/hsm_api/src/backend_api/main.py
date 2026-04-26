@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 
 from backend_api.app_state import assert_hsm_app_state_attrs
-from backend_api.routers import auth, jobs, models, projects, root, uploads
+from backend_api.routers import auth, geocode, jobs, models, projects, root, uploads
 from backend_api.catalog_service import build_catalog_service
 from hsm_core.firebase_admin_app import init_firebase_admin
 from hsm_core.artifact_read_runtime import ArtifactReadRuntime
@@ -102,6 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(models.router, prefix="/api")
     app.include_router(uploads.router, prefix="/api")
     app.include_router(jobs.router, prefix="/api")
+    app.include_router(geocode.router, prefix="/api")
 
     if settings.openapi_enabled:
 

@@ -116,6 +116,11 @@ Required Cloud Run runtime env vars for upload-session signed URLs:
 - `GCS_SIGNED_URL_SERVICE_ACCOUNT=<service-account-email>`
   - Set to the runtime API service account email (`hsm-api-staging@...` / `hsm-api-prod@...`) unless you intentionally use a dedicated signer SA.
 
+Required Cloud Run runtime env vars for place search:
+
+- `MAPTILER_API_KEY`, sourced from Secret Manager secret `maptiler-api-key` by default.
+- Optional tuning: `GEOCODE_COUNTRY=gb`, `GEOCODE_LANGUAGE=en`, `GEOCODE_TIMEOUT_SECONDS=5`.
+
 Required repository secrets:
 
 - `VITE_FIREBASE_API_KEY` (frontend build)

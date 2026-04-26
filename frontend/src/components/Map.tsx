@@ -13,11 +13,22 @@ import { resolveSuitabilityPath, titilerRasterUrlParam } from '../utils/cogPath'
 import { titilerBase } from '../utils/apiBase'
 import { fetchRasterBounds } from '../api/rasterBounds'
 
+export interface MapPlaceTarget {
+  id: string
+  center: {
+    lng: number
+    lat: number
+  }
+  bbox?: [number, number, number, number] | null
+}
+
 interface MapComponentProps {
   model: Model | null
   opacity?: number
   /** When false, the raster source is not rendered (no tile fetches). */
   visible?: boolean
+  /** Place-search target selected by the user. */
+  placeTarget?: MapPlaceTarget | null
   /** When set, map clicks sample suitability at the clicked (lng, lat). */
   onInspect?: (lng: number, lat: number) => void
   onLayerLoadingChange?: (loading: boolean) => void
@@ -29,6 +40,7 @@ function MapComponent({
   opacity = 0.5,
   model = null,
   visible = true,
+  placeTarget = null,
   onInspect,
   onLayerLoadingChange,
   onMapHover,
@@ -110,6 +122,43 @@ function MapComponent({
       ac.abort()
     }
   }, [model, visible])
+
+  useEffect(() => {
+    if (!placeTarget) return
+    const map = mapRef.current
+    if (!map) return
+
+    hasUserMovedMapRef.current = true
+    programmaticFitRef.current = true
+    if (fitTimerRef.current !== null) window.clearTimeout(fitTimerRef.current)
+
+    const bbox = placeTarget.bbox
+    if (bbox) {
+      const [west, south, east, north] = bbox
+      map.fitBounds(
+        [
+          [west, south],
+          [east, north],
+        ],
+        {
+          padding: 72,
+          duration: 700,
+          maxZoom: 14,
+        },
+      )
+    } else {
+      map.flyTo({
+        center: [placeTarget.center.lng, placeTarget.center.lat],
+        zoom: 13,
+        duration: 700,
+      })
+    }
+
+    fitTimerRef.current = window.setTimeout(() => {
+      programmaticFitRef.current = false
+      fitTimerRef.current = null
+    }, 800)
+  }, [placeTarget])
 
   return (
     <Map

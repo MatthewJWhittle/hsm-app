@@ -1,5 +1,5 @@
 import './App.css'
-import MapComponent from './components/Map'
+import MapComponent, { type MapPlaceTarget } from './components/Map'
 import { Alert, Box, Button } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -11,6 +11,7 @@ import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
 import { MapLayerLoadingHint } from './components/map/MapLayerLoadingHint'
 import { MapLoadingOverlay } from './components/map/MapLoadingOverlay'
+import { MapPlaceSearchControl } from './components/map/MapPlaceSearchControl'
 import { markMapWelcomeSeen, isMapWelcomeSeen } from './components/map/mapWelcomeStorage'
 import { MapWelcomeDialog } from './components/map/MapWelcomeDialog'
 import { SuitabilityLegend } from './components/map/SuitabilityLegend'
@@ -23,6 +24,7 @@ import { fetchModelCatalog } from './api/catalog'
 import { fetchProjectCatalog } from './api/projects'
 import { postExplainabilityWarmup } from './api/explainabilityWarmup'
 import { fetchPointInspection } from './api/inspectPoint'
+import type { PlaceSearchResult } from './api/placeSearch'
 import { Navbar } from './components/Navbar'
 import { useAuth } from './auth/useAuth'
 import { triggerTitilerWarmup } from './utils/titilerWarmup'
@@ -82,6 +84,7 @@ function App() {
   const [clickHintPoint, setClickHintPoint] = useState<{ x: number; y: number } | null>(null)
   const [layerTilesLoading, setLayerTilesLoading] = useState(false)
   const [showLayerLoadingHint, setShowLayerLoadingHint] = useState(false)
+  const [selectedPlaceTarget, setSelectedPlaceTarget] = useState<MapPlaceTarget | null>(null)
   const clickHintTimerRef = useRef<number | null>(null)
 
   const retryLoadCatalog = useCallback(() => {
@@ -378,6 +381,18 @@ function App() {
     setClickHintPoint(null)
   }, [])
 
+  const handlePlaceSelect = useCallback(
+    (place: PlaceSearchResult) => {
+      clearInspection()
+      setSelectedPlaceTarget({
+        id: place.id,
+        center: place.center,
+        bbox: place.bbox,
+      })
+    },
+    [clearInspection],
+  )
+
   return (
     <div className="app-container">
       <Navbar currentProjectName={catalogReady ? selectedProjectLabel : undefined} />
@@ -397,6 +412,7 @@ function App() {
             opacity={opacity / 100}
             visible={layerVisible}
             model={selectedModel}
+            placeTarget={selectedPlaceTarget}
             onInspect={selectedModel && !loadError ? handleInspect : undefined}
             onLayerLoadingChange={setLayerTilesLoading}
             onMapHover={handleMapHover}
@@ -407,6 +423,8 @@ function App() {
         {!catalogReady && !loadError && <MapLoadingOverlay />}
 
         {catalogReady && !loadError && <MapLayerLoadingHint visible={showLayerLoadingHint} />}
+
+        {catalogReady && !loadError && <MapPlaceSearchControl onPlaceSelect={handlePlaceSelect} />}
 
         {catalogReady && !loadError && (
           <MapContextInfoButton
