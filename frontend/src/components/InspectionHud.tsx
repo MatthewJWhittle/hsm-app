@@ -9,6 +9,7 @@ import type {
 import { SUITABILITY_HUD_BIN_COUNT, suitabilityDisplayBinIndex01 } from '../map/suitabilityScale'
 import { MAP_OVERLAY_Z } from './map/mapOverlayZIndex'
 import { SuitabilityBinStrip } from './map/SuitabilityBinStrip'
+import { INTERPRETATION_HUD_REMINDER } from '../copy/interpretation'
 
 interface InspectionHudProps {
   onClose: () => void
@@ -66,6 +67,14 @@ function formatContributionLine(d: DriverVariable): string {
   return `${s < 0 ? '−' : ''}${nums} ${arrow}`
 }
 
+function suitabilityBandLabel(value: number): string {
+  if (value < 0.2) return 'Very low suitability'
+  if (value < 0.4) return 'Low suitability'
+  if (value < 0.6) return 'Moderate suitability'
+  if (value < 0.8) return 'High suitability'
+  return 'Very high suitability'
+}
+
 function SuitabilityReadout({
   inspection,
   stale,
@@ -74,31 +83,42 @@ function SuitabilityReadout({
   stale: boolean
 }) {
   return (
-    <Typography
-      variant="h5"
-      component="p"
+    <Box
       sx={{
-        fontWeight: 600,
-        letterSpacing: '-0.02em',
-        fontVariantNumeric: 'tabular-nums',
-        mt: 0,
-        mb: 0.25,
         opacity: stale ? 0.38 : 1,
         transition: stale ? 'opacity 0.2s ease' : 'opacity 0.15s ease',
       }}
     >
-      {inspection.value.toFixed(3)}
-      {inspection.unit ? (
-        <Typography
-          component="span"
-          variant="body2"
-          color="text.secondary"
-          sx={{ ml: 0.75, fontWeight: 400 }}
-        >
-          {inspection.unit}
-        </Typography>
-      ) : null}
-    </Typography>
+      <Typography
+        variant="h5"
+        component="p"
+        sx={{
+          fontWeight: 650,
+          letterSpacing: '-0.02em',
+          mt: 0,
+          mb: 0.2,
+        }}
+      >
+        {suitabilityBandLabel(inspection.value)}
+      </Typography>
+      <Typography
+        component="p"
+        variant="caption"
+        color="text.secondary"
+        sx={{ m: 0, fontVariantNumeric: 'tabular-nums', lineHeight: 1.35 }}
+      >
+        Score {inspection.value.toFixed(3)}
+        {inspection.unit ? ` ${inspection.unit}` : ' (0-1)'}
+      </Typography>
+      <Typography
+        component="p"
+        variant="caption"
+        color="text.secondary"
+        sx={{ m: 0, mt: 0.25, lineHeight: 1.35 }}
+      >
+        {INTERPRETATION_HUD_REMINDER}
+      </Typography>
+    </Box>
   )
 }
 

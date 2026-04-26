@@ -19,38 +19,40 @@ function baseModel(over: Partial<Model> = {}): Model {
 }
 
 describe('layerDisplay', () => {
-  it('layerDisplayName is species and activity', () => {
-    expect(layerDisplayName(baseModel())).toBe('Myotis daubentonii · In flight')
+  it('layerDisplayName uses common bat names and plain activity labels when known', () => {
+    expect(layerDisplayName(baseModel())).toBe("Daubenton's bat · Foraging and commuting habitat")
   })
 
-  it('layerPrimaryLine uses card title when set', () => {
+  it('layerPrimaryLine prefers plain species and activity over card title', () => {
     const m = baseModel({
       metadata: { card: { title: 'Yorkshire run A' } },
     })
-    expect(layerPrimaryLine(m)).toBe('Yorkshire run A')
+    expect(layerPrimaryLine(m)).toBe("Daubenton's bat · Foraging and commuting habitat")
   })
 
   it('layerPrimaryLine falls back to layerDisplayName', () => {
-    expect(layerPrimaryLine(baseModel())).toBe('Myotis daubentonii · In flight')
+    expect(layerPrimaryLine(baseModel())).toBe("Daubenton's bat · Foraging and commuting habitat")
   })
 
-  it('layerSecondaryLine is species line when title present', () => {
+  it('layerSecondaryLine is scientific species and activity when common name is known', () => {
     const m = baseModel({ metadata: { card: { title: 'T' } } })
     expect(layerSecondaryLine(m)).toBe('Myotis daubentonii · In flight')
   })
 
-  it('layerSecondaryLine is null when no title', () => {
-    expect(layerSecondaryLine(baseModel())).toBeNull()
+  it('layerSecondaryLine is null when the scientific label is already primary', () => {
+    expect(layerSecondaryLine(baseModel({ species: 'Unknown species', activity: 'Survey' }))).toBeNull()
   })
 
-  it('layerAutocompleteLabel includes both when title present', () => {
+  it('layerAutocompleteLabel includes primary and scientific label', () => {
     const m = baseModel({ metadata: { card: { title: 'T' } } })
-    expect(layerAutocompleteLabel(m)).toBe('T (Myotis daubentonii · In flight)')
+    expect(layerAutocompleteLabel(m)).toBe(
+      "Daubenton's bat · Foraging and commuting habitat (Myotis daubentonii · In flight)",
+    )
   })
 
-  it('layerAutocompleteLabel does not duplicate when title matches display name', () => {
-    const full = 'Myotis daubentonii · In flight'
-    const m = baseModel({ metadata: { card: { title: full } } })
+  it('layerAutocompleteLabel does not duplicate when scientific label is primary', () => {
+    const full = 'Unknown species · Survey'
+    const m = baseModel({ species: 'Unknown species', activity: 'Survey', metadata: { card: { title: full } } })
     expect(layerAutocompleteLabel(m)).toBe(full)
     expect(layerSecondaryLine(m)).toBeNull()
   })

@@ -2,8 +2,9 @@ import type { Model } from '../types/model'
 
 /** Guardrail, split so the second clause can be bold in welcome / About (full sentence = ``INTERPRETATION_GUARDRAIL_SHORT``). */
 export const INTERPRETATION_DIALOG_GUARDRAIL_PREFIX =
-  'This map shows modelled relative suitability, '
-export const INTERPRETATION_DIALOG_GUARDRAIL_EMPHASIS = 'not confirmed presence or absence.'
+  'This map shows areas of habitat that may be more or less suitable for the selected species and activity. Higher suitability means conditions look more favourable in the model. '
+export const INTERPRETATION_DIALOG_GUARDRAIL_EMPHASIS =
+  'It does not confirm that bats are present, and low suitability does not prove they are absent.'
 
 /** Primary guardrail: one string for Alerts and tests (issue #19). */
 export const INTERPRETATION_GUARDRAIL_SHORT =
@@ -15,11 +16,11 @@ export const INTERPRETATION_DIALOG_SECTION_USE = 'Using the map'
 
 /** Secondary line under the guardrail (map sidebar). */
 export const INTERPRETATION_DECISION_SUPPORT =
-  'Use it alongside field survey and expert judgement, not as a substitute.'
+  'Use the map to compare places and target survey effort, alongside field survey and expert judgement.'
 
 /** Map “About / welcome”: what happens when the user inspects a point. */
 export const INTERPRETATION_DRIVERS_POINTER =
-  'Click the map for a local suitability value and, when the model supports it, estimates of which environmental factors matter at that point for the layer you have selected.'
+  'Click the map to see whether a place looks low, moderate or high suitability, plus the environmental factors that may be influencing that local score when the model supports it.'
 
 /** Section overline in Layer details: the selected model. */
 export const LAYER_DETAILS_SECTION_LAYER = 'Layer'
@@ -29,7 +30,7 @@ export const LAYER_DETAILS_SECTION_PROJECT = 'Project'
 
 /** First-sentence only; compact hint above attribution. */
 export const INTERPRETATION_CLICK_MAP_SHORT =
-  'Click the map for a local suitability score and driver estimates.'
+  'Click the map to interpret habitat suitability at a place.'
 
 /** Point inspection: variable influence (e.g. SHAP) when the model has explainability artefacts. */
 export const INTERPRETATION_INFLUENCE_CAPTION =
@@ -41,7 +42,7 @@ export const INTERPRETATION_RAW_VALUES_CAPTION =
 
 /** Short reminder in the point-inspection HUD (repeat key caution). */
 export const INTERPRETATION_HUD_REMINDER =
-  'Modelled relative suitability, not confirmed presence or absence on the ground.'
+  'This is modelled habitat suitability, not a confirmed record.'
 
 /** Compact guardrail attached to the suitability legend. */
 export const SUITABILITY_LEGEND_GUARDRAIL = 'Relative suitability, not confirmed presence.'

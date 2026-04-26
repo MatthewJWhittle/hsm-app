@@ -148,7 +148,7 @@ export function MapFloatingControls({
                 onChange={(_, newValue) => {
                   onModelChange(newValue?.id ?? '')
                 }}
-                getOptionLabel={(m) => layerAutocompleteLabel(m)}
+                getOptionLabel={(m) => layerPrimaryLine(m)}
                 isOptionEqualToValue={(a, b) => a.id === b.id}
                 disabled={models.length === 0}
                 noOptionsText="No matching layers"
