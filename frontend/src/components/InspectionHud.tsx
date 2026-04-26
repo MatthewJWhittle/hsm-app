@@ -66,6 +66,24 @@ function formatContributionLine(d: DriverVariable): string {
   return `${s < 0 ? '−' : ''}${nums} ${arrow}`
 }
 
+function suitabilityBandLabel(value: number): string {
+  if (value < 0.2) return 'Very low suitability'
+  if (value < 0.4) return 'Low suitability'
+  if (value < 0.6) return 'Moderate suitability'
+  if (value < 0.8) return 'High suitability'
+  return 'Very high suitability'
+}
+
+function scoreUnitLabel(unit?: string | null): string {
+  const trimmed = unit?.trim()
+  if (!trimmed) return ' (0-1)'
+  if (/^suitability\b/i.test(trimmed)) {
+    const scale = trimmed.replace(/^suitability\s*/i, '').trim()
+    return scale ? ` ${scale}` : ' (0-1)'
+  }
+  return ` ${trimmed}`
+}
+
 function SuitabilityReadout({
   inspection,
   stale,
@@ -74,31 +92,34 @@ function SuitabilityReadout({
   stale: boolean
 }) {
   return (
-    <Typography
-      variant="h5"
-      component="p"
+    <Box
       sx={{
-        fontWeight: 600,
-        letterSpacing: '-0.02em',
-        fontVariantNumeric: 'tabular-nums',
-        mt: 0,
-        mb: 0.25,
         opacity: stale ? 0.38 : 1,
         transition: stale ? 'opacity 0.2s ease' : 'opacity 0.15s ease',
       }}
     >
-      {inspection.value.toFixed(3)}
-      {inspection.unit ? (
-        <Typography
-          component="span"
-          variant="body2"
-          color="text.secondary"
-          sx={{ ml: 0.75, fontWeight: 400 }}
-        >
-          {inspection.unit}
-        </Typography>
-      ) : null}
-    </Typography>
+      <Typography
+        variant="h5"
+        component="p"
+        sx={{
+          fontWeight: 650,
+          letterSpacing: '-0.02em',
+          mt: 0,
+          mb: 0.2,
+        }}
+      >
+        {suitabilityBandLabel(inspection.value)}
+      </Typography>
+      <Typography
+        component="p"
+        variant="caption"
+        color="text.secondary"
+        sx={{ m: 0, fontVariantNumeric: 'tabular-nums', lineHeight: 1.35 }}
+      >
+        Score {inspection.value.toFixed(3)}
+        {scoreUnitLabel(inspection.unit)}
+      </Typography>
+    </Box>
   )
 }
 
@@ -633,7 +654,14 @@ export function InspectionHud({
       {inspection &&
         !error &&
         sortedDrivers.length > 0 && (
-          <Box sx={{ mt: 0.75 }}>
+          <Box
+            sx={{
+              mt: 1,
+              pt: 0.85,
+              borderTop: 1,
+              borderColor: 'divider',
+            }}
+          >
             <Box sx={{ position: 'relative' }}>
               <Box
                 ref={driversListRef}

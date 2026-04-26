@@ -1,8 +1,9 @@
 import HelpIcon from '@mui/icons-material/Help'
 import { alpha } from '@mui/material/styles'
-import { Box, ClickAwayListener, Fade, IconButton, Paper, Popper, Tooltip, Typography } from '@mui/material'
+import { Box, ClickAwayListener, IconButton, Tooltip } from '@mui/material'
 import { useCallback, useEffect, useState } from 'react'
 import { MAP_CONTEXT_COACHMARK, MAP_CONTEXT_INFO_ARIA, MAP_CONTEXT_INFO_TOOLTIP } from '../../copy/interpretation'
+import { MapCoachmark } from './MapCoachmark'
 import { isMapContextHintSeen, markMapContextHintSeen } from './mapContextHintStorage'
 import { MAP_OVERLAY_Z } from './mapOverlayZIndex'
 
@@ -15,8 +16,7 @@ export interface MapContextInfoButtonProps {
 }
 
 /**
- * Map top-right “?” / help entry to “What am I looking at?”. Visually separate from
- * the floating card’s Help/Info (smaller, lower-left in expanded controls).
+ * Map bottom-left “?” / help entry to “What am I looking at?”.
  * Optional one-time coachmark; dismisses on click-away or when opening the guide.
  */
 export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpenAboutMap }: MapContextInfoButtonProps) {
@@ -63,8 +63,8 @@ export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpe
       <Box
         sx={{
           position: 'absolute',
-          top: 16,
-          right: 16,
+          bottom: 16,
+          left: 16,
           zIndex: MAP_OVERLAY_Z.contextHelp,
           display: 'flex',
           flexDirection: 'row',
@@ -72,85 +72,20 @@ export function MapContextInfoButton({ visible, suppressCoachmark = false, onOpe
           gap: 0.5,
         }}
       >
-        <Popper
+        <MapCoachmark
           open={popperOpen}
           anchorEl={anchor}
-          placement="left"
-          disablePortal
-          transition
-          modifiers={[
-            { name: 'offset', options: { offset: [0, 10] } },
-            { name: 'preventOverflow', options: { padding: 8 } },
-          ]}
+          id="map-context-coachmark"
+          placement="right"
+          pointerSide="left"
         >
-          {({ TransitionProps }) => (
-            <Fade {...TransitionProps} timeout={200}>
-              <Paper
-                id="map-context-coachmark"
-                elevation={0}
-                role="status"
-                aria-live="polite"
-                onMouseDown={(e) => e.stopPropagation()}
-                sx={{
-                  position: 'relative',
-                  pl: 1,
-                  pr: 1.25,
-                  py: 0.4,
-                  maxWidth: { xs: 'min(320px, calc(100vw - 88px))', sm: 360 },
-                  borderRadius: 1,
-                  // Subtle: let the map show through a little
-                  bgcolor: 'rgba(255, 255, 255, 0.78)',
-                  backdropFilter: 'blur(6px)',
-                  border: 1,
-                  borderColor: 'rgba(0, 0, 0, 0.08)',
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
-                  // Horizontal bar: one line on most viewports; max two very short lines on narrow
-                  display: 'inline-block',
-                }}
-              >
-                <Typography
-                  color="text.secondary"
-                  component="p"
-                  title={MAP_CONTEXT_COACHMARK}
-                  sx={{
-                    m: 0,
-                    lineHeight: 1.25,
-                    fontSize: '0.62rem',
-                    fontWeight: 500,
-                    letterSpacing: '0.01em',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden',
-                  }}
-                >
-                  {MAP_CONTEXT_COACHMARK}
-                </Typography>
-                {/* Pointer toward the help button — match paper translucency */}
-                <Box
-                  aria-hidden
-                  sx={{
-                    position: 'absolute',
-                    right: -5,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    width: 0,
-                    height: 0,
-                    borderTop: '5px solid transparent',
-                    borderBottom: '5px solid transparent',
-                    borderLeft: '6px solid rgba(255, 255, 255, 0.78)',
-                    filter: 'drop-shadow(0.5px 0 0 rgba(0, 0, 0, 0.07))',
-                  }}
-                />
-              </Paper>
-            </Fade>
-          )}
-        </Popper>
+          {MAP_CONTEXT_COACHMARK}
+        </MapCoachmark>
         <Tooltip
           title={MAP_CONTEXT_INFO_TOOLTIP}
           enterDelay={400}
           enterTouchDelay={0}
-          placement="left"
+          placement="right"
           disableHoverListener={showCoach}
         >
           <span>

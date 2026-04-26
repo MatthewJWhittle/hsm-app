@@ -86,3 +86,22 @@ Avoid trying to become:
 The product should make it easier for users to justify and communicate why a location or area may matter.
 
 It should help users move from “the map says this” to “here is how we interpret this pattern”.
+
+## 9. Start with species, place and meaning
+
+Early usability feedback showed that non-technical users do not arrive wanting to operate a model. They arrive with practical questions:
+
+- which species or activity am I looking at?
+- where is the place I care about?
+- does this place look more or less suitable?
+- what does the score mean in plain language?
+- what does the map prove, and what does it not prove?
+
+The product should therefore make the model structure feel secondary to the user’s task. The first-use experience should orient around:
+
+- **Species and activity:** use plain names where possible, with scientific names as supporting detail rather than the only label.
+- **Place:** help users get to a real location quickly, for example by place or postcode search.
+- **Interpretation:** translate scores and colours into plain ecological meaning before exposing model mechanics.
+- **Responsible use:** state clearly that high suitability is not confirmed presence and low suitability is not proof of absence.
+
+Numeric model outputs are not user-facing insight on their own. Any score, band, colour or driver shown in the UI should be accompanied by enough interpretation that a user can explain what it means without knowing how the model was built.

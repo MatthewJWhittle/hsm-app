@@ -2,6 +2,7 @@ import AppBar from '@mui/material/AppBar'
 import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'
 import Toolbar from '@mui/material/Toolbar'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import { Link as RouterLink } from 'react-router-dom'
 
@@ -87,27 +88,28 @@ export function Navbar({ currentProjectName }: NavbarProps) {
           }}
         >
           {showProject && (
-            <Typography
-              component="span"
-              variant="caption"
-              noWrap
-              title={currentProjectName!}
-              aria-label={`Current project, ${currentProjectName}`}
-              sx={{
-                color: 'text.secondary',
-                maxWidth: { xs: 96, sm: 220, md: 300 },
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                fontSize: '0.7rem',
-                lineHeight: 1.2,
-                fontWeight: 500,
-                opacity: 0.88,
-                flexShrink: 1,
-                minWidth: 0,
-              }}
-            >
-              {currentProjectName}
-            </Typography>
+            <Tooltip title={`Current project: ${currentProjectName}`} placement="bottom">
+              <Typography
+                component="span"
+                variant="caption"
+                noWrap
+                aria-label={`Current project, ${currentProjectName}`}
+                sx={{
+                  color: 'text.secondary',
+                  maxWidth: { xs: 96, sm: 220, md: 300 },
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  fontSize: '0.7rem',
+                  lineHeight: 1.2,
+                  fontWeight: 500,
+                  opacity: 0.88,
+                  flexShrink: 1,
+                  minWidth: 0,
+                }}
+              >
+                {currentProjectName}
+              </Typography>
+            </Tooltip>
           )}
           <Box sx={{ flexShrink: 0 }}>
             <UserMenu />

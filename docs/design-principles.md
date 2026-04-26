@@ -93,10 +93,11 @@ Data alignment: **Project** and **Model** are first-class in [Data models](data-
 - **Numeric ranges** in documentation may use an **en dash** (0–1) where conventional; that is not the same as a sentence em dash.
 - **Implementation:** follow the same rule in new **JSDoc and code comments** in the frontend so prose stays consistent and easy to `grep`. Details for contributors and agents: [frontend/AGENTS.md](../frontend/AGENTS.md) (user-facing copy and punctuation).
 
-## 13. Map help: two entry points (same dialog)
+## 13. Map help: few routes, same meaning
 
 - **Top-right help (`?`):** First-land wayfinding: “what am I looking at?” It opens the **About this map** interpretation. Tooltip and coachmark should stay short; do not duplicate long prose in the control label.
-- **Expanded floating card — Help (outline):** Opens the **same** dialog, but the affordance lives **in context** next to layer tools. **Tooltip/aria** should read as a **full map guide** (colours, how to read the view, limitations), not a different feature, so the two controls feel like **two doors to one room** rather than competing products.
+- **Legend info:** A compact cue for what suitability means. It should use the same tooltip language family as other map help and can open the same **About this map** interpretation when clicked.
+- Avoid duplicate controls that open the same help from the same local context. If two entry points remain, they should support different user moments, for example global help vs legend interpretation.
 - Stacking: map chrome z-index is centralised in the frontend (see `mapOverlayZIndex.ts`); new overlays should extend that file so layers do not “random 1001” by accident.
 
 ---

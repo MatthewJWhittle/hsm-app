@@ -9,6 +9,7 @@ import { MapContextInfoButton } from './components/map/MapContextInfoButton'
 import { MAP_OVERLAY_Z } from './components/map/mapOverlayZIndex'
 import { MapLayerDetailsDialog } from './components/map/MapLayerDetailsDialog'
 import { MapInterpretationDialog } from './components/map/MapInterpretationDialog'
+import { MapLayerLoadingHint } from './components/map/MapLayerLoadingHint'
 import { MapLoadingOverlay } from './components/map/MapLoadingOverlay'
 import { markMapWelcomeSeen, isMapWelcomeSeen } from './components/map/mapWelcomeStorage'
 import { MapWelcomeDialog } from './components/map/MapWelcomeDialog'
@@ -76,7 +77,12 @@ function App() {
   const [mapInfoOpen, setMapInfoOpen] = useState(false)
   const [layerDetailsOpen, setLayerDetailsOpen] = useState(false)
   const [welcomeOpen, setWelcomeOpen] = useState(false)
-  const [clickHintOpen, setClickHintOpen] = useState(() => !isClickHintDismissedInStorage())
+  const [clickHintEligible, setClickHintEligible] = useState(() => !isClickHintDismissedInStorage())
+  const [clickHintOpen, setClickHintOpen] = useState(false)
+  const [clickHintPoint, setClickHintPoint] = useState<{ x: number; y: number } | null>(null)
+  const [layerTilesLoading, setLayerTilesLoading] = useState(false)
+  const [showLayerLoadingHint, setShowLayerLoadingHint] = useState(false)
+  const clickHintTimerRef = useRef<number | null>(null)
 
   const retryLoadCatalog = useCallback(() => {
     setReloadNonce((n) => n + 1)
@@ -152,6 +158,19 @@ function App() {
     () => models.find((m) => m.id === selectedModelId) ?? null,
     [models, selectedModelId],
   )
+
+  useEffect(() => {
+    if (!catalogReady || loadError || !selectedModel || !layerVisible || !layerTilesLoading) {
+      setShowLayerLoadingHint(false)
+      return
+    }
+
+    setShowLayerLoadingHint(true)
+    const timeout = window.setTimeout(() => {
+      setShowLayerLoadingHint(false)
+    }, 8000)
+    return () => window.clearTimeout(timeout)
+  }, [catalogReady, layerTilesLoading, layerVisible, loadError, selectedModel])
 
   useEffect(() => {
     if (!catalogReady || !selectedModelId) return
@@ -273,16 +292,27 @@ function App() {
   }, [])
 
   const closeClickHint = useCallback(() => {
+    if (clickHintTimerRef.current !== null) {
+      window.clearTimeout(clickHintTimerRef.current)
+      clickHintTimerRef.current = null
+    }
     dismissClickHintStorage()
+    setClickHintEligible(false)
     setClickHintOpen(false)
+    setClickHintPoint(null)
   }, [])
 
   useEffect(() => {
     if (inspection && !inspectLoading && !inspectError) {
-      dismissClickHintStorage()
-      setClickHintOpen(false)
+      closeClickHint()
     }
-  }, [inspection, inspectLoading, inspectError])
+  }, [closeClickHint, inspection, inspectLoading, inspectError])
+
+  useEffect(() => {
+    return () => {
+      if (clickHintTimerRef.current !== null) window.clearTimeout(clickHintTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!catalogReady || loadError) return
@@ -293,6 +323,7 @@ function App() {
   const handleInspect = useCallback(
     async (lng: number, lat: number) => {
       if (!selectedModel) return
+      closeClickHint()
       inspectAbortRef.current?.abort()
       const ac = new AbortController()
       inspectAbortRef.current = ac
@@ -318,8 +349,34 @@ function App() {
           }
         })
     },
-    [selectedModel, user, getIdToken],
+    [closeClickHint, selectedModel, user, getIdToken],
   )
+
+  const handleMapHover = useCallback(
+    (point: { x: number; y: number }) => {
+      if (!clickHintEligible || !catalogReady || loadError || !selectedModel || !layerVisible) return
+      if (clickHintTimerRef.current !== null) window.clearTimeout(clickHintTimerRef.current)
+      setClickHintOpen(false)
+      setClickHintPoint(point)
+      clickHintTimerRef.current = window.setTimeout(() => {
+        clickHintTimerRef.current = null
+        dismissClickHintStorage()
+        setClickHintEligible(false)
+        setClickHintPoint(point)
+        setClickHintOpen(true)
+      }, 3000)
+    },
+    [catalogReady, clickHintEligible, layerVisible, loadError, selectedModel],
+  )
+
+  const handleMapLeave = useCallback(() => {
+    if (clickHintTimerRef.current !== null) {
+      window.clearTimeout(clickHintTimerRef.current)
+      clickHintTimerRef.current = null
+    }
+    setClickHintOpen(false)
+    setClickHintPoint(null)
+  }, [])
 
   return (
     <div className="app-container">
@@ -341,10 +398,15 @@ function App() {
             visible={layerVisible}
             model={selectedModel}
             onInspect={selectedModel && !loadError ? handleInspect : undefined}
+            onLayerLoadingChange={setLayerTilesLoading}
+            onMapHover={handleMapHover}
+            onMapLeave={handleMapLeave}
           />
         </Box>
 
         {!catalogReady && !loadError && <MapLoadingOverlay />}
+
+        {catalogReady && !loadError && <MapLayerLoadingHint visible={showLayerLoadingHint} />}
 
         {catalogReady && !loadError && (
           <MapContextInfoButton
@@ -358,7 +420,6 @@ function App() {
           models={models}
           selectedModelId={selectedModelId}
           onModelChange={onModelChange}
-          onOpenMapInfoDialog={() => setMapInfoOpen(true)}
           onOpenLayerDetailsDialog={() => setLayerDetailsOpen(true)}
           opacity={opacity}
           onOpacityChange={setOpacity}
@@ -371,8 +432,8 @@ function App() {
         {catalogReady && !loadError && (
           <MapClickInspectHint
             open={clickHintOpen}
+            point={clickHintPoint}
             onClose={closeClickHint}
-            bottomPx={selectedModel && layerVisible ? 58 : 28}
           />
         )}
 
@@ -380,15 +441,15 @@ function App() {
           <Box
             sx={{
               position: 'absolute',
-              bottom: 12,
-              left: 12,
+              top: 16,
+              right: 16,
               zIndex: MAP_OVERLAY_Z.cornerLegend,
               pointerEvents: 'auto',
               // Tight slot (~¼ the old 520px width); explicit width so the bar isn’t shrink-wrapped.
               width: 'min(130px, calc(100vw - 24px))',
             }}
           >
-            <SuitabilityLegend variant="corner" />
+            <SuitabilityLegend variant="corner" onOpenMapGuide={() => setMapInfoOpen(true)} />
           </Box>
         )}
 
